@@ -23,6 +23,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
 export class HUD {
   root: HTMLElement
   onHome: () => void = () => {}
+  onFullscreen: () => void = () => {}
 
   private goldEl!: HTMLElement
   private shardsEl!: HTMLElement
@@ -40,6 +41,16 @@ export class HUD {
   private enemyTip!: HTMLElement
   private vignette!: HTMLElement
   private tipEnemy: Enemy | null = null
+  /** ghost-click shield: taps that opened a menu must not also press its buttons */
+  private menuOpenedAt = 0
+
+  private menuGuard(fn: (ev: MouseEvent) => void): (ev: MouseEvent) => void {
+    return (ev: MouseEvent) => {
+      ev.stopPropagation()
+      if (performance.now() - this.menuOpenedAt < 350) return
+      fn(ev)
+    }
+  }
   private bannerEl!: HTMLElement
   private toastEl!: HTMLElement
   private modeHint!: HTMLElement
@@ -97,6 +108,15 @@ export class HUD {
     this.musicBtn.onclick = () => {
       this.game.toggleMusic()
       this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
+    }
+    const doc = document as Document & { webkitFullscreenEnabled?: boolean }
+    if (doc.fullscreenEnabled || doc.webkitFullscreenEnabled) {
+      const fs = el('button', 'icon-btn', right, '⛶') as HTMLButtonElement
+      fs.title = 'Fullscreen'
+      fs.onclick = () => this.onFullscreen()
+      document.addEventListener('fullscreenchange', () => {
+        fs.classList.toggle('fast', !!document.fullscreenElement)
+      })
     }
     const home = el('button', 'icon-btn', right, '🏰') as HTMLButtonElement
     home.title = 'Back to castle (menu)'
@@ -294,7 +314,7 @@ export class HUD {
       const btn = el('button', 'build-option', this.buildMenu) as HTMLButtonElement
       btn.dataset.cost = `${def.cost}`
       btn.innerHTML = `<span class="b-icon">${TOWER_ICONS[kind]}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">🪙${def.cost}</span>`
-      btn.onclick = (ev) => { ev.stopPropagation(); this.game.buildTower(kind) }
+      btn.onclick = this.menuGuard(() => this.game.buildTower(kind))
       btn.onmouseenter = () => {
         this.game.previewRange(kind)
         this.showBuildTooltip(def, kind)
@@ -309,6 +329,7 @@ export class HUD {
 
   /** clamp the popup menu to the viewport using its real rendered size */
   private placeMenu(x: number, y: number): void {
+    this.menuOpenedAt = performance.now()
     this.buildMenu.classList.remove('hidden')
     const rect = this.buildMenu.getBoundingClientRect()
     const mw = rect.width || 232, mh = rect.height || 150
@@ -351,7 +372,7 @@ export class HUD {
       const btn = el('button', 'build-option trap-option', this.buildMenu) as HTMLButtonElement
       btn.dataset.cost = `${def.cost}`
       btn.innerHTML = `<span class="b-icon">${def.icon}</span><span class="b-name">${def.name}</span><span class="b-cost">🪙${def.cost}</span>`
-      btn.onclick = (ev) => { ev.stopPropagation(); this.game.buildTrap(kind) }
+      btn.onclick = this.menuGuard(() => this.game.buildTrap(kind))
       btn.onmouseenter = () => {
         const tip = document.getElementById('build-tip')
         if (tip) {
@@ -372,6 +393,7 @@ export class HUD {
   openTrapPanel(trap: Trap): void {
     this.currentTower = null
     this.currentTrap = trap
+    this.menuOpenedAt = performance.now()
     const p = this.towerPanel
     p.innerHTML = ''
     const head = el('div', 'tp-head', p)
@@ -385,7 +407,7 @@ export class HUD {
     const actions = el('div', 'tp-actions', p)
     const row = el('div', 'tp-row', actions)
     const sell = el('button', 'btn small sell', row, `Dismantle 🪙${Math.round(trap.def.cost * 0.6)}`) as HTMLButtonElement
-    sell.onclick = (ev) => { ev.stopPropagation(); this.game.sellTrap(trap) }
+    sell.onclick = this.menuGuard(() => this.game.sellTrap(trap))
     p.classList.remove('hidden')
   }
 
@@ -393,6 +415,7 @@ export class HUD {
 
   openTowerPanel(tower: Tower): void {
     this.currentTower = tower
+    this.menuOpenedAt = performance.now()
     const p = this.towerPanel
     p.innerHTML = ''
     const head = el('div', 'tp-head', p)
@@ -419,7 +442,7 @@ export class HUD {
       const btn = el('button', 'btn upgrade', actions) as HTMLButtonElement
       btn.dataset.cost = `${opt.cost}`
       btn.innerHTML = `<span class="u-name">${tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">🪙${opt.cost}</span><span class="u-desc">${opt.description}</span>`
-      btn.onclick = (ev) => { ev.stopPropagation(); this.game.upgradeTower(tower, i) }
+      btn.onclick = this.menuGuard(() => this.game.upgradeTower(tower, i))
       btn.disabled = this.game.gold < opt.cost
     })
     // ascension: tier-4 towers pick one of two shard-bought perks
@@ -427,7 +450,7 @@ export class HUD {
       PERKS[tower.kind].forEach((perk, i) => {
         const btn = el('button', 'btn upgrade ascend', actions) as HTMLButtonElement
         btn.innerHTML = `<span class="u-name">${perk.icon} Ascend: ${perk.name}</span><span class="u-cost">💎${ASCEND_SHARD_COST} 🪙${ASCEND_GOLD_COST}</span><span class="u-desc">${perk.description}</span>`
-        btn.onclick = (ev) => { ev.stopPropagation(); this.game.ascendTower(tower, i as 0 | 1) }
+        btn.onclick = this.menuGuard(() => this.game.ascendTower(tower, i as 0 | 1))
         btn.disabled = this.game.shards < ASCEND_SHARD_COST || this.game.gold < ASCEND_GOLD_COST
       })
     }
@@ -436,15 +459,15 @@ export class HUD {
       const oc = el('button', 'btn small overcharge', row, `⚡ Overcharge 💎${OVERCHARGE_SHARD_COST}`) as HTMLButtonElement
       oc.title = `+60% attack speed for ${OVERCHARGE_DURATION}s`
       oc.id = 'oc-btn'
-      oc.onclick = (ev) => { ev.stopPropagation(); this.game.overchargeTower(tower) }
+      oc.onclick = this.menuGuard(() => this.game.overchargeTower(tower))
       oc.disabled = !tower.canOvercharge(this.game)
     }
     if (tower.isBarracks) {
       const rally = el('button', 'btn small', row, '🚩 Rally point') as HTMLButtonElement
-      rally.onclick = (ev) => { ev.stopPropagation(); this.game.setTargetMode('rally') }
+      rally.onclick = this.menuGuard(() => this.game.setTargetMode('rally'))
     }
     const sell = el('button', 'btn small sell', row, `Sell 🪙${tower.sellValue}`) as HTMLButtonElement
-    sell.onclick = (ev) => { ev.stopPropagation(); this.game.sellTower(tower) }
+    sell.onclick = this.menuGuard(() => this.game.sellTower(tower))
 
     p.classList.remove('hidden')
   }

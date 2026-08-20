@@ -10,10 +10,46 @@ const game = new Game(canvas)
 const hud = new HUD(game)
 const screens = new Screens(() => game.save)
 
+// ---- fullscreen (Android/desktop have the API; iOS Safari relies on Add to Home Screen) ----
+
+const fullscreenSupported = (): boolean => {
+  const d = document as Document & { webkitFullscreenEnabled?: boolean }
+  return !!(d.fullscreenEnabled || d.webkitFullscreenEnabled)
+}
+
+function enterFullscreen(): void {
+  if (document.fullscreenElement) return
+  const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> }
+  const req = el.requestFullscreen?.bind(el) ?? el.webkitRequestFullscreen?.bind(el)
+  req?.()?.then(() => {
+    // landscape lock only works while fullscreen; best-effort
+    const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }
+    orientation?.lock?.('landscape').catch(() => { /* not supported everywhere */ })
+  }).catch(() => { /* platform or user declined */ })
+}
+
+function toggleFullscreen(): void {
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => { /* already out */ })
+  else enterFullscreen()
+}
+
+hud.onFullscreen = toggleFullscreen
+
+const isTouchDevice = () => window.matchMedia('(pointer: coarse)').matches
+
 screens.onPlayLevel = (id, difficulty, hero, mode) => {
   hud.reset()
   hud.setChrome(true)
   screens.show('none')
+  // still inside the user's tap gesture: phones go fullscreen as battle starts
+  if (isTouchDevice()) {
+    if (fullscreenSupported()) {
+      enterFullscreen()
+    } else if (!(navigator as Navigator & { standalone?: boolean }).standalone && !localStorage.getItem('blockhold.a2hs-hint')) {
+      localStorage.setItem('blockhold.a2hs-hint', '1')
+      setTimeout(() => hud.showToast('Tip: Add to Home Screen from the share menu to play fullscreen', 7), 1500)
+    }
+  }
   // end-screen replays reuse the difficulty/hero/mode of the run that just ended
   game.startLevel(
     levelById(id),
@@ -75,6 +111,9 @@ const twistAngle = () => {
 
 canvas.addEventListener('pointerdown', (e) => {
   if (e.button === 1) e.preventDefault()  // middle-drag orbits; block autoscroll
+  // touch: suppress the browser's compatibility mouse events (mousedown/up/click) —
+  // otherwise a tap's synthetic click lands on UI that opened underneath the finger
+  if (e.pointerType === 'touch') e.preventDefault()
   audio.init(); audio.resume()
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
   if (pointers.size === 1) {
