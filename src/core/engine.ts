@@ -1,0 +1,277 @@
+import * as THREE from 'three'
+import { clamp, lerp } from './utils.ts'
+import { ThemeColors } from '../game/terrain.ts'
+
+export class Engine {
+  renderer: THREE.WebGLRenderer
+  scene: THREE.Scene
+  camera: THREE.PerspectiveCamera
+  sun!: THREE.DirectionalLight
+  private hemi!: THREE.HemisphereLight
+  private ambient!: THREE.AmbientLight
+  private skyMat: THREE.ShaderMaterial | null = null
+  private sky: THREE.Mesh | null = null
+
+  // camera rig (goals are public: game code steers them imperatively)
+  camTarget = new THREE.Vector3()
+  camTargetGoal = new THREE.Vector3()
+  yaw = 0
+  yawGoal = 0
+  pitch = 0.93
+  pitchGoal = 0.93
+  dist = 13
+  distGoal = 13
+  bounds = { x: 12, z: 8 }
+  private shakeAmp = 0
+  private shakeT = 0
+
+  /** 0 = desktop full, 1 = mobile (smaller shadows, capped DPR), 2 = potato (no shadows) */
+  qualityTier = 0
+  private frameTimes: number[] = []
+  private lastFrameAt = performance.now()
+
+  constructor(readonly canvas: HTMLCanvasElement) {
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
+    this.renderer.shadowMap.enabled = true
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping
+    this.renderer.toneMappingExposure = 1.12
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace
+
+    this.scene = new THREE.Scene()
+    this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 220)
+    this.setupLights()
+    // touch devices start one tier down; the watchdog can drop further
+    this.qualityTier = window.matchMedia?.('(pointer: coarse)').matches ? 1 : 0
+    this.applyQuality()
+    this.resize()
+    window.addEventListener('resize', () => this.resize())
+    // background tabs produce garbage frame timings; start the window fresh
+    document.addEventListener('visibilitychange', () => { this.frameTimes.length = 0; this.slowWindows = 0 })
+  }
+
+  private applyQuality(): void {
+    const dprCap = [2, 1.75, 1.25][this.qualityTier]
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, dprCap))
+    const shadowSize = [2048, 1024, 0][this.qualityTier]
+    this.sun.shadow.map?.dispose()
+    this.sun.shadow.map = null
+    if (shadowSize > 0) {
+      this.renderer.shadowMap.enabled = true
+      this.sun.castShadow = true
+      this.sun.shadow.mapSize.set(shadowSize, shadowSize)
+    } else {
+      this.renderer.shadowMap.enabled = false
+      this.sun.castShadow = false
+    }
+    this.resize()
+  }
+
+  private slowWindows = 0
+
+  /** frame-time watchdog: degrade only on sustained, tier-appropriate slowness.
+   *  Thresholds sit well past 30Hz-display frame times so refresh-rate-limited
+   *  devices are never punished; two consecutive slow windows are required. */
+  private watchQuality(): void {
+    const now = performance.now()
+    const dt = now - this.lastFrameAt
+    this.lastFrameAt = now
+    if (dt > 100 || this.qualityTier >= 2) { this.frameTimes.length = 0; return }
+    this.frameTimes.push(dt)
+    if (this.frameTimes.length >= 180) {
+      const avg = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length
+      this.frameTimes.length = 0
+      const threshold = this.qualityTier === 0 ? 36 : 45   // ~<28fps / ~<22fps sustained
+      if (avg > threshold) {
+        this.slowWindows++
+        if (this.slowWindows >= 2) {
+          this.slowWindows = 0
+          this.qualityTier++
+          this.applyQuality()
+        }
+      } else {
+        this.slowWindows = 0
+      }
+    }
+  }
+
+  private setupLights(): void {
+    this.sun = new THREE.DirectionalLight(0xfff0d0, 2.6)
+    this.sun.position.set(-9, 16, 7)
+    this.sun.castShadow = true
+    this.sun.shadow.mapSize.set(2048, 2048)
+    this.sun.shadow.camera.near = 2
+    this.sun.shadow.camera.far = 60
+    this.sun.shadow.bias = -0.0004
+    this.sun.shadow.normalBias = 0.02
+    this.scene.add(this.sun, this.sun.target)
+    this.hemi = new THREE.HemisphereLight(0xbfd9ff, 0x6a8a55, 0.7)
+    this.scene.add(this.hemi)
+    this.ambient = new THREE.AmbientLight(0xffffff, 0.25)
+    this.scene.add(this.ambient)
+  }
+
+  private baseTheme: ThemeColors | null = null
+
+  applyTheme(t: ThemeColors, mapW: number, mapH: number): void {
+    this.baseTheme = t
+    this.sun.color.set(t.sunColor)
+    this.sun.intensity = t.sunIntensity
+    this.hemi.color.set(t.hemiSky)
+    this.hemi.groundColor.set(t.hemiGround)
+    this.ambient.intensity = t.ambient
+    const ext = Math.max(mapW, mapH) * 0.62
+    const sc = this.sun.shadow.camera
+    sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext
+    sc.updateProjectionMatrix()
+    this.scene.fog = new THREE.Fog(t.fog, 26, 70)
+    this.bounds = { x: mapW * 0.45, z: mapH * 0.5 }
+    this.buildSky(t)
+  }
+
+  /** Veiltide surge: blend the world's light toward an ominous violet (0..1) */
+  setSurgeBlend(blend: number): void {
+    const t = this.baseTheme
+    if (!t) return
+    const mix = (base: number, surge: number) =>
+      new THREE.Color(base).lerp(new THREE.Color(surge), blend)
+    this.sun.color.copy(mix(t.sunColor, 0xb98fd8))
+    this.sun.intensity = t.sunIntensity * (1 - blend * 0.35)
+    this.hemi.color.copy(mix(t.hemiSky, 0x7a5aa8))
+    if (this.scene.fog instanceof THREE.Fog) this.scene.fog.color.copy(mix(t.fog, 0x584a78))
+    if (this.skyMat) {
+      ;(this.skyMat.uniforms.uTop.value as THREE.Color).copy(mix(t.skyTop, 0x2a1d45))
+      ;(this.skyMat.uniforms.uBottom.value as THREE.Color).copy(mix(t.skyBottom, 0x6f4a8f))
+    }
+  }
+
+  private buildSky(t: ThemeColors): void {
+    if (this.sky) {
+      this.scene.remove(this.sky)
+      this.sky.geometry.dispose()
+      ;(this.sky.material as THREE.Material).dispose()
+    }
+    this.skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      uniforms: {
+        uTop: { value: new THREE.Color(t.skyTop) },
+        uBottom: { value: new THREE.Color(t.skyBottom) },
+      },
+      vertexShader: /* glsl */`
+        varying vec3 vPos;
+        void main() {
+          vPos = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: /* glsl */`
+        uniform vec3 uTop;
+        uniform vec3 uBottom;
+        varying vec3 vPos;
+        void main() {
+          float h = normalize(vPos).y * 0.5 + 0.5;
+          vec3 col = mix(uBottom, uTop, smoothstep(0.42, 0.75, h));
+          gl_FragColor = vec4(col, 1.0);
+        }`,
+    })
+    this.sky = new THREE.Mesh(new THREE.SphereGeometry(100, 24, 16), this.skyMat)
+    this.scene.add(this.sky)
+  }
+
+  resize(): void {
+    const w = window.innerWidth, h = window.innerHeight
+    this.renderer.setSize(w, h)
+    this.camera.aspect = w / h
+    this.camera.updateProjectionMatrix()
+    // orientation change re-derives the zoom ceiling (portrait needs more headroom)
+    this.maxZoomOut = this.camera.aspect < 1 ? 34 : 22
+    this.distGoal = Math.min(this.distGoal, this.maxZoomOut)
+    this.dist = Math.min(this.dist, this.maxZoomOut)
+  }
+
+  // ---- camera control ----
+
+  orbit(dx: number, dy: number): void {
+    this.yawGoal -= dx * 0.0052
+    this.pitchGoal = clamp(this.pitchGoal + dy * 0.004, 0.34, 1.5)
+  }
+
+  /** tilt only (camera pitch), used by two-finger vertical drag and T/G keys */
+  tilt(dy: number): void {
+    this.pitchGoal = clamp(this.pitchGoal + dy * 0.004, 0.34, 1.5)
+  }
+
+  /** orbit by a raw angle (radians) — used by the two-finger twist gesture */
+  orbitByAngle(rad: number): void {
+    this.yawGoal += rad
+  }
+
+  private maxZoomOut = 22
+
+  zoom(delta: number): void {
+    this.distGoal = clamp(this.distGoal * Math.exp(delta * 0.0011), 5.5, this.maxZoomOut)
+  }
+
+  pan(dx: number, dz: number): void {
+    // pan in camera-relative ground plane
+    const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw)
+    const speed = this.dist * 0.0016
+    this.camTargetGoal.x += (dx * cos - dz * sin) * speed
+    this.camTargetGoal.z += (dz * cos + dx * sin) * speed
+    this.camTargetGoal.x = clamp(this.camTargetGoal.x, -this.bounds.x, this.bounds.x)
+    this.camTargetGoal.z = clamp(this.camTargetGoal.z, -this.bounds.z, this.bounds.z)
+  }
+
+  focusOn(x: number, z: number): void {
+    this.camTargetGoal.x = clamp(x, -this.bounds.x, this.bounds.x)
+    this.camTargetGoal.z = clamp(z, -this.bounds.z, this.bounds.z)
+  }
+
+  resetView(mapW = 24, mapH = 14): void {
+    this.camTargetGoal.set(0, 0, 0.5)
+    this.yawGoal = 0
+    this.pitchGoal = 0.98
+    // frame the whole island with a little margin; portrait needs more headroom
+    const fitH = (mapH * 0.62) / Math.tan((this.camera.fov * Math.PI / 180) / 2)
+    const fitW = (mapW * 0.56) / Math.tan((this.camera.fov * Math.PI / 180) / 2) / this.camera.aspect
+    const maxDist = this.camera.aspect < 1 ? 34 : 22
+    this.maxZoomOut = maxDist
+    this.distGoal = clamp(Math.max(fitH, fitW), 10, maxDist)
+    this.dist = this.distGoal
+    this.yaw = this.yawGoal
+    this.pitch = this.pitchGoal
+    this.camTarget.copy(this.camTargetGoal)
+  }
+
+  addShake(strength: number): void {
+    this.shakeAmp = Math.min(0.5, this.shakeAmp + strength)
+  }
+
+  updateCamera(dt: number): void {
+    const k = 1 - Math.exp(-dt * 9)
+    this.yaw = lerp(this.yaw, this.yawGoal, k)
+    this.pitch = lerp(this.pitch, this.pitchGoal, k)
+    this.dist = lerp(this.dist, this.distGoal, k)
+    this.camTarget.lerp(this.camTargetGoal, k)
+
+    this.shakeT += dt * 30
+    const shake = this.shakeAmp
+    this.shakeAmp = Math.max(0, this.shakeAmp - dt * 1.6)
+
+    const cx = this.camTarget.x + Math.sin(this.yaw) * Math.cos(this.pitch) * this.dist
+    const cz = this.camTarget.z + Math.cos(this.yaw) * Math.cos(this.pitch) * this.dist
+    const cy = this.camTarget.y + Math.sin(this.pitch) * this.dist
+    this.camera.position.set(
+      cx + Math.sin(this.shakeT * 1.3) * shake * 0.3,
+      cy + Math.sin(this.shakeT * 1.7) * shake * 0.2,
+      cz + Math.cos(this.shakeT * 1.1) * shake * 0.3,
+    )
+    this.camera.lookAt(this.camTarget.x, this.camTarget.y, this.camTarget.z)
+    if (this.sky) this.sky.position.copy(this.camera.position)
+  }
+
+  render(): void {
+    this.watchQuality()
+    this.renderer.render(this.scene, this.camera)
+  }
+}

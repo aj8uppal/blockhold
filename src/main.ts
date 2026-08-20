@@ -1,0 +1,215 @@
+import { Game } from './game/game.ts'
+import { HUD } from './ui/hud.ts'
+import { Screens } from './ui/screens.ts'
+import { levelById } from './game/levels.ts'
+import { audio } from './core/audio.ts'
+import './style.css'
+
+const canvas = document.getElementById('game') as HTMLCanvasElement
+const game = new Game(canvas)
+const hud = new HUD(game)
+const screens = new Screens(() => game.save)
+
+screens.onPlayLevel = (id, difficulty, hero, mode) => {
+  hud.reset()
+  hud.setChrome(true)
+  screens.show('none')
+  // end-screen replays reuse the difficulty/hero/mode of the run that just ended
+  game.startLevel(
+    levelById(id),
+    difficulty ?? game.difficulty,
+    hero ?? (game.save.lastHero as never) ?? 'aldric',
+    mode ?? (game.isEndless ? 'endless' : 'campaign'),
+  )
+}
+screens.onMenu = () => {
+  game.showMenuBackdrop()
+  hud.reset()
+  hud.setChrome(false)
+}
+hud.onHome = () => {
+  game.showMenuBackdrop()
+  hud.reset()
+  hud.setChrome(false)
+  screens.show('levels')
+}
+game.onPhaseChange = (phase, stars) => {
+  if (phase === 'victory') screens.show('victory', { stars, levelId: game.level!.id, stats: game.battleStats() })
+  else if (phase === 'defeat') screens.show('defeat', { levelId: game.level!.id, stats: game.battleStats() })
+}
+
+screens.show('menu')
+game.showMenuBackdrop()
+hud.setChrome(false)
+
+// dev/testing handle
+;(window as unknown as Record<string, unknown>).vg = { game, hud, screens }
+
+// PWA: offline shell + installability (production only, so dev stays live-reloadable)
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => { /* offline play is a bonus, not a requirement */ })
+  })
+}
+
+// ---------------- input ----------------
+
+const pointers = new Map<number, { x: number, y: number }>()
+let dragButton = -1
+let dragOrbit = false   // latched at pointerdown so Shift changes mid-drag don't flip modes
+let dragStart = { x: 0, y: 0 }
+let dragged = false
+let pinchDist = 0
+let pinchAngle: number | null = null
+let lastCentroid: { x: number, y: number } | null = null
+const keys = new Set<string>()
+
+const pinchDistance = () => {
+  const pts = [...pointers.values()]
+  return pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0
+}
+const twistAngle = () => {
+  const pts = [...pointers.values()]
+  return pts.length >= 2 ? Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) : 0
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button === 1) e.preventDefault()  // middle-drag orbits; block autoscroll
+  audio.init(); audio.resume()
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  if (pointers.size === 1) {
+    dragButton = e.button
+    dragOrbit = e.button === 2 || e.button === 1 || e.shiftKey
+    dragStart = { x: e.clientX, y: e.clientY }
+    dragged = false
+  } else {
+    // entering multi-touch cancels any pending click; reset gesture baselines
+    dragged = true
+    pinchDist = pinchDistance()
+    pinchAngle = twistAngle()
+    lastCentroid = null
+  }
+  try { canvas.setPointerCapture(e.pointerId) } catch { /* synthetic or stale pointer */ }
+})
+
+canvas.addEventListener('pointermove', (e) => {
+  const prev = pointers.get(e.pointerId)
+  if (!prev) {
+    canvas.style.cursor = game.handleHover(e.clientX, e.clientY)
+    return
+  }
+  const dx = e.clientX - prev.x
+  const dy = e.clientY - prev.y
+  prev.x = e.clientX
+  prev.y = e.clientY
+  if (pointers.size >= 2) {
+    // exactly two contacts drive gestures; extra fingers are ignored
+    if (pointers.size > 2) return
+    // pinch = zoom · twist = orbit · centroid vertical = tilt · centroid horizontal = pan
+    const d = pinchDistance()
+    if (pinchDist > 0 && d > 0) game.engine.zoom((pinchDist - d) * 2.6)
+    pinchDist = d
+    const ang = twistAngle()
+    if (pinchAngle !== null) {
+      let delta = ang - pinchAngle
+      if (delta > Math.PI) delta -= Math.PI * 2
+      if (delta < -Math.PI) delta += Math.PI * 2
+      if (Math.abs(delta) < 0.4) game.engine.orbitByAngle(delta)
+    }
+    pinchAngle = ang
+    const pts = [...pointers.values()]
+    const cx = (pts[0].x + pts[1].x) / 2, cy = (pts[0].y + pts[1].y) / 2
+    if (lastCentroid) {
+      game.engine.tilt((cy - lastCentroid.y) * 0.9)
+      game.engine.pan(-(cx - lastCentroid.x) / 2, 0)
+    }
+    lastCentroid = { x: cx, y: cy }
+    return
+  }
+  if (Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 6) dragged = true
+  if (dragged) {
+    // orbit/tilt: right-drag, middle-drag, or shift+drag (latched); otherwise pan
+    if (dragOrbit) game.engine.orbit(dx, dy)
+    else game.engine.pan(-dx, -dy)
+  }
+})
+
+const endPointer = (e: PointerEvent, isClick: boolean) => {
+  try { canvas.releasePointerCapture(e.pointerId) } catch { /* not captured */ }
+  const had = pointers.delete(e.pointerId)
+  if (!had) return
+  if (pointers.size > 0) {
+    pinchDist = pinchDistance()
+    pinchAngle = pointers.size >= 2 ? twistAngle() : null
+    lastCentroid = null
+    return
+  }
+  const wasDrag = dragged
+  const btn = dragButton
+  dragButton = -1
+  dragged = false
+  pinchDist = 0
+  pinchAngle = null
+  lastCentroid = null
+  if (!isClick || wasDrag) return
+  if (btn === 0) game.handleClick(e.clientX, e.clientY)
+  else if (btn === 2 && game.targetMode) game.setTargetMode(null)
+}
+
+canvas.addEventListener('pointerup', (e) => endPointer(e, true))
+canvas.addEventListener('pointercancel', (e) => endPointer(e, false))
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault()
+  game.engine.zoom(e.deltaY)
+}, { passive: false })
+
+canvas.addEventListener('contextmenu', (e) => e.preventDefault())
+
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return
+  keys.add(e.code)
+  if (game.phase !== 'playing') return
+  if (game.paused) {
+    // paused: only resume is allowed
+    if (e.code === 'KeyP' || e.code === 'Escape') game.togglePause()
+    return
+  }
+  switch (e.code) {
+    case 'Space': e.preventDefault(); game.callWave(); break
+    case 'KeyF': game.toggleSpeed(); break
+    case 'KeyP': game.togglePause(); break
+    case 'KeyH': game.selectHero(true); break
+    case 'Digit1': game.setTargetMode(game.targetMode === 'meteor' ? null : 'meteor'); break
+    case 'Digit2': game.setTargetMode(game.targetMode === 'reinforce' ? null : 'reinforce'); break
+    case 'KeyC': game.engine.resetView(game.level?.width, game.level?.height); break
+    case 'Escape':
+      if (game.targetMode) game.setTargetMode(null)
+      else if (game.selectedTower || game.selectedPlot || game.heroSelected) game.clearSelection()
+      else game.togglePause()
+      break
+  }
+})
+window.addEventListener('keyup', (e) => keys.delete(e.code))
+window.addEventListener('blur', () => keys.clear())
+
+// ---------------- main loop ----------------
+
+let lastT = performance.now()
+function frame(now: number): void {
+  const dt = Math.min(0.1, (now - lastT) / 1000)
+  lastT = now
+  // keyboard pan (disabled while paused: pause is a hard input boundary)
+  if (game.phase === 'playing' && !game.paused) {
+    const px = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0)
+    const pz = (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0)
+    if (px || pz) game.engine.pan(px * 620 * dt, pz * 620 * dt)
+    const orbit = (keys.has('KeyE') ? 1 : 0) - (keys.has('KeyQ') ? 1 : 0)
+    if (orbit) game.engine.orbit(orbit * 260 * dt, 0)
+    const tilt = (keys.has('KeyG') ? 1 : 0) - (keys.has('KeyT') ? 1 : 0)
+    if (tilt) game.engine.tilt(tilt * 220 * dt)
+  }
+  game.update(dt)
+  requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame)
