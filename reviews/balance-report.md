@@ -72,19 +72,19 @@ Start gold: 340. Waves: 20. Pressure-flagged waves: 0.
 | 5 | 1,255 | 149 | 27.9 / 57.1 (gold 793) | arrival 594.0 HP/s; fly 0.0%; armor≥0.4 58.6%; MR≥0.5 41.4%; no pressure flag |
 | 6 | 886 | 112 | 19.7 / 69.3 (gold 962) | arrival 1,045.3 HP/s; fly 32.7%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
 | 7 | 1,819 | 234 | 40.4 / 78.8 (gold 1,094) | arrival 1,095.3 HP/s; fly 22.3%; armor≥0.4 52.0%; MR≥0.5 25.7%; no pressure flag |
-| 8 | 2,270 | 262 | 50.4 / 97.1 (gold 1,348) | arrival 889.7 HP/s; fly 0.0%; armor≥0.4 15.0%; MR≥0.5 28.6%; no pressure flag |
-| 9 | 1,854 | 188 | 41.2 / 117.4 (gold 1,630) | arrival 2,414.4 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 21.0%; no pressure flag |
-| 10 | 2,592 | 289 | 57.6 / 132.4 (gold 1,838) | arrival 1,226.2 HP/s; fly 20.1%; armor≥0.4 53.6%; MR≥0.5 0.0%; no pressure flag |
-| 11 | 2,736 | 354 | 60.8 / 154.6 (gold 2,147) | arrival 1,269.6 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 53.2%; no pressure flag |
-| 12 | 2,276 | 280 | 50.6 / 181.6 (gold 2,521) | arrival 2,313.1 HP/s; fly 30.6%; armor≥0.4 55.4%; MR≥0.5 0.0%; no pressure flag |
-| 13 | 3,742 | 384 | 83.2 / 203.2 (gold 2,821) | arrival 1,812.5 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 20.8%; no pressure flag |
-| 14 | 5,844 | 524 | 129.9 / 232.3 (gold 3,225) | arrival 5,190.0 HP/s; fly 9.9%; armor≥0.4 79.4%; MR≥0.5 10.7%; no pressure flag |
-| 15 | 1,800 | 180 | 40.0 / 271.5 (gold 3,769) | arrival 1,745.1 HP/s; fly 0.0%; armor≥0.4 18.9%; MR≥0.5 26.0%; no pressure flag |
-| 16 | 1,734 | 252 | 38.5 / 285.9 (gold 3,969) | arrival 1,408.8 HP/s; fly 33.4%; armor≥0.4 0.0%; MR≥0.5 37.5%; no pressure flag |
-| 17 | 1,945 | 209 | 43.2 / 305.5 (gold 4,241) | arrival 1,461.7 HP/s; fly 0.0%; armor≥0.4 48.6%; MR≥0.5 0.0%; no pressure flag |
-| 18 | 2,756 | 328 | 61.2 / 322.0 (gold 4,470) | arrival 1,100.7 HP/s; fly 21.0%; armor≥0.4 12.3%; MR≥0.5 19.8%; no pressure flag |
-| 19 | 2,909 | 363 | 64.6 / 347.0 (gold 4,818) | arrival 2,696.4 HP/s; fly 0.0%; armor≥0.4 39.7%; MR≥0.5 31.3%; no pressure flag |
-| 20 | 9,644 | 774 | 214.3 / 374.6 (gold 5,201) | arrival 9,163.4 HP/s; fly 6.0%; armor≥0.4 87.5%; MR≥0.5 6.5%; no pressure flag |
+| 8 | 2,355 | 284 | 52.3 / 97.1 (gold 1,348) | arrival 974.7 HP/s; fly 0.0%; armor≥0.4 14.4%; MR≥0.5 27.6%; no pressure flag |
+| 9 | 1,854 | 188 | 41.2 / 119.0 (gold 1,652) | arrival 2,414.4 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 21.0%; no pressure flag |
+| 10 | 2,762 | 333 | 61.4 / 134.0 (gold 1,860) | arrival 1,254.5 HP/s; fly 18.9%; armor≥0.4 50.3%; MR≥0.5 0.0%; no pressure flag |
+| 11 | 2,736 | 354 | 60.8 / 159.4 (gold 2,213) | arrival 1,269.6 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 53.2%; no pressure flag |
+| 12 | 2,276 | 280 | 50.6 / 186.3 (gold 2,587) | arrival 2,313.1 HP/s; fly 30.6%; armor≥0.4 55.4%; MR≥0.5 0.0%; no pressure flag |
+| 13 | 3,742 | 384 | 83.2 / 207.9 (gold 2,887) | arrival 1,812.5 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 20.8%; no pressure flag |
+| 14 | 5,844 | 524 | 129.9 / 237.0 (gold 3,291) | arrival 5,190.0 HP/s; fly 9.9%; armor≥0.4 79.4%; MR≥0.5 10.7%; no pressure flag |
+| 15 | 1,800 | 180 | 40.0 / 276.2 (gold 3,835) | arrival 1,745.1 HP/s; fly 0.0%; armor≥0.4 18.9%; MR≥0.5 26.0%; no pressure flag |
+| 16 | 1,734 | 252 | 38.5 / 290.6 (gold 4,035) | arrival 1,408.8 HP/s; fly 33.4%; armor≥0.4 0.0%; MR≥0.5 37.5%; no pressure flag |
+| 17 | 2,115 | 253 | 47.0 / 310.2 (gold 4,307) | arrival 1,486.0 HP/s; fly 0.0%; armor≥0.4 44.7%; MR≥0.5 0.0%; no pressure flag |
+| 18 | 2,756 | 328 | 61.2 / 329.9 (gold 4,580) | arrival 1,100.7 HP/s; fly 21.0%; armor≥0.4 12.3%; MR≥0.5 19.8%; no pressure flag |
+| 19 | 2,909 | 363 | 64.6 / 354.9 (gold 4,928) | arrival 2,696.4 HP/s; fly 0.0%; armor≥0.4 39.7%; MR≥0.5 31.3%; no pressure flag |
+| 20 | 9,644 | 774 | 214.3 / 382.5 (gold 5,311) | arrival 9,163.4 HP/s; fly 6.0%; armor≥0.4 87.5%; MR≥0.5 6.5%; no pressure flag |
 
 ## Mistfen Crossing (`mistfen`)
 
@@ -98,21 +98,21 @@ Start gold: 360. Waves: 21. Pressure-flagged waves: 0.
 | 4 | 780 | 112 | 17.3 / 45.7 (gold 634) | arrival 514.0 HP/s; fly 29.7%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
 | 5 | 1,051 | 133 | 23.4 / 55.2 (gold 766) | arrival 609.3 HP/s; fly 0.0%; armor≥0.4 40.0%; MR≥0.5 14.8%; no pressure flag |
 | 6 | 1,252 | 139 | 27.8 / 66.2 (gold 919) | arrival 1,010.4 HP/s; fly 0.0%; armor≥0.4 27.2%; MR≥0.5 0.0%; no pressure flag |
-| 7 | 1,208 | 152 | 26.8 / 77.6 (gold 1,078) | arrival 789.6 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 32.3%; no pressure flag |
-| 8 | 1,233 | 165 | 27.4 / 90.0 (gold 1,250) | arrival 845.5 HP/s; fly 28.2%; armor≥0.4 25.5%; MR≥0.5 0.0%; no pressure flag |
-| 9 | 1,109 | 157 | 24.6 / 103.4 (gold 1,435) | arrival 870.5 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 21.1%; no pressure flag |
-| 10 | 1,552 | 199 | 34.5 / 116.1 (gold 1,612) | arrival 1,551.8 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 16.8%; no pressure flag |
-| 11 | 2,055 | 229 | 45.7 / 131.9 (gold 1,831) | arrival 1,497.7 HP/s; fly 0.0%; armor≥0.4 42.1%; MR≥0.5 0.0%; no pressure flag |
-| 12 | 1,838 | 240 | 40.8 / 149.8 (gold 2,080) | arrival 1,265.3 HP/s; fly 18.9%; armor≥0.4 18.5%; MR≥0.5 21.2%; no pressure flag |
-| 13 | 1,947 | 243 | 43.3 / 168.5 (gold 2,340) | arrival 1,631.9 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 8.0%; no pressure flag |
-| 14 | 2,062 | 250 | 45.8 / 187.5 (gold 2,603) | arrival 1,443.1 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 15 | 2,300 | 258 | 51.1 / 206.9 (gold 2,873) | arrival 1,086.6 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 16 | 1,490 | 192 | 33.1 / 227.0 (gold 3,151) | arrival 1,033.3 HP/s; fly 0.0%; armor≥0.4 22.8%; MR≥0.5 26.2%; no pressure flag |
-| 17 | 1,839 | 261 | 40.9 / 242.2 (gold 3,363) | arrival 1,523.0 HP/s; fly 25.2%; armor≥0.4 0.0%; MR≥0.5 28.3%; no pressure flag |
-| 18 | 1,808 | 194 | 40.2 / 262.5 (gold 3,644) | arrival 1,315.6 HP/s; fly 0.0%; armor≥0.4 46.5%; MR≥0.5 0.0%; no pressure flag |
-| 19 | 2,523 | 301 | 56.1 / 277.9 (gold 3,858) | arrival 1,400.8 HP/s; fly 0.0%; armor≥0.4 13.5%; MR≥0.5 18.5%; no pressure flag |
-| 20 | 2,568 | 364 | 57.1 / 301.0 (gold 4,179) | arrival 2,494.5 HP/s; fly 18.1%; armor≥0.4 0.0%; MR≥0.5 25.3%; no pressure flag |
-| 21 | 6,375 | 549 | 141.7 / 328.7 (gold 4,563) | arrival 5,729.6 HP/s; fly 0.0%; armor≥0.4 74.4%; MR≥0.5 0.0%; no pressure flag |
+| 7 | 1,588 | 182 | 35.3 / 77.6 (gold 1,078) | arrival 1,169.6 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 24.6%; no pressure flag |
+| 8 | 1,233 | 165 | 27.4 / 92.2 (gold 1,280) | arrival 845.5 HP/s; fly 28.2%; armor≥0.4 25.5%; MR≥0.5 0.0%; no pressure flag |
+| 9 | 1,194 | 179 | 26.5 / 105.5 (gold 1,465) | arrival 955.5 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 19.6%; no pressure flag |
+| 10 | 1,552 | 199 | 34.5 / 119.8 (gold 1,664) | arrival 1,551.8 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 16.8%; no pressure flag |
+| 11 | 2,435 | 259 | 54.1 / 135.6 (gold 1,883) | arrival 1,877.7 HP/s; fly 0.0%; armor≥0.4 35.5%; MR≥0.5 0.0%; no pressure flag |
+| 12 | 1,838 | 240 | 40.8 / 155.7 (gold 2,162) | arrival 1,265.3 HP/s; fly 18.9%; armor≥0.4 18.5%; MR≥0.5 21.2%; no pressure flag |
+| 13 | 1,947 | 243 | 43.3 / 174.4 (gold 2,422) | arrival 1,631.9 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 8.0%; no pressure flag |
+| 14 | 2,062 | 250 | 45.8 / 193.4 (gold 2,685) | arrival 1,443.1 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
+| 15 | 2,850 | 332 | 63.3 / 212.8 (gold 2,955) | arrival 1,495.0 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
+| 16 | 1,490 | 192 | 33.1 / 238.2 (gold 3,307) | arrival 1,033.3 HP/s; fly 0.0%; armor≥0.4 22.8%; MR≥0.5 26.2%; no pressure flag |
+| 17 | 1,839 | 261 | 40.9 / 253.5 (gold 3,519) | arrival 1,523.0 HP/s; fly 25.2%; armor≥0.4 0.0%; MR≥0.5 28.3%; no pressure flag |
+| 18 | 1,808 | 194 | 40.2 / 273.7 (gold 3,800) | arrival 1,315.6 HP/s; fly 0.0%; armor≥0.4 46.5%; MR≥0.5 0.0%; no pressure flag |
+| 19 | 2,523 | 301 | 56.1 / 289.1 (gold 4,014) | arrival 1,400.8 HP/s; fly 0.0%; armor≥0.4 13.5%; MR≥0.5 18.5%; no pressure flag |
+| 20 | 2,568 | 364 | 57.1 / 312.2 (gold 4,335) | arrival 2,494.5 HP/s; fly 18.1%; armor≥0.4 0.0%; MR≥0.5 25.3%; no pressure flag |
+| 21 | 6,375 | 549 | 141.7 / 339.9 (gold 4,719) | arrival 5,729.6 HP/s; fly 0.0%; armor≥0.4 74.4%; MR≥0.5 0.0%; no pressure flag |
 
 ## The Shattered Crown (`shatteredcrown`)
 
@@ -140,10 +140,10 @@ Start gold: 400. Waves: 24. Pressure-flagged waves: 0.
 | 18 | 4,238 | 507 | 94.2 / 267.0 (gold 3,707) | arrival 3,950.9 HP/s; fly 89.0%; armor≥0.4 0.0%; MR≥0.5 11.0%; no pressure flag |
 | 19 | 1,480 | 184 | 32.9 / 305.0 (gold 4,234) | arrival 1,208.0 HP/s; fly 0.0%; armor≥0.4 23.0%; MR≥0.5 0.0%; no pressure flag |
 | 20 | 1,476 | 216 | 32.8 / 319.6 (gold 4,438) | arrival 934.5 HP/s; fly 47.2%; armor≥0.4 0.0%; MR≥0.5 52.8%; no pressure flag |
-| 21 | 1,866 | 198 | 41.5 / 336.6 (gold 4,674) | arrival 2,570.0 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 22 | 2,215 | 250 | 49.2 / 352.3 (gold 4,892) | arrival 1,943.0 HP/s; fly 0.0%; armor≥0.4 15.3%; MR≥0.5 0.0%; no pressure flag |
-| 23 | 1,917 | 243 | 42.6 / 371.8 (gold 5,162) | arrival 1,520.0 HP/s; fly 0.0%; armor≥0.4 49.3%; MR≥0.5 24.4%; no pressure flag |
-| 24 | 7,894 | 728 | 175.4 / 390.7 (gold 5,425) | arrival 7,848.5 HP/s; fly 44.1%; armor≥0.4 48.1%; MR≥0.5 3.0%; no pressure flag |
+| 21 | 2,036 | 242 | 45.2 / 336.6 (gold 4,674) | arrival 2,740.0 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
+| 22 | 2,595 | 280 | 57.7 / 355.5 (gold 4,936) | arrival 2,323.0 HP/s; fly 0.0%; armor≥0.4 13.1%; MR≥0.5 0.0%; no pressure flag |
+| 23 | 1,917 | 243 | 42.6 / 377.1 (gold 5,236) | arrival 1,520.0 HP/s; fly 0.0%; armor≥0.4 49.3%; MR≥0.5 24.4%; no pressure flag |
+| 24 | 7,894 | 728 | 175.4 / 396.1 (gold 5,499) | arrival 7,848.5 HP/s; fly 44.1%; armor≥0.4 48.1%; MR≥0.5 3.0%; no pressure flag |
 
 ## Cinderwake Caldera (`cinderwake`)
 
@@ -162,21 +162,21 @@ Start gold: 440. Waves: 26. Pressure-flagged waves: 0.
 | 9 | 1,230 | 179 | 27.3 / 113.4 (gold 1,574) | arrival 730.3 HP/s; fly 68.3%; armor≥0.4 0.0%; MR≥0.5 31.7%; no pressure flag |
 | 10 | 2,120 | 248 | 47.1 / 127.7 (gold 1,773) | arrival 1,331.0 HP/s; fly 0.0%; armor≥0.4 55.7%; MR≥0.5 24.5%; no pressure flag |
 | 11 | 2,192 | 226 | 48.7 / 147.0 (gold 2,041) | arrival 1,579.2 HP/s; fly 21.2%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 12 | 1,440 | 206 | 32.0 / 164.7 (gold 2,287) | arrival 1,011.7 HP/s; fly 33.3%; armor≥0.4 0.0%; MR≥0.5 27.1%; no pressure flag |
-| 13 | 5,055 | 399 | 112.3 / 181.0 (gold 2,513) | arrival 4,537.6 HP/s; fly 0.0%; armor≥0.4 89.7%; MR≥0.5 10.3%; no pressure flag |
-| 14 | 1,448 | 174 | 32.2 / 211.2 (gold 2,932) | arrival 1,058.4 HP/s; fly 33.1%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 15 | 2,031 | 272 | 45.1 / 225.2 (gold 3,126) | arrival 1,777.1 HP/s; fly 25.7%; armor≥0.4 16.7%; MR≥0.5 0.0%; no pressure flag |
-| 16 | 2,168 | 244 | 48.2 / 246.2 (gold 3,418) | arrival 982.8 HP/s; fly 0.0%; armor≥0.4 38.7%; MR≥0.5 21.6%; no pressure flag |
-| 17 | 2,080 | 293 | 46.2 / 265.2 (gold 3,682) | arrival 1,460.0 HP/s; fly 75.0%; armor≥0.4 0.0%; MR≥0.5 25.0%; no pressure flag |
-| 18 | 3,175 | 317 | 70.6 / 287.7 (gold 3,995) | arrival 3,186.6 HP/s; fly 0.0%; armor≥0.4 40.5%; MR≥0.5 20.5%; no pressure flag |
-| 19 | 1,760 | 214 | 39.1 / 312.0 (gold 4,332) | arrival 1,645.0 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 20 | 3,844 | 440 | 85.4 / 328.9 (gold 4,566) | arrival 3,691.0 HP/s; fly 100.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 21 | 2,340 | 282 | 52.0 / 362.0 (gold 5,026) | arrival 1,155.5 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 23.3%; no pressure flag |
-| 22 | 3,025 | 363 | 67.2 / 383.7 (gold 5,328) | arrival 2,218.5 HP/s; fly 0.0%; armor≥0.4 46.0%; MR≥0.5 25.8%; no pressure flag |
-| 23 | 1,980 | 262 | 44.0 / 411.3 (gold 5,711) | arrival 1,265.0 HP/s; fly 65.7%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 24 | 2,188 | 254 | 48.6 / 431.6 (gold 5,993) | arrival 1,405.5 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 25.0%; no pressure flag |
-| 25 | 3,473 | 443 | 77.2 / 451.4 (gold 6,267) | arrival 3,291.4 HP/s; fly 0.0%; armor≥0.4 33.3%; MR≥0.5 22.5%; no pressure flag |
-| 26 | 9,248 | 747 | 205.5 / 484.7 (gold 6,730) | arrival 8,972.5 HP/s; fly 12.8%; armor≥0.4 82.2%; MR≥0.5 5.1%; no pressure flag |
+| 12 | 1,525 | 228 | 33.9 / 164.7 (gold 2,287) | arrival 1,096.7 HP/s; fly 31.5%; armor≥0.4 0.0%; MR≥0.5 25.6%; no pressure flag |
+| 13 | 5,055 | 399 | 112.3 / 182.6 (gold 2,535) | arrival 4,537.6 HP/s; fly 0.0%; armor≥0.4 89.7%; MR≥0.5 10.3%; no pressure flag |
+| 14 | 1,448 | 174 | 32.2 / 212.8 (gold 2,954) | arrival 1,058.4 HP/s; fly 33.1%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
+| 15 | 2,031 | 272 | 45.1 / 226.7 (gold 3,148) | arrival 1,777.1 HP/s; fly 25.7%; armor≥0.4 16.7%; MR≥0.5 0.0%; no pressure flag |
+| 16 | 2,548 | 274 | 56.6 / 247.8 (gold 3,440) | arrival 1,362.8 HP/s; fly 0.0%; armor≥0.4 33.0%; MR≥0.5 18.4%; no pressure flag |
+| 17 | 2,080 | 293 | 46.2 / 268.9 (gold 3,734) | arrival 1,460.0 HP/s; fly 75.0%; armor≥0.4 0.0%; MR≥0.5 25.0%; no pressure flag |
+| 18 | 3,175 | 317 | 70.6 / 291.5 (gold 4,047) | arrival 3,186.6 HP/s; fly 0.0%; armor≥0.4 40.5%; MR≥0.5 20.5%; no pressure flag |
+| 19 | 1,760 | 214 | 39.1 / 315.8 (gold 4,384) | arrival 1,645.0 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
+| 20 | 3,844 | 440 | 85.4 / 332.6 (gold 4,618) | arrival 3,691.0 HP/s; fly 100.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
+| 21 | 2,340 | 282 | 52.0 / 365.7 (gold 5,078) | arrival 1,155.5 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 23.3%; no pressure flag |
+| 22 | 3,025 | 363 | 67.2 / 387.5 (gold 5,380) | arrival 2,218.5 HP/s; fly 0.0%; armor≥0.4 46.0%; MR≥0.5 25.8%; no pressure flag |
+| 23 | 2,150 | 306 | 47.8 / 415.1 (gold 5,763) | arrival 1,289.3 HP/s; fly 60.5%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
+| 24 | 2,188 | 254 | 48.6 / 438.6 (gold 6,089) | arrival 1,405.5 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 25.0%; no pressure flag |
+| 25 | 3,473 | 443 | 77.2 / 458.3 (gold 6,363) | arrival 3,291.4 HP/s; fly 0.0%; armor≥0.4 33.3%; MR≥0.5 22.5%; no pressure flag |
+| 26 | 9,248 | 747 | 205.5 / 491.6 (gold 6,826) | arrival 8,972.5 HP/s; fly 12.8%; armor≥0.4 82.2%; MR≥0.5 5.1%; no pressure flag |
 
 ## Veilscar Confluence (`veilscar`)
 
@@ -196,22 +196,22 @@ Start gold: 460. Waves: 28. Pressure-flagged waves: 0.
 | 10 | 4,760 | 388 | 105.8 / 136.7 (gold 1,898) | arrival 4,534.8 HP/s; fly 0.0%; armor≥0.4 79.8%; MR≥0.5 8.2%; no pressure flag |
 | 11 | 1,670 | 235 | 37.1 / 166.1 (gold 2,306) | arrival 1,247.7 HP/s; fly 35.9%; armor≥0.4 0.0%; MR≥0.5 38.9%; no pressure flag |
 | 12 | 2,588 | 250 | 57.5 / 184.5 (gold 2,561) | arrival 1,795.0 HP/s; fly 0.0%; armor≥0.4 32.5%; MR≥0.5 34.0%; no pressure flag |
-| 13 | 2,032 | 276 | 45.2 / 203.9 (gold 2,831) | arrival 1,490.0 HP/s; fly 22.8%; armor≥0.4 16.7%; MR≥0.5 23.0%; no pressure flag |
-| 14 | 1,716 | 201 | 38.1 / 225.2 (gold 3,127) | arrival 1,137.9 HP/s; fly 35.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 15 | 2,370 | 270 | 52.7 / 241.1 (gold 3,348) | arrival 1,062.1 HP/s; fly 0.0%; armor≥0.4 35.4%; MR≥0.5 64.6%; no pressure flag |
-| 16 | 1,944 | 246 | 43.2 / 262.0 (gold 3,638) | arrival 1,505.6 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 17 | 2,256 | 304 | 50.1 / 281.2 (gold 3,904) | arrival 1,327.4 HP/s; fly 31.9%; armor≥0.4 15.1%; MR≥0.5 53.0%; no pressure flag |
-| 18 | 2,052 | 238 | 45.6 / 304.5 (gold 4,228) | arrival 1,704.7 HP/s; fly 22.6%; armor≥0.4 0.0%; MR≥0.5 21.4%; no pressure flag |
-| 19 | 4,140 | 472 | 92.0 / 323.1 (gold 4,486) | arrival 4,113.7 HP/s; fly 81.6%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 20 | 2,758 | 330 | 61.3 / 358.5 (gold 4,978) | arrival 2,181.3 HP/s; fly 0.0%; armor≥0.4 50.4%; MR≥0.5 28.3%; no pressure flag |
-| 21 | 2,106 | 246 | 46.8 / 383.7 (gold 5,328) | arrival 547.3 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 67.7%; no pressure flag |
-| 22 | 2,475 | 319 | 55.0 / 402.9 (gold 5,594) | arrival 2,424.6 HP/s; fly 23.4%; armor≥0.4 38.2%; MR≥0.5 0.0%; no pressure flag |
-| 23 | 2,440 | 323 | 54.2 / 427.3 (gold 5,933) | arrival 1,613.7 HP/s; fly 54.1%; armor≥0.4 13.9%; MR≥0.5 32.0%; no pressure flag |
-| 24 | 2,522 | 262 | 56.0 / 452.0 (gold 6,276) | arrival 1,208.4 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 34.9%; no pressure flag |
-| 25 | 5,374 | 476 | 119.4 / 472.3 (gold 6,558) | arrival 5,333.6 HP/s; fly 0.0%; armor≥0.4 70.7%; MR≥0.5 11.6%; no pressure flag |
-| 26 | 3,442 | 439 | 76.5 / 508.1 (gold 7,054) | arrival 3,164.8 HP/s; fly 17.4%; armor≥0.4 36.6%; MR≥0.5 26.4%; no pressure flag |
-| 27 | 3,360 | 369 | 74.7 / 541.1 (gold 7,513) | arrival 1,552.5 HP/s; fly 0.0%; armor≥0.4 15.2%; MR≥0.5 26.2%; no pressure flag |
-| 28 | 7,892 | 783 | 175.4 / 569.1 (gold 7,902) | arrival 7,770.1 HP/s; fly 13.5%; armor≥0.4 0.0%; MR≥0.5 5.9%; no pressure flag |
+| 13 | 2,412 | 306 | 53.6 / 203.9 (gold 2,831) | arrival 1,870.0 HP/s; fly 19.2%; armor≥0.4 14.1%; MR≥0.5 19.4%; no pressure flag |
+| 14 | 1,716 | 201 | 38.1 / 227.4 (gold 3,157) | arrival 1,137.9 HP/s; fly 35.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
+| 15 | 2,540 | 314 | 56.4 / 243.3 (gold 3,378) | arrival 1,090.4 HP/s; fly 0.0%; armor≥0.4 33.1%; MR≥0.5 60.2%; no pressure flag |
+| 16 | 1,944 | 246 | 43.2 / 267.4 (gold 3,712) | arrival 1,505.6 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
+| 17 | 2,256 | 304 | 50.1 / 286.5 (gold 3,978) | arrival 1,327.4 HP/s; fly 31.9%; armor≥0.4 15.1%; MR≥0.5 53.0%; no pressure flag |
+| 18 | 2,052 | 238 | 45.6 / 309.9 (gold 4,302) | arrival 1,704.7 HP/s; fly 22.6%; armor≥0.4 0.0%; MR≥0.5 21.4%; no pressure flag |
+| 19 | 4,140 | 472 | 92.0 / 328.4 (gold 4,560) | arrival 4,113.7 HP/s; fly 81.6%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
+| 20 | 2,758 | 330 | 61.3 / 363.9 (gold 5,052) | arrival 2,181.3 HP/s; fly 0.0%; armor≥0.4 50.4%; MR≥0.5 28.3%; no pressure flag |
+| 21 | 2,106 | 246 | 46.8 / 389.1 (gold 5,402) | arrival 547.3 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 67.7%; no pressure flag |
+| 22 | 2,475 | 319 | 55.0 / 408.2 (gold 5,668) | arrival 2,424.6 HP/s; fly 23.4%; armor≥0.4 38.2%; MR≥0.5 0.0%; no pressure flag |
+| 23 | 2,440 | 323 | 54.2 / 432.7 (gold 6,007) | arrival 1,613.7 HP/s; fly 54.1%; armor≥0.4 13.9%; MR≥0.5 32.0%; no pressure flag |
+| 24 | 3,282 | 322 | 72.9 / 457.4 (gold 6,350) | arrival 1,284.4 HP/s; fly 0.0%; armor≥0.4 0.0%; MR≥0.5 26.8%; no pressure flag |
+| 25 | 5,374 | 476 | 119.4 / 482.0 (gold 6,692) | arrival 5,333.6 HP/s; fly 0.0%; armor≥0.4 70.7%; MR≥0.5 11.6%; no pressure flag |
+| 26 | 3,442 | 439 | 76.5 / 517.7 (gold 7,188) | arrival 3,164.8 HP/s; fly 17.4%; armor≥0.4 36.6%; MR≥0.5 26.4%; no pressure flag |
+| 27 | 3,360 | 369 | 74.7 / 550.8 (gold 7,647) | arrival 1,552.5 HP/s; fly 0.0%; armor≥0.4 15.2%; MR≥0.5 26.2%; no pressure flag |
+| 28 | 7,892 | 783 | 175.4 / 578.8 (gold 8,036) | arrival 7,770.1 HP/s; fly 13.5%; armor≥0.4 0.0%; MR≥0.5 5.9%; no pressure flag |
 
 ## Shard economy summary
 

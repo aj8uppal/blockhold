@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { LanePath } from './path.ts'
 import type { Particles } from './particles.ts'
 import type { Enemy, Soldier } from './units.ts'
+import type { Tower } from './towers.ts'
 import type { SfxName } from '../core/audio.ts'
 
 /** anything that can be credited with kills (towers, traps, heroes) */
@@ -26,6 +27,7 @@ export interface World {
   particles: Particles
   enemies: Enemy[]
   soldiers: Soldier[]
+  towers: Tower[]
   cameraQuat: THREE.Quaternion
   time: number
 

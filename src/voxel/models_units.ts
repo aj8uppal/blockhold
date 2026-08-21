@@ -399,6 +399,50 @@ export function veilqueenModel(): VoxModel {
 
 // ---------- soldiers ----------
 
+/** small hexing imp: horned head, glowing eyes, whip tail */
+export function hexlingModel(): VoxModel {
+  const skin = 0x7a4fd0, dark = 0x5a3aa0, glow = 0xffe89f
+  const body: VoxBox[] = [box(0, 1.7, 0, 2.2, 1.8, 1.6, skin)]
+  const head: VoxBox[] = [
+    box(0, 3.4, 0, 2.4, 1.9, 2.0, skin),
+    box(-0.9, 4.6, 0, 0.5, 1.1, 0.5, dark),      // horns
+    box(0.9, 4.6, 0, 0.5, 1.1, 0.5, dark),
+    box(-0.55, 3.5, 1.02, 0.5, 0.4, 0.12, glow), // wicked eyes
+    box(0.55, 3.5, 1.02, 0.5, 0.4, 0.12, glow),
+    box(0, 2.85, 1.0, 1.2, 0.35, 0.14, 0x2a1a44), // grin
+  ]
+  const armL: VoxBox[] = [box(-1.35, 1.9, 0, 0.7, 1.4, 0.7, dark)]
+  const armR: VoxBox[] = [box(1.35, 1.9, 0, 0.7, 1.4, 0.7, dark)]
+  const legL: VoxBox[] = [box(-0.55, 0.55, 0, 0.8, 1.1, 0.8, dark)]
+  const legR: VoxBox[] = [box(0.55, 0.55, 0, 0.8, 1.1, 0.8, dark)]
+  const tail: VoxBox[] = [
+    box(0, 1.4, -1.2, 0.45, 0.45, 1.4, skin),
+    box(0, 1.7, -2.2, 0.6, 0.6, 0.7, dark),
+  ]
+  return {
+    parts: { body, head, armL, armR, legL, legR, tail },
+    pivots: { head: [0, 2.9, 0], armL: [-1.35, 2.5, 0], armR: [1.35, 2.5, 0], legL: [-0.55, 1.1, 0], legR: [0.55, 1.1, 0], tail: [0, 1.5, -0.6] },
+  }
+}
+
+/** armored banner-carrier whose rune-standard shields the horde ahead */
+export function wardbearerModel(): VoxModel {
+  const m = humanoid({
+    skin: 0x9a8fb0, shirt: 0x3a3448, pants: 0x2c2738,
+    helmet: 0x4d5266, tabard: 0x5f3d8f, weapon: 'none',
+  })
+  // rune-banner: tall standard clutched at the right shoulder
+  const banner: VoxBox[] = [
+    box(1.7, 3.6, -0.3, 0.4, 7.2, 0.4, 0x3a2e1f),
+    box(1.7, 6.9, 0.55, 0.16, 2.2, 1.7, 0x8fdfff, true),
+    box(1.7, 5.6, 0.35, 0.16, 0.6, 1.3, 0x8fdfff, true),
+    box(1.7, 7.3, 0.55, 0.4, 0.4, 0.4, 0xd8b64a),
+  ]
+  m.parts.banner = banner
+  m.pivots = { ...(m.pivots ?? {}), banner: [1.7, 3.6, -0.3] }
+  return m
+}
+
 export function militiaModel(): VoxModel {
   return humanoid({ skin: 0xd9a066, shirt: 0x8a6a4a, pants: 0x5c4a35, hair: 0x6b4a2a, weapon: 'spear' })
 }

@@ -132,19 +132,36 @@ export class Engine {
     this.buildSky(t)
   }
 
+  private surgeBlendAmt = 0
+  private chillBlendAmt = 0
+
   /** Veiltide surge: blend the world's light toward an ominous violet (0..1) */
   setSurgeBlend(blend: number): void {
+    this.surgeBlendAmt = blend
+    this.applyAmbientBlend()
+  }
+
+  /** Deep Chill: blend toward pale aurora blue (0..1); surge takes precedence */
+  setChillBlend(blend: number): void {
+    if (blend === this.chillBlendAmt) return
+    this.chillBlendAmt = blend
+    this.applyAmbientBlend()
+  }
+
+  private applyAmbientBlend(): void {
     const t = this.baseTheme
     if (!t) return
-    const mix = (base: number, surge: number) =>
-      new THREE.Color(base).lerp(new THREE.Color(surge), blend)
-    this.sun.color.copy(mix(t.sunColor, 0xb98fd8))
-    this.sun.intensity = t.sunIntensity * (1 - blend * 0.35)
-    this.hemi.color.copy(mix(t.hemiSky, 0x7a5aa8))
-    if (this.scene.fog instanceof THREE.Fog) this.scene.fog.color.copy(mix(t.fog, 0x584a78))
+    const s = this.surgeBlendAmt
+    const c = this.chillBlendAmt * (1 - s)
+    const mix = (base: number, surge: number, chill: number) =>
+      new THREE.Color(base).lerp(new THREE.Color(surge), s).lerp(new THREE.Color(chill), c)
+    this.sun.color.copy(mix(t.sunColor, 0xb98fd8, 0xcfe8ff))
+    this.sun.intensity = t.sunIntensity * (1 - s * 0.35) * (1 - c * 0.15)
+    this.hemi.color.copy(mix(t.hemiSky, 0x7a5aa8, 0x9fd0f0))
+    if (this.scene.fog instanceof THREE.Fog) this.scene.fog.color.copy(mix(t.fog, 0x584a78, 0xb8d8ea))
     if (this.skyMat) {
-      ;(this.skyMat.uniforms.uTop.value as THREE.Color).copy(mix(t.skyTop, 0x2a1d45))
-      ;(this.skyMat.uniforms.uBottom.value as THREE.Color).copy(mix(t.skyBottom, 0x6f4a8f))
+      ;(this.skyMat.uniforms.uTop.value as THREE.Color).copy(mix(t.skyTop, 0x2a1d45, 0x6fa8d0))
+      ;(this.skyMat.uniforms.uBottom.value as THREE.Color).copy(mix(t.skyBottom, 0x6f4a8f, 0xd0ecff))
     }
   }
 

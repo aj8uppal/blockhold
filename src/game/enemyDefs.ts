@@ -65,6 +65,20 @@ const defs: EnemyDef[] = [
     model: 'mistwalker', description: 'It slips between worlds — untouchable while it fades. Time your strikes.',
   },
   {
+    id: 'hexling', name: 'Hexling', hp: 85, speed: 1.1, armor: 0, magicResist: 0.3,
+    bounty: 22, livesCost: 1, hexer: { range: 1.6, duration: 12 },
+    attackDamage: [2, 4], attackInterval: 1.1,
+    model: 'hexling', scale: 0.85,
+    description: 'A cackling imp that leaps onto a tower and hexes it silent. Shoot it off — it pays well.',
+  },
+  {
+    id: 'wardbearer', name: 'Wardbearer', hp: 380, speed: 0.42, armor: 0.3, magicResist: 0.3,
+    bounty: 30, livesCost: 2, wardAura: { radius: 1.7, reduction: 0.5 },
+    attackDamage: [8, 14], attackInterval: 1.4,
+    model: 'wardbearer', scale: 1.15,
+    description: 'Its rune-banner half-shields every foe marching ahead of it. Bring the bearer down first.',
+  },
+  {
     id: 'riftwing', name: 'Riftwing', hp: 120, speed: 1.05, armor: 0.15, magicResist: 0.35,
     bounty: 17, livesCost: 2, flying: true, yOffset: 0.9,
     phasing: { interval: 4.2, duration: 0.8 },

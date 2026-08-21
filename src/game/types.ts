@@ -18,6 +18,10 @@ export interface EnemyDef {
   shardDrop?: number       // 💎 dropped on death
   phasing?: { interval: number, duration: number }  // periodically untargetable
   summons?: { id: string, count: number, interval: number }  // spawns minions while alive
+  /** leaps onto a nearby attacking tower and silences it until killed (or it gives up) */
+  hexer?: { range: number, duration: number }
+  /** shields enemies ahead of it (closer to the gate) within radius */
+  wardAura?: { radius: number, reduction: number }
   // melee vs blockers
   attackDamage: [number, number]
   attackInterval: number
@@ -111,6 +115,9 @@ export interface WaveDef {
 }
 
 export type ThemeId = 'forest' | 'winter' | 'ember' | 'swamp' | 'void'
+
+/** map signature mechanics — opportunity windows, never chores */
+export type HazardId = 'deepchill' | 'eruption' | 'witchlights' | 'riftlight'
 
 // ---------------- road traps ----------------
 
@@ -241,6 +248,8 @@ export interface LevelDef {
   water: Rect[]
   hills: Rect[]
   voids: Rect[]
+  /** the map's signature mechanic (see src/game/hazards.ts) */
+  hazard?: HazardId
   lanes: [number, number][][]  // waypoint polylines in grid coords (col,row)
   waves: WaveDef[]
   startGold: number

@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { EnemyDef, SoldierDef, DamageType } from './types.ts'
 import { LanePath } from './path.ts'
 import { World, KillCredit } from './world.ts'
+import type { Tower } from './towers.ts'
 import { buildModel, setFlash, getPart, VoxModel } from '../voxel/builder.ts'
 import * as units from '../voxel/models_units.ts'
 import { clamp, lerpAngle, randRange } from '../core/utils.ts'
@@ -20,6 +21,8 @@ export const enemyModelFactories: Record<string, () => VoxModel> = {
   shardback: units.shardbackModel,
   mistwalker: units.mistwalkerModel,
   veilqueen: units.veilqueenModel,
+  hexling: units.hexlingModel,
+  wardbearer: units.wardbearerModel,
 }
 
 const soldierModelFactories: Record<string, () => VoxModel> = {
@@ -124,6 +127,12 @@ export class Enemy {
   /** strike feedback: 1 at the moment damage lands, decays to 0 */
   private strikeT = 0
   private hitCount = 0
+  /** hexling: the tower this imp is perched on, silencing */
+  hexTarget: Tower | null = null
+  private hexUntil = 0
+  /** wardbearer protection: shielded while world.time < wardedUntil */
+  wardedUntil = -1
+  private wardTimer = 0
   private healAuraTimer = 0
   private animT = Math.random() * 10
   private flash = 0
@@ -171,6 +180,8 @@ export class Enemy {
   get alive(): boolean { return this.state === 'walking' }
   /** alive AND currently hittable (mistwalkers phase out) */
   get targetable(): boolean { return this.alive && !this.phased }
+  /** perched out of melee reach (soldiers must not chase a hexing imp) */
+  get unreachable(): boolean { return this.hexTarget !== null }
   get remaining(): number { return this.lane.length - this.dist }
 
   private applyTint(): void {
@@ -201,6 +212,13 @@ export class Enemy {
     let mult = 1
     if (type === 'physical') mult = 1 - this.armor
     else if (type === 'magic') mult = 1 - this.def.magicResist * (1 - (opts.mrPierce ?? 0))
+    // a wardbearer's banner half-shields the horde ahead of it
+    if (world.time < this.wardedUntil) {
+      mult *= 0.5
+      if (!opts.silent && Math.random() < 0.35) {
+        world.particles.magicImpact(this.pos.x, this.pos.y + 0.45, this.pos.z, 0x8fdfff)
+      }
+    }
     const dealt = Math.max(0, amount * mult)
     this.hp -= dealt
     if (!opts.silent) {
@@ -252,12 +270,39 @@ export class Enemy {
     if (this.state !== 'walking') return
     this.state = 'dying'
     this.dyingT = 0
+    this.releaseHex()
+    // a slain wardbearer's shield shatters off those it covered (wards lapse
+    // within a beat on their own, so overlapping bearers keep theirs)
+    if (this.def.wardAura) {
+      for (const e of world.enemies) {
+        if (e !== this && e.alive && world.time < e.wardedUntil) {
+          world.particles.magicImpact(e.pos.x, e.pos.y + 0.5, e.pos.z, 0x8fdfff)
+        }
+      }
+      world.sfx('lightning', 0.5)
+    }
     this.releaseBlockers()
     this.bar.group.visible = false
     world.onEnemyKilled(this)
   }
 
+  private releaseHex(): void {
+    if (this.hexTarget) {
+      if (this.hexTarget.hexedBy === this) this.hexTarget.hexedBy = null
+      this.hexTarget = null
+    }
+  }
+
+  /** knocked off (or done with) its perch: return to the road immediately */
+  dropFromPerch(): void {
+    if (!this.hexTarget) return
+    this.releaseHex()
+    const s = this.lane.sample(this.dist, this.offset)
+    this.group.position.set(s.x, 0, s.z)
+  }
+
   forceRemove(): void {
+    this.releaseHex()
     this.state = 'gone'
   }
 
@@ -328,6 +373,8 @@ export class Enemy {
         if (p.dps > dps) { dps = p.dps; strongest = p.credit }
       }
       if (dps > 0) {
+        // the ward halves poison the same as every other damage source
+        if (world.time < this.wardedUntil) dps *= 0.5
         this.hp -= dps * dt
         if (Math.random() < dt * 6) world.particles.poisonDrip(this.pos.x, this.pos.y + 0.3, this.pos.z)
         if (this.hp <= 0) {
@@ -346,6 +393,60 @@ export class Enemy {
           if (e !== this && e.alive && e.hp < e.maxHp && e.pos.distanceTo(this.pos) < this.def.healAura.radius) {
             e.heal(this.def.healAura.hps * 0.6)
             world.particles.healSparkle(e.pos.x, e.pos.y + 0.4, e.pos.z)
+          }
+        }
+      }
+    }
+
+    // hexling: leap onto a nearby attacking tower and silence it
+    if (this.def.hexer) {
+      if (this.hexTarget) {
+        if (world.time >= this.hexUntil) {
+          // the hex runs dry: hop off and resume the march
+          this.dropFromPerch()
+        } else {
+          // perch on the roof, cackling
+          const t = this.hexTarget
+          this.group.position.set(t.pos.x, t.perchY + Math.sin(this.animT * 5) * 0.05, t.pos.z)
+          this.group.rotation.y += dt * 2.5
+          this.bar.set(this.hp / this.maxHp, world.cameraQuat)
+          return
+        }
+      } else if (world.time >= this.stunUntil) {
+        const hexedCount = world.towers.reduce((n, t) => n + (t.hexedBy ? 1 : 0), 0)
+        if (hexedCount < 2) {
+          let best: Tower | null = null
+          let bestD = this.def.hexer.range
+          for (const t of world.towers) {
+            if (t.isBarracks || t.hexedBy) continue
+            const d = Math.hypot(t.pos.x - this.pos.x, t.pos.z - this.pos.z)
+            if (d < bestD) { bestD = d; best = t }
+          }
+          if (best) {
+            this.hexTarget = best
+            best.hexedBy = this
+            this.hexUntil = world.time + this.def.hexer.duration
+            this.releaseBlockers()
+            world.particles.magicImpact(best.pos.x, best.perchY, best.pos.z, 0xb37aff)
+            world.floater(best.pos.x, best.perchY + 0.3, best.pos.z, 'Hexed!', 'shard')
+            world.sfx('magic', 0.9)
+          }
+        }
+      }
+    }
+
+    // wardbearer: the banner half-shields everyone marching ahead of it
+    // (marked at 4Hz so a crowd of bearers stays cheap in deep endless)
+    if (this.def.wardAura) {
+      this.wardTimer -= dt
+      if (this.wardTimer <= 0) {
+        this.wardTimer = 0.25
+        const a = this.def.wardAura
+        for (const e of world.enemies) {
+          if (e !== this && e.alive && !e.def.wardAura && !e.def.boss
+            && e.remaining < this.remaining
+            && e.pos.distanceTo(this.pos) < a.radius) {
+            e.wardedUntil = world.time + 0.45
           }
         }
       }
@@ -668,7 +769,7 @@ export class Soldier {
       let best: Enemy | null = null
       let bestScore = Infinity
       for (const e of world.enemies) {
-        if (!e.targetable || e.def.flying) continue
+        if (!e.targetable || e.def.flying || e.unreachable) continue
         if (e.def.boss && this.def.shunBosses) continue
         if (e.blockers.length >= 3) continue
         const dHome = e.pos.distanceTo(this.home)

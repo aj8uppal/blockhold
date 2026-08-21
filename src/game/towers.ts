@@ -51,6 +51,11 @@ export class Tower {
   perk: PerkDef | null = null
   overchargeUntil = 0
   overchargeCdUntil = 0
+  /** the hexling silencing this tower, if any */
+  hexedBy: Enemy | null = null
+  /** riftlight: empowered attack rate while world.time < riftUntil */
+  riftUntil = 0
+  private hexRing: THREE.Mesh | null = null
   private crownMesh: THREE.Mesh | null = null
   private chargeRing: THREE.Mesh | null = null
   private turretYaw = 0
@@ -78,6 +83,11 @@ export class Tower {
   /** resonance damage bonus from same-family neighbors */
   get resonanceMult(): number {
     return 1 + 0.06 * this.resonance
+  }
+
+  /** where a hexling sits when it silences this tower */
+  get perchY(): number {
+    return towerCrownHeight(this.def.model) * this.sizeMult * 0.8
   }
 
   isOvercharged(world: World): boolean { return world.time < this.overchargeUntil }
@@ -176,7 +186,12 @@ export class Tower {
     }
     this.soldiers = []
     if (this.rallyFlag) world.dynamic.remove(this.rallyFlag)
-    for (const m of [this.crownMesh, this.chargeRing]) {
+    // a sold tower shrugs its imp off onto the road
+    if (this.hexedBy) {
+      this.hexedBy.dropFromPerch()
+      this.hexedBy = null
+    }
+    for (const m of [this.crownMesh, this.chargeRing, this.hexRing]) {
       if (m) {
         m.geometry.dispose()
         ;(m.material as THREE.Material).dispose()
@@ -184,6 +199,7 @@ export class Tower {
     }
     this.crownMesh = null
     this.chargeRing = null
+    this.hexRing = null
   }
 
   /** live-update soldier max HP when resonance or perks change */
@@ -352,6 +368,25 @@ export class Tower {
       return
     }
 
+    // hexed: the perched imp silences the tower until dislodged
+    if (this.hexedBy && (!this.hexedBy.alive || this.hexedBy.hexTarget !== this)) this.hexedBy = null
+    if (this.hexedBy) {
+      if (!this.hexRing) {
+        const geo = new THREE.RingGeometry(0.4, 0.5, 32)
+        geo.rotateX(-Math.PI / 2)
+        const mat = new THREE.MeshBasicMaterial({ color: 0xb37aff, transparent: true, opacity: 0.65, toneMapped: false, depthWrite: false })
+        this.hexRing = new THREE.Mesh(geo, mat)
+        this.hexRing.position.y = 0.06
+        this.hexRing.renderOrder = 3
+        this.group.add(this.hexRing)
+      }
+      this.hexRing.visible = true
+      this.hexRing.rotation.y += dt * 4
+      this.hexRing.scale.setScalar(this.sizeMult * (1 + Math.sin(world.time * 6) * 0.1))
+      return
+    }
+    if (this.hexRing) this.hexRing.visible = false
+
     this.cooldown -= dt
     const prevTarget = this.target
     this.acquireTarget(world)
@@ -384,7 +419,10 @@ export class Tower {
       }
       if (this.cooldown <= 0 && aimDiff < 0.35) {
         this.stallT = 0
-        const rate = this.isOvercharged(world) ? 1 + OVERCHARGE_RATE_BONUS : 1
+        // overcharge and riftlight don't stack — the stronger boost wins
+        const rate = 1 + Math.max(
+          this.isOvercharged(world) ? OVERCHARGE_RATE_BONUS : 0,
+          world.time < this.riftUntil ? 0.4 : 0)
         this.cooldown = this.def.attackInterval! / rate
         this.fire(t, world)
         this.recoil = 1

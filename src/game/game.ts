@@ -7,6 +7,7 @@ import {
   OVERCHARGE_SHARD_COST, ASCEND_SHARD_COST, ASCEND_GOLD_COST,
 } from './types.ts'
 import { Trap, TrapSpotInfo } from './traps.ts'
+import { Hazard, createHazard } from './hazards.ts'
 import { enemyDef } from './enemyDefs.ts'
 import { towerTrees } from './towerDefs.ts'
 import { buildPaths, LanePath } from './path.ts'
@@ -72,6 +73,9 @@ export class Game implements World {
   private lastLeak: { name: string, wave: number } | null = null
   private waveTracks = new Map<number, { spawned: number, gone: number, leaked: boolean }>()
   private surgeBlend = 0
+  private hazard: Hazard | null = null
+  /** enemy mechanics already explained this battle (first-encounter toasts) */
+  private mechanicsSeen = new Set<string>()
 
   // interaction
   selectedTower: Tower | null = null
@@ -192,6 +196,13 @@ export class Game implements World {
 
   spawnEnemyAt(id: string, laneIndex: number, dist: number, opts: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean } = {}): void {
     const def = enemyDef(id)
+    // interaction enemies teach themselves the first time they appear
+    if ((def.hexer || def.wardAura) && !this.mechanicsSeen.has(id)) {
+      this.mechanicsSeen.add(id)
+      this.hud.showToast(def.hexer
+        ? 'A Hexling! It leaps onto a tower and silences it — shoot it off for a fat bounty.'
+        : 'A Wardbearer! Its banner half-shields every foe ahead of it. Bring the bearer down first.', 7)
+    }
     const surged = opts.surged ?? false
     const eliteChance = this.difficulty === 'veteran' ? 0.12 : this.isEndless ? 0.08 : 0
     const elite = (opts.eliteRoll ?? false) && !def.boss && Math.random() < eliteChance
@@ -314,6 +325,7 @@ export class Game implements World {
     this.earlyCallSeconds = 0
     this.lastLeak = null
     this.waveTracks.clear()
+    this.mechanicsSeen.clear()
     this.retiredKillers = []
     const paths = buildPaths(level)
     this.lanes = paths.lanes
@@ -363,6 +375,7 @@ export class Game implements World {
     this.soldiers.push(this.hero)
     this.dynamic.add(this.hero.group)
 
+    this.hazard = level.hazard ? createHazard(level.hazard, level.id) : null
     this.buildLanePreview()
     this.phase = 'playing'
     this.onPhaseChange('playing')
@@ -448,6 +461,8 @@ export class Game implements World {
 
   disposeLevel(): void {
     audio.stopMusic()
+    this.hazard?.dispose(this)
+    this.hazard = null
     this.removeLanePreview()
     this.simAccumulator = 0
     this.level = null
@@ -497,6 +512,8 @@ export class Game implements World {
     clearBurnZones(this)
     clearMines(this)
     clearRunes(this)
+    this.hazard?.dispose(this)
+    this.hazard = null
     audio.play(won ? 'victory' : 'defeat')
     audio.stopMusic()
     let stars = 0
@@ -1221,6 +1238,7 @@ export class Game implements World {
     updateBurnZones(dt, this)
     updateMines(dt, this)
     updateRunes(dt, this)
+    this.hazard?.update(dt, this)
     for (let i = this.pendingCasts.length - 1; i >= 0; i--) {
       if (this.pendingCasts[i].at <= this.time) {
         this.fireProjectile(this.pendingCasts[i].spec)
