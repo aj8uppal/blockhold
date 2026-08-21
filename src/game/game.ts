@@ -19,7 +19,7 @@ import { Hero, HERO_DEFS } from './hero.ts'
 import { Tower } from './towers.ts'
 import { WaveManager } from './waves.ts'
 import { World, ProjectileSpec } from './world.ts'
-import { Projectile, createProjectile, updateBurnZones, clearBurnZones } from './projectiles.ts'
+import { Projectile, createProjectile, updateBurnZones, clearBurnZones, updateMines, clearMines, updateRunes, clearRunes, clearOwnedEffects } from './projectiles.ts'
 import { armoryTier } from './armory.ts'
 import type { HUD } from '../ui/hud.ts'
 import { randRange } from '../core/utils.ts'
@@ -98,6 +98,10 @@ export class Game implements World {
   constructor(canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas)
     this.save = loadSave()
+    // retroactive unlocks: stars on a map always open the next one, so saves
+    // from before the campaign grew see the new maps without replaying
+    const starIdx = levels.reduce((m, l, i) => (this.save.stars[l.id] ?? 0) > 0 ? Math.max(m, i) : m, -1)
+    this.save.unlocked = Math.max(this.save.unlocked, Math.min(starIdx + 2, levels.length))
     audio.setMuted(this.save.sfxMuted)
     audio.setMusicMuted(this.save.musicMuted)
 
@@ -128,21 +132,24 @@ export class Game implements World {
 
   onEnemyKilled(e: Enemy): void {
     this.killCount++
-    const bounty = Math.max(1, Math.round(e.def.bounty * DIFFICULTIES[this.difficulty].bounty * (e.elite ? 1.6 : 1)))
-    this.addGold(bounty, e.pos.x, e.pos.y + e.barY, e.pos.z)
-    const shardGain = (e.def.shardDrop ?? 0) + (e.elite ? 1 : 0) + (e.def.boss ? 4 : 0)
-    if (shardGain > 0) {
-      this.shards += shardGain
-      this.shardsEarned += shardGain
-      this.floater(e.pos.x, e.pos.y + e.barY + 0.25, e.pos.z, `+${shardGain}💎`, 'shard')
-      this.particles.magicImpact(e.pos.x, e.pos.y + 0.4, e.pos.z, 0x8fdfff)
+    // summoned-while-alive enemies pay nothing: stalling a summoner must not be a gold farm
+    if (!e.noReward) {
+      const bounty = Math.max(1, Math.round(e.def.bounty * DIFFICULTIES[this.difficulty].bounty * (e.elite ? 1.6 : 1)))
+      this.addGold(bounty, e.pos.x, e.pos.y + e.barY, e.pos.z)
+      const shardGain = (e.def.shardDrop ?? 0) + (e.elite ? 1 : 0) + (e.def.boss ? 4 : 0)
+      if (shardGain > 0) {
+        this.shards += shardGain
+        this.shardsEarned += shardGain
+        this.floater(e.pos.x, e.pos.y + e.barY + 0.25, e.pos.z, `+${shardGain}💎`, 'shard')
+        this.particles.magicImpact(e.pos.x, e.pos.y + 0.4, e.pos.z, 0x8fdfff)
+      }
+      if (this.hero && this.hero.alive && this.hero.group.position.distanceTo(e.pos) < (this.hero.ranged ? 2.5 : 1.7)) {
+        this.hero.gainXp(e.def.bounty, this)
+      }
+      this.particles.coinBurst(e.pos.x, e.pos.y + 0.4, e.pos.z)
+      this.sfx('coin', 0.5)
     }
-    if (this.hero && this.hero.alive && this.hero.group.position.distanceTo(e.pos) < (this.hero.ranged ? 2.5 : 1.7)) {
-      this.hero.gainXp(e.def.bounty, this)
-    }
-    this.particles.coinBurst(e.pos.x, e.pos.y + 0.4, e.pos.z)
     this.particles.deathPuff(e.pos.x, e.pos.y + 0.2, e.pos.z, 0x777788)
-    this.sfx('coin', 0.5)
     this.sfx('die', 0.6)
     if (e.def.spawnOnDeath) {
       for (let i = 0; i < e.def.spawnOnDeath.count; i++) {
@@ -176,7 +183,7 @@ export class Game implements World {
     return 1 + Math.max(0, this.waves.waveIndex - 6) * 0.035
   }
 
-  spawnEnemyAt(id: string, laneIndex: number, dist: number, opts: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number } = {}): void {
+  spawnEnemyAt(id: string, laneIndex: number, dist: number, opts: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean } = {}): void {
     const def = enemyDef(id)
     const surged = opts.surged ?? false
     const eliteChance = this.difficulty === 'veteran' ? 0.12 : this.isEndless ? 0.08 : 0
@@ -187,6 +194,7 @@ export class Game implements World {
       elite,
       surged,
       waveTag: opts.waveTag ?? -1,
+      noReward: opts.noReward ?? false,
     })
     this.enemies.push(e)
     this.dynamic.add(e.group)
@@ -211,7 +219,8 @@ export class Game implements World {
         this.defenseStreak++
         this.bestStreak = Math.max(this.bestStreak, this.defenseStreak)
         this.perfectWaves++
-        const bonus = 3 + Math.min(7, this.defenseStreak)
+        // streak pay scales harder now that campaigns run longer and capstones cost real gold
+        const bonus = 4 + Math.min(12, this.defenseStreak * 2)
         this.addGold(bonus)
         const end = e.lane.sample(e.lane.length - 0.5)
         this.floater(end.x, 0.9, end.z, this.defenseStreak >= 2 ? `Wave held! 🔥×${this.defenseStreak} +${bonus}🪙` : `Wave held! +${bonus}🪙`, 'gold')
@@ -364,6 +373,8 @@ export class Game implements World {
       this.terrain = null
     }
     clearBurnZones(this)
+    clearMines(this)
+    clearRunes(this)
     for (const e of this.enemies) { this.dynamic.remove(e.group); disposeClonedMaterials(e.group) }
     for (const s of this.soldiers) { this.dynamic.remove(s.group); disposeClonedMaterials(s.group) }
     for (const p of this.projectiles) { this.dynamic.remove(p.mesh); p.dispose?.() }
@@ -400,6 +411,8 @@ export class Game implements World {
     this.projectiles = []
     this.pendingCasts = []
     clearBurnZones(this)
+    clearMines(this)
+    clearRunes(this)
     audio.play(won ? 'victory' : 'defeat')
     audio.stopMusic()
     let stars = 0
@@ -952,6 +965,7 @@ export class Game implements World {
     this.addGold(tower.sellValue, tower.pos.x, tower.pos.y + 0.6, tower.pos.z)
     this.goldEarned -= tower.sellValue  // refunds are not earnings
     tower.plot.occupied = false
+    clearOwnedEffects(this, tower)
     tower.dismantle(this)
     this.dynamic.remove(tower.group)
     const i = this.towers.indexOf(tower)
@@ -972,7 +986,7 @@ export class Game implements World {
 
   ascendTower(tower: Tower, perkIndex: 0 | 1): void {
     if (this.paused) return
-    if (tower.level !== 4 || tower.perk !== null) return
+    if (tower.level < 4 || tower.perk !== null) return
     if (this.shards < ASCEND_SHARD_COST || this.gold < ASCEND_GOLD_COST) {
       this.sfx('error'); this.hud.flashGold(); return
     }
@@ -1112,6 +1126,8 @@ export class Game implements World {
       }
     }
     updateBurnZones(dt, this)
+    updateMines(dt, this)
+    updateRunes(dt, this)
     for (let i = this.pendingCasts.length - 1; i >= 0; i--) {
       if (this.pendingCasts[i].at <= this.time) {
         this.fireProjectile(this.pendingCasts[i].spec)

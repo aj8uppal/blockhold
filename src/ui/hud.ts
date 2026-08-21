@@ -422,7 +422,9 @@ export class HUD {
     el('div', 'tp-icon', head, TOWER_ICONS[tower.kind])
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, tower.def.name)
-    el('div', 'tp-level', title, (tower.level === 4
+    el('div', 'tp-level', title, (tower.level === 5
+      ? '✦ Capstone'
+      : tower.level === 4
       ? '★ Specialized'
       : 'Level ' + '●'.repeat(tower.level) + '○'.repeat(3 - tower.level))
       + `<span class="tp-kills" title="Enemies slain by this building"> · ☠ ${tower.kills}</span>`)
@@ -439,14 +441,14 @@ export class HUD {
 
     const actions = el('div', 'tp-actions', p)
     tower.upgradeOptions.forEach((opt, i) => {
-      const btn = el('button', 'btn upgrade', actions) as HTMLButtonElement
+      const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, actions) as HTMLButtonElement
       btn.dataset.cost = `${opt.cost}`
-      btn.innerHTML = `<span class="u-name">${tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">🪙${opt.cost}</span><span class="u-desc">${opt.description}</span>`
+      btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">🪙${opt.cost}</span><span class="u-desc">${opt.description}</span>`
       btn.onclick = this.menuGuard(() => this.game.upgradeTower(tower, i))
       btn.disabled = this.game.gold < opt.cost
     })
-    // ascension: tier-4 towers pick one of two shard-bought perks
-    if (tower.level === 4 && !tower.perk) {
+    // ascension: tier-4+ towers pick one of two shard-bought perks
+    if (tower.level >= 4 && !tower.perk) {
       PERKS[tower.kind].forEach((perk, i) => {
         const btn = el('button', 'btn upgrade ascend', actions) as HTMLButtonElement
         btn.innerHTML = `<span class="u-name">${perk.icon} Ascend: ${perk.name}</span><span class="u-cost">💎${ASCEND_SHARD_COST} 🪙${ASCEND_GOLD_COST}</span><span class="u-desc">${perk.description}</span>`
@@ -626,7 +628,7 @@ function statLine(def: TowerLevelDef, m: StatMults): string {
   if (def.soldier) {
     const s = def.soldier
     const hp = Math.round(s.hp * m.soldierHp)
-    return `👥 3× ${s.name} · ❤️ ${hp} · ⚔️ ${s.damage[0]}–${s.damage[1]}` +
+    return `👥 ${def.soldierCount ?? 3}× ${s.name} · ❤️ ${hp} · ⚔️ ${s.damage[0]}–${s.damage[1]}` +
       `${s.armor ? ` · 🛡 ${Math.round(s.armor * 100)}%` : ''} · ⟳ ${def.respawnTime}s respawn`
   }
   const lo = Math.round(def.damage![0] * m.dmg), hi = Math.round(def.damage![1] * m.dmg)

@@ -264,7 +264,7 @@ export class Screens {
     card.insertAdjacentHTML('beforeend', `
       <div class="help-grid">
         <div><b>🏗 Build.</b> Click a stone plot and pick a tower. Arrows are cheap and quick, mages pierce armor, cannons splash groups, barracks block the road.</div>
-        <div><b>⬆ Upgrade.</b> Towers level up three times, then choose one of two elite specializations.</div>
+        <div><b>⬆ Upgrade.</b> Towers level up three times, choose one of two elite specializations — then, for a small fortune, crown the tree with a capstone: Crown Volleys, Convergence Runes, Seismic Charges, or the Last Muster.</div>
         <div><b>🛡 Block.</b> Barracks soldiers hold enemies in place while your towers work. Move them with the rally flag.</div>
         <div><b>🤴 Command your hero.</b> Sir Aldric levels up from nearby kills and slams groups of foes. Select him (or press H), then click the ground to move him.</div>
         <div><b>⚔️ Call waves.</b> Call the next wave early for bonus gold — if you dare.</div>

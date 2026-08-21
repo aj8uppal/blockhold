@@ -93,6 +93,8 @@ export interface EnemySpawnOpts {
   surged?: boolean
   /** which wave this enemy belongs to (streak/promise tracking); -1 = untracked */
   waveTag?: number
+  /** summoned while the summoner lives: no bounty/shards/XP (anti-farming) */
+  noReward?: boolean
 }
 
 const ELITE_TINT = 0x9f3aff
@@ -113,6 +115,7 @@ export class Enemy {
   readonly elite: boolean
   readonly surged: boolean
   readonly waveTag: number
+  readonly noReward: boolean
   private speedMult: number
   phased = false
   private phaseTimer = 0
@@ -132,6 +135,7 @@ export class Enemy {
     this.elite = opts.elite ?? false
     this.surged = opts.surged ?? false
     this.waveTag = opts.waveTag ?? -1
+    this.noReward = opts.noReward ?? false
     this.speedMult = opts.speedMult ?? 1
     const hpMult = (opts.hpMult ?? 1) * (this.elite ? 1.9 : 1)
     this.hp = this.maxHp = Math.round(def.hp * hpMult)
@@ -144,7 +148,7 @@ export class Enemy {
     this.group = buildModel(factory(), `enemy:${def.model}`, { cloneMaterials: true })
     const s = (def.scale ?? 1) * 1.12 * (this.elite ? 1.15 : 1)
     this.group.scale.setScalar(s)
-    if (this.elite || this.surged) this.applyTint()
+    if (this.elite || this.surged || def.tint !== undefined) this.applyTint()
     this.barY = (def.model === 'juggernaut' ? 1.35 : def.model === 'brute' ? 1.0 : 0.75) * s + (def.yOffset ?? 0)
     this.radius = 0.22 * s
     this.parts = {}
@@ -167,10 +171,13 @@ export class Enemy {
   get remaining(): number { return this.lane.length - this.dist }
 
   private applyTint(): void {
+    const color = this.elite ? ELITE_TINT : this.surged ? 0x6f2aaf : this.def.tint
+    if (color === undefined) return
+    const intensity = this.elite ? 0.32 : this.surged ? 0.2 : 0.28
     this.group.traverse(o => {
       if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial && !o.material.userData.shared) {
-        o.material.emissive.set(this.elite ? ELITE_TINT : 0x6f2aaf)
-        o.material.emissiveIntensity = this.elite ? 0.32 : 0.2
+        o.material.emissive.set(color)
+        o.material.emissiveIntensity = intensity
       }
     })
   }
@@ -262,7 +269,7 @@ export class Enemy {
       this.flash -= dt
       if (this.flash <= 0) {
         setFlash(this.group, 0)
-        if (this.elite || this.surged) this.applyTint()
+        if (this.elite || this.surged || this.def.tint !== undefined) this.applyTint()
       }
     }
 
@@ -287,7 +294,7 @@ export class Enemy {
       if (this.summonTimer >= this.def.summons.interval) {
         this.summonTimer = 0
         for (let i = 0; i < this.def.summons.count; i++) {
-          world.spawnEnemyAt(this.def.summons.id, this.laneIndex, Math.max(0, this.dist - 0.25 - i * 0.2), { waveTag: this.waveTag })
+          world.spawnEnemyAt(this.def.summons.id, this.laneIndex, Math.max(0, this.dist - 0.25 - i * 0.2), { waveTag: this.waveTag, noReward: true })
         }
         world.particles.magicImpact(this.pos.x, this.pos.y + 0.5, this.pos.z, 0xdd6bff)
         world.sfx('magic', 0.8)
@@ -484,6 +491,8 @@ export class Soldier {
   dead = false
   respawnTimer = 0
   expiresAt: number | null = null
+  /** Last Muster: each death may rally retainers exactly once */
+  musterConsumed = false
   /** kills by this soldier are credited here (its barracks, or the hero itself) */
   credit: KillCredit | null = null
   private attackTimer = 0
@@ -544,6 +553,7 @@ export class Soldier {
 
   revive(spawnPos: THREE.Vector3): void {
     this.dead = false
+    this.musterConsumed = false
     this.hp = this.maxHp
     this.flash = 0
     setFlash(this.group, 0)
@@ -597,6 +607,7 @@ export class Soldier {
       let bestScore = Infinity
       for (const e of world.enemies) {
         if (!e.targetable || e.def.flying) continue
+        if (e.def.boss && this.def.shunBosses) continue
         if (e.blockers.length >= 3) continue
         const dHome = e.pos.distanceTo(this.home)
         if (dHome > 1.9) continue

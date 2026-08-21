@@ -310,6 +310,9 @@ button:disabled { cursor: not-allowed; }
 .btn.upgrade.ascend { border-color: rgba(143, 223, 255, 0.45); }
 .btn.upgrade.ascend .u-name, .btn.upgrade.ascend .u-cost { color: #8fdfff; }
 .btn.upgrade.ascend:hover:not(:disabled) { background: rgba(143, 223, 255, 0.14); border-color: #8fdfff; }
+.btn.upgrade.capstone { border-color: rgba(255, 232, 159, 0.5); }
+.btn.upgrade.capstone .u-name, .btn.upgrade.capstone .u-cost { color: #ffe89f; }
+.btn.upgrade.capstone:hover:not(:disabled) { background: rgba(255, 232, 159, 0.12); border-color: #ffe89f; }
 .btn.overcharge { border-color: rgba(143, 223, 255, 0.5); color: #bfeaff; }
 .btn.overcharge:hover:not(:disabled) { background: rgba(143, 223, 255, 0.18); border-color: #8fdfff; }
 .tp-extras { display: block; margin-top: 4px; color: #8fdfff; }

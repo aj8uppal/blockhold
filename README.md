@@ -24,13 +24,15 @@ npm test           # vitest unit/regression suite
 
 ## The campaign
 
-Five maps, each with its own theme, roster, and shape of pressure:
+Seven maps, each with its own theme, roster, and shape of pressure:
 
 1. **Greenhollow** — the meadow road. Learn the trade.
 2. **Frostmere Pass** — two frozen roads, one gate.
 3. **The Emberwastes** — twin warpaths and the Juggernaut.
 4. **Mistfen Crossing** — a drowned fen where Mistwalkers phase in and out of reach.
 5. **The Shattered Crown** — three converging warpaths and the flying Veilqueen.
+6. **Cinderwake Caldera** — three roads through the glassfire, hunted by phasing Riftwings.
+7. **Veilscar Confluence** — the 28-wave finale, where Rift Heralds sing reinforcements into being and the Veil Regent walks.
 
 Three difficulties per map (Veteran adds elite-affix enemies), three stars per victory, all progress saved locally.
 
@@ -42,9 +44,10 @@ Three difficulties per map (Veteran adds elite-affix enemies), three stars per v
 - **Resonance.** Same-family towers standing adjacent buff each other (+6% damage; barracks raise tougher soldiers). Placement geometry is a real decision.
 - **A hero roster.** Sir Aldric the Bulwark (melee anchor, Valor Slam), Liora the Gale Warden (ranged, hits flyers, Piercing Volley), or Zephyra the Stormcaller (armor-ignoring bolts, Static Nova slow-burst). Heroes take move orders with real A* pathfinding, level from nearby kills, and respawn where they fell.
 - **The Long Night.** Beat any map to unlock its Endless mode: 200 procedurally escalating waves, a surge every fifth, a boss every tenth, HP that keeps climbing — and a per-map deepest-wave record to chase.
-- **Enemies that bend the rules.** Mistwalkers phase untargetable; Shardbacks are armored piñatas; the Veilqueen flies over everything you built on the ground and births gargoyles as she comes.
+- **Enemies that bend the rules.** Mistwalkers phase untargetable; Shardbacks are armored piñatas; the Veilqueen flies over everything you built on the ground and births gargoyles as she comes — and her Regent phases mid-march while singing heralds into being.
+- **Capstone towers.** Every family's tree ends in one very expensive tier-5 crown that keeps the chosen branch identity and adds a signature mechanic: the Crownwing Aerie's five-target Crown Volley, the Convergence Monolith's pulsing lightning runes, the Faultline Arsenal's buried Seismic Charges, and the Oathgate Citadel's Last Muster of retainers.
 
-Plus the genre backbone: 4 tower families × 3 levels × 2 elite specializations, armor/magic-resist counterplay, soldier blocking with rally points, early wave calls, Meteor Storm and Reinforcements, and the star-funded **Royal Armory** meta-upgrade board (8 tracks, free respec).
+Plus the genre backbone: 4 tower families × 3 levels × 2 elite specializations × 1 capstone, armor/magic-resist counterplay, soldier blocking with rally points, early wave calls, Meteor Storm and Reinforcements, and the star-funded **Royal Armory** meta-upgrade board (8 tracks, free respec).
 
 ### Controls
 

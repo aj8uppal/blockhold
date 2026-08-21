@@ -3,7 +3,8 @@ import {
   TowerKind, TowerLevelDef, PerkDef, PERKS,
   OVERCHARGE_SHARD_COST, OVERCHARGE_DURATION, OVERCHARGE_COOLDOWN, OVERCHARGE_RATE_BONUS,
 } from './types.ts'
-import { towerTrees, investedGold, SELL_REFUND } from './towerDefs.ts'
+import { towerTrees, investedGold, resolveCapstone, SELL_REFUND, RETAINER, MUSTER_COOLDOWN, MUSTER_LIFETIME } from './towerDefs.ts'
+import { addConvergenceRune } from './projectiles.ts'
 import { World } from './world.ts'
 import { Enemy, Soldier } from './units.ts'
 import { PlotInfo } from './terrain.ts'
@@ -13,22 +14,28 @@ import { randRange, lerpAngle, clamp } from '../core/utils.ts'
 
 const boltColors: Record<string, number> = {
   mage1: 0x8f5aff, mage2: 0x7a6aff, mage3: 0x5aa0ff, mage4a: 0xb37aff, mage4b: 0x9fe8ff,
+  mage5a: 0xd8a5ff, mage5b: 0xbfefff,
 }
 
 /** where the ascension sigil floats, per tower model */
 function towerCrownHeight(model: string): number {
-  if (model.startsWith('arrow')) return 1.6
-  if (model.startsWith('mage')) return 1.75
-  if (model.startsWith('cannon')) return 1.15
-  return 1.25
+  const t5 = model.includes('5')
+  if (model.startsWith('arrow')) return t5 ? 2.1 : 1.6
+  if (model.startsWith('mage')) return t5 ? 2.0 : 1.75
+  if (model.startsWith('cannon')) return t5 ? 1.35 : 1.15
+  return t5 ? 1.45 : 1.25
 }
 
 export class Tower {
   group: THREE.Group
   model!: THREE.Group
   def!: TowerLevelDef
-  level: 1 | 2 | 3 | 4 = 1
+  level: 1 | 2 | 3 | 4 | 5 = 1
   branch: 0 | 1 | null = null
+  /** capstone: attack counter driving Crown Volley / Convergence Rune */
+  private signatureCount = 0
+  /** capstone: Last Muster cooldown gate */
+  private musterReadyAt = 0
   cooldown = 0
   target: Enemy | null = null
   soldiers: Soldier[] = []
@@ -108,6 +115,7 @@ export class Tower {
     const tree = towerTrees[this.kind]
     if (this.level === 1 || this.level === 2) return [tree.levels[this.level]]
     if (this.level === 3) return [...tree.branches]
+    if (this.level === 4 && this.branch !== null) return [resolveCapstone(this.kind, this.branch)]
     return []
   }
 
@@ -137,6 +145,12 @@ export class Tower {
       this.branch = optionIndex as 0 | 1
       this.level = 4
       this.applyLevel(tree.branches[optionIndex], world)
+    } else if (this.level === 4 && this.branch !== null) {
+      this.level = 5
+      this.applyLevel(resolveCapstone(this.kind, this.branch), world)
+      // the ascension sigil rides the new silhouette
+      if (this.crownMesh) this.crownMesh.position.y = towerCrownHeight(this.def.model)
+      world.particles.magicImpact(this.pos.x, this.pos.y + 1.0, this.pos.z, 0xffe89f)
     }
     world.particles.buildDust(this.pos.x, this.pos.y + 0.15, this.pos.z)
     world.sfx('upgrade')
@@ -216,7 +230,7 @@ export class Tower {
   }
 
   soldierHome(i: number): THREE.Vector3 {
-    const angle = (i / 3) * Math.PI * 2 + 0.6
+    const angle = (i / (this.def.soldierCount ?? 3)) * Math.PI * 2 + 0.6
     return new THREE.Vector3(
       this.rallyPoint.x + Math.sin(angle) * 0.3,
       0,
@@ -357,6 +371,21 @@ export class Tower {
     }
   }
 
+  /** one arrow with this tree's crit/poison rolls applied per-arrow */
+  private fireArrowAt(target: Enemy, dmg: number, from: THREE.Vector3, world: World): void {
+    const def = this.def
+    let damage = dmg
+    let crit = false
+    if (def.special?.kind === 'crit' && Math.random() < def.special.chance) {
+      damage *= def.special.mult
+      crit = true
+    }
+    const poison = def.special?.kind === 'poison' && Math.random() < def.special.chance
+      ? { dps: def.special.dps, duration: def.special.duration }
+      : undefined
+    world.fireProjectile({ kind: 'arrow', from, target, damage, crit, poison, credit: this, world })
+  }
+
   private fire(target: Enemy, world: World, isEcho = false): void {
     const def = this.def
     let dmg = randRange(...def.damage!) * world.towerDamageMult(this.kind) * this.resonanceMult
@@ -364,17 +393,25 @@ export class Tower {
     const from = this.muzzle()
     switch (this.kind) {
       case 'arrow': {
-        let damage = dmg
-        let crit = false
-        if (def.special?.kind === 'crit' && Math.random() < def.special.chance) {
-          damage *= def.special.mult
-          crit = true
-        }
-        const poison = def.special?.kind === 'poison' && Math.random() < def.special.chance
-          ? { dps: def.special.dps, duration: def.special.duration }
-          : undefined
-        world.fireProjectile({ kind: 'arrow', from, target, damage, crit, poison, credit: this, world })
+        this.fireArrowAt(target, dmg, from, world)
         world.sfx('arrow', 0.7)
+        // Crown Volley: every fifth attack showers up to 5 more foes at 65%
+        if (this.level === 5 && ++this.signatureCount >= 5) {
+          this.signatureCount = 0
+          const extras: Enemy[] = []
+          for (const e of world.enemies) {
+            if (!e.targetable || e === target) continue
+            if (e.def.flying && !def.flying) continue
+            if (Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) > this.range + e.radius) continue
+            extras.push(e)
+          }
+          extras.sort((a, b) => a.remaining - b.remaining)
+          for (const e of extras.slice(0, 5)) this.fireArrowAt(e, dmg * 0.75, from, world)
+          if (extras.length > 0) {
+            world.sfx('arrow', 0.9)
+            world.particles.magicImpact(from.x, from.y + 0.3, from.z, 0xffe89f)
+          }
+        }
         break
       }
       case 'mage': {
@@ -391,6 +428,11 @@ export class Tower {
           world.sfx('magic', 0.7)
         }
         world.particles.magicImpact(from.x, from.y, from.z, boltColors[def.model] ?? 0x8f5aff)
+        // Convergence Rune: every fifth cast anchors a pulsing rune (echoes don't count)
+        if (this.level === 5 && !isEcho && ++this.signatureCount >= 5) {
+          this.signatureCount = 0
+          addConvergenceRune(world, target.pos.x, target.pos.z, this)
+        }
         // Echo Casting: chance to immediately cast again
         if (!isEcho && this.perk?.id === 'echo' && Math.random() < 0.18) {
           this.fire(target, world, true)
@@ -410,8 +452,15 @@ export class Tower {
         const splashMult = world.splashMult() * (this.perk?.id === 'napalm' ? 1.3 : 1)
         world.fireProjectile({
           kind: 'bomb', from, at, damage: dmg, splash: def.splash! * splashMult,
-          cluster: cluster ? { count: cluster.count, damage: cluster.damage, radius: cluster.radius } : undefined,
-          burn: burn ? { dps: burn.dps, duration: burn.duration, radius: burn.radius } : undefined,
+          cluster: cluster ? { count: cluster.count, damage: cluster.damage, radius: cluster.radius * splashMult } : undefined,
+          burn: burn ? { dps: burn.dps, duration: burn.duration, radius: burn.radius * splashMult } : undefined,
+          // Faultline Arsenal: every shell buries a seismic charge in the crater
+          mine: this.level === 5 ? {
+            damage: [52 * this.resonanceMult, 78 * this.resonanceMult], radius: 0.95 * splashMult, trigger: 0.65,
+            armTime: 1, life: 10, maxActive: 3,
+            stunChance: this.perk?.id === 'tremor' ? 0.3 : 0,
+            owner: this,
+          } : undefined,
           stunChance: this.perk?.id === 'tremor' ? 0.3 : undefined,
           credit: this,
           world,
@@ -426,6 +475,14 @@ export class Tower {
   private updateBarracks(dt: number, world: World): void {
     for (const s of this.soldiers) {
       if (s.dead) {
+        // Last Muster: a fallen veteran rallies two short-lived retainers
+        if (!s.musterConsumed) {
+          s.musterConsumed = true
+          if (this.level === 5 && world.time >= this.musterReadyAt) {
+            this.musterReadyAt = world.time + MUSTER_COOLDOWN
+            this.lastMuster(world)
+          }
+        }
         s.respawnTimer += dt
         if (s.respawnTimer >= (this.def.respawnTime ?? 10)) {
           s.revive(this.doorPos())
@@ -433,5 +490,31 @@ export class Tower {
         }
       }
     }
+  }
+
+  private lastMuster(world: World): void {
+    // retainers honor the same soldier bonuses the panel advertises
+    const hpMult = world.soldierHpMult()
+      * (this.perk?.id === 'vanguard' ? 1.25 : 1)
+      * (1 + 0.08 * this.resonance)
+    const dmgMult = this.perk?.id === 'whetstone' ? 1.25 : 1
+    const def = {
+      ...RETAINER,
+      hp: Math.round(RETAINER.hp * hpMult),
+      damage: [Math.round(RETAINER.damage[0] * dmgMult), Math.round(RETAINER.damage[1] * dmgMult)] as [number, number],
+    }
+    for (let i = 0; i < 2; i++) {
+      const spawn = this.doorPos().add(new THREE.Vector3(randRange(-0.25, 0.25), 0, randRange(0, 0.2)))
+      const home = new THREE.Vector3(
+        this.rallyPoint.x + randRange(-0.3, 0.3), 0, this.rallyPoint.z + randRange(-0.3, 0.3))
+      const r = new Soldier(def, spawn, home)
+      r.expiresAt = world.time + MUSTER_LIFETIME
+      r.credit = this
+      world.soldiers.push(r)
+      world.dynamic.add(r.group)
+      world.particles.healSparkle(spawn.x, 0.4, spawn.z)
+    }
+    world.sfx('reinforce', 0.8)
+    world.floater(this.pos.x, this.pos.y + 1.1, this.pos.z, 'Last Muster!', 'gold')
   }
 }

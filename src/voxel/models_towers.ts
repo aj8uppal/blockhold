@@ -323,23 +323,94 @@ function berserkerHall(): VoxModel {
   }
 }
 
+// ---------------- capstones (tier 5) ----------------
+// Each capstone keeps its tier-4 branch silhouette and adds capstone regalia.
+
+function crownwingAerie(branch: 0 | 1): VoxModel {
+  const m = branch === 0 ? sharpshooterTower() : galeTower()
+  const h = branch === 0 ? 11 : 9.5
+  // a gold crown parapet ringing the top, and a royal beacon above it all
+  if (branch === 0) {
+    m.parts.base.push(
+      ...crenels(0, h + 2.3, 0, 5.6, 5.6, W.gold),
+      box(0, h + 5.6, 0, 0.35, 1.6, 0.35, W.gold),
+      box(0, h + 6.7, 0, 0.8, 0.8, 0.8, 0xffe89f, true),
+    )
+  } else {
+    m.parts.base.push(
+      ...crenels(0, h + 2.0, 0, 6.6, 6.6, W.gold),
+      box(0, h + 3.4, 0, 0.35, 3.2, 0.35, W.gold),
+      box(0, h + 5.3, 0, 0.8, 0.8, 0.8, 0xffe89f, true),
+    )
+  }
+  // bright arrow rack on the parapet
+  m.parts.base.push(...[-1.0, -0.5, 0, 0.5, 1.0].map(x => box(x, h + 1.7, -2.9, 0.18, 1.3, 0.18, 0xffe89f, true)))
+  return m
+}
+
+function convergenceMonolith(branch: 0 | 1): VoxModel {
+  const m = branch === 0 ? arcaneObelisk() : stormSpire()
+  const cy = branch === 0 ? 12.4 : 10.6
+  // four violet slabs orbit the focus crystal (they spin with it)
+  for (const [dx, dz] of [[-2.1, 0], [2.1, 0], [0, -2.1], [0, 2.1]] as const) {
+    m.parts.crystal.push(box(dx, cy, dz, 0.5, 1.7, 0.5, 0xb37aff, true))
+  }
+  m.parts.base.push(
+    box(0, 1.7, 0, 8.4, 0.4, 8.4, 0x2a1d45),
+    box(0, 2.0, 0, 7.2, 0.3, 7.2, 0x8fdfff, true),   // convergence ring
+  )
+  return m
+}
+
+function faultlineArsenal(branch: 0 | 1): VoxModel {
+  const m = branch === 0 ? dragonfireMortar() : clusterBombard()
+  // seismic charge stockpiles by the walls
+  m.parts.base.push(
+    box(-2.9, 1.7, 0.6, 1.1, 1.0, 1.1, 0x2b2333),
+    box(-2.9, 2.4, 0.6, 0.8, 0.5, 0.8, 0xff7a3c, true),
+    box(2.9, 1.7, -0.6, 1.1, 1.0, 1.1, 0x2b2333),
+    box(2.9, 2.4, -0.6, 0.8, 0.5, 0.8, 0xff7a3c, true),
+  )
+  // gilded reinforcement bands on the gun
+  if (branch === 0) m.parts.turret.push(box(0, 7.2, 0.7, 3.4, 0.6, 3.4, W.gold))
+  else m.parts.turret.push(box(-1.1, 5.8, 3.0, 1.8, 1.8, 0.5, W.gold), box(1.1, 5.8, 3.0, 1.8, 1.8, 0.5, W.gold))
+  return m
+}
+
+function oathgateCitadel(branch: 0 | 1): VoxModel {
+  const m = branch === 0 ? paladinSanctum() : berserkerHall()
+  const sigil = branch === 0 ? 0xffe89f : 0xff7a3c
+  // the oath-gate arch over the mustering door
+  m.parts.base.push(
+    box(-1.7, 2.2, 3.9, 0.7, 4.4, 0.7, W.stoneDark),
+    box(1.7, 2.2, 3.9, 0.7, 4.4, 0.7, W.stoneDark),
+    box(0, 4.7, 3.9, 4.2, 0.9, 0.9, W.stoneDark),
+    box(0, 5.6, 3.9, 1.2, 0.9, 0.3, sigil, true),
+  )
+  return m
+}
+
 // ---------------- registry ----------------
 
 export type TowerModelId =
-  | 'arrow1' | 'arrow2' | 'arrow3' | 'arrow4a' | 'arrow4b'
-  | 'mage1' | 'mage2' | 'mage3' | 'mage4a' | 'mage4b'
-  | 'cannon1' | 'cannon2' | 'cannon3' | 'cannon4a' | 'cannon4b'
-  | 'barracks1' | 'barracks2' | 'barracks3' | 'barracks4a' | 'barracks4b'
+  | 'arrow1' | 'arrow2' | 'arrow3' | 'arrow4a' | 'arrow4b' | 'arrow5a' | 'arrow5b'
+  | 'mage1' | 'mage2' | 'mage3' | 'mage4a' | 'mage4b' | 'mage5a' | 'mage5b'
+  | 'cannon1' | 'cannon2' | 'cannon3' | 'cannon4a' | 'cannon4b' | 'cannon5a' | 'cannon5b'
+  | 'barracks1' | 'barracks2' | 'barracks3' | 'barracks4a' | 'barracks4b' | 'barracks5a' | 'barracks5b'
 
 const factories: Record<TowerModelId, () => VoxModel> = {
   arrow1: () => arrowTower(1), arrow2: () => arrowTower(2), arrow3: () => arrowTower(3),
   arrow4a: sharpshooterTower, arrow4b: galeTower,
+  arrow5a: () => crownwingAerie(0), arrow5b: () => crownwingAerie(1),
   mage1: () => mageTower(1), mage2: () => mageTower(2), mage3: () => mageTower(3),
   mage4a: arcaneObelisk, mage4b: stormSpire,
+  mage5a: () => convergenceMonolith(0), mage5b: () => convergenceMonolith(1),
   cannon1: () => cannonTower(1), cannon2: () => cannonTower(2), cannon3: () => cannonTower(3),
   cannon4a: dragonfireMortar, cannon4b: clusterBombard,
+  cannon5a: () => faultlineArsenal(0), cannon5b: () => faultlineArsenal(1),
   barracks1: () => barracksTower(1), barracks2: () => barracksTower(2), barracks3: () => barracksTower(3),
   barracks4a: paladinSanctum, barracks4b: berserkerHall,
+  barracks5a: () => oathgateCitadel(0), barracks5b: () => oathgateCitadel(1),
 }
 
 const modelCache = new Map<TowerModelId, VoxModel>()
@@ -351,10 +422,10 @@ export function towerModel(id: TowerModelId): VoxModel {
 
 /** world-space height where projectiles originate */
 export const muzzleHeights: Record<TowerModelId, number> = {
-  arrow1: 0.75, arrow2: 0.9, arrow3: 1.05, arrow4a: 1.35, arrow4b: 1.2,
-  mage1: 0.95, mage2: 1.15, mage3: 1.3, mage4a: 1.25, mage4b: 1.05,
-  cannon1: 0.5, cannon2: 0.6, cannon3: 0.72, cannon4a: 0.8, cannon4b: 0.62,
-  barracks1: 0.5, barracks2: 0.5, barracks3: 0.5, barracks4a: 0.5, barracks4b: 0.5,
+  arrow1: 0.75, arrow2: 0.9, arrow3: 1.05, arrow4a: 1.35, arrow4b: 1.2, arrow5a: 1.4, arrow5b: 1.25,
+  mage1: 0.95, mage2: 1.15, mage3: 1.3, mage4a: 1.25, mage4b: 1.05, mage5a: 1.3, mage5b: 1.1,
+  cannon1: 0.5, cannon2: 0.6, cannon3: 0.72, cannon4a: 0.8, cannon4b: 0.62, cannon5a: 0.85, cannon5b: 0.66,
+  barracks1: 0.5, barracks2: 0.5, barracks3: 0.5, barracks4a: 0.5, barracks4b: 0.5, barracks5a: 0.5, barracks5b: 0.5,
 }
 
 /** Build plot marker */

@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { World, ProjectileSpec, KillCredit } from './world.ts'
+import { World, ProjectileSpec, KillCredit, MineSpec } from './world.ts'
 import { Enemy, Soldier } from './units.ts'
 import { buildModel } from '../voxel/builder.ts'
 import * as env from '../voxel/models_env.ts'
@@ -150,6 +150,9 @@ class BombProjectile extends Ballistic {
     }
     if (burn) {
       addBurnZone(world, at, burn.radius, burn.dps, burn.duration, credit)
+    }
+    if (this.spec.mine) {
+      addMine(world, at, this.spec.mine)
     }
   }
 }
@@ -334,7 +337,19 @@ export interface BurnZone {
 
 const burnZones: BurnZone[] = []
 
+function removeBurnZone(world: World, z: BurnZone): void {
+  z.done = true
+  world.dynamic.remove(z.mesh)
+  z.mesh.geometry.dispose()
+  ;(z.mesh.material as THREE.Material).dispose()
+}
+
 export function addBurnZone(world: World, at: THREE.Vector3, radius: number, dps: number, duration: number, credit?: KillCredit): void {
+  // per-tower cap: overcharged mortars must not layer unbounded true DPS on a choke
+  if (credit) {
+    const own = burnZones.filter(z => !z.done && z.credit === credit)
+    if (own.length >= 3) removeBurnZone(world, own[0])
+  }
   const geo = new THREE.CircleGeometry(radius, 24)
   geo.rotateX(-Math.PI / 2)
   const mat = new THREE.MeshBasicMaterial({ color: 0xff6a2f, transparent: true, opacity: 0.4, toneMapped: false, depthWrite: false })
@@ -349,10 +364,7 @@ export function updateBurnZones(dt: number, world: World): void {
   for (const z of burnZones) {
     if (z.done) continue
     if (world.time > z.until) {
-      z.done = true
-      world.dynamic.remove(z.mesh)
-      z.mesh.geometry.dispose()
-      ;(z.mesh.material as THREE.Material).dispose()
+      removeBurnZone(world, z)
       continue
     }
     const mat = z.mesh.material as THREE.MeshBasicMaterial
@@ -381,11 +393,179 @@ export function updateBurnZones(dt: number, world: World): void {
 
 export function clearBurnZones(world: World): void {
   for (const z of burnZones) {
-    if (!z.done) {
-      world.dynamic.remove(z.mesh)
-      z.mesh.geometry.dispose()
-      ;(z.mesh.material as THREE.Material).dispose()
-    }
+    if (!z.done) removeBurnZone(world, z)
   }
   burnZones.length = 0
+}
+
+/** a sold tower takes its buried charges, runes, and burning ground with it */
+export function clearOwnedEffects(world: World, owner: KillCredit): void {
+  for (const m of mines) { if (!m.done && m.spec.owner === owner) removeMine(world, m) }
+  for (const r of runes) { if (!r.done && r.owner === owner) removeRune(world, r) }
+  for (const z of burnZones) { if (!z.done && z.credit === owner) removeBurnZone(world, z) }
+}
+
+// ---------------- seismic charges (cannon capstone) ----------------
+
+interface Mine {
+  mesh: THREE.Mesh
+  pos: THREE.Vector3
+  spec: MineSpec
+  armedAt: number
+  until: number
+  done: boolean
+}
+
+const mines: Mine[] = []
+
+function removeMine(world: World, m: Mine): void {
+  m.done = true
+  world.dynamic.remove(m.mesh)
+  m.mesh.geometry.dispose()
+  ;(m.mesh.material as THREE.Material).dispose()
+}
+
+export function addMine(world: World, at: THREE.Vector3, spec: MineSpec): void {
+  // per-tower cap: planting beyond it defuses the oldest quietly
+  const own = mines.filter(m => !m.done && m.spec.owner === spec.owner)
+  if (own.length >= spec.maxActive) removeMine(world, own[0])
+  const geo = new THREE.BoxGeometry(0.26, 0.12, 0.26)
+  const mat = new THREE.MeshBasicMaterial({ color: 0x3a2d24, toneMapped: false })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.set(at.x, 0.06, at.z)
+  mesh.rotation.y = Math.random() * Math.PI
+  world.dynamic.add(mesh)
+  mines.push({ mesh, pos: at.clone().setY(0), spec, armedAt: world.time + spec.armTime, until: world.time + spec.life, done: false })
+}
+
+export function updateMines(dt: number, world: World): void {
+  for (const m of mines) {
+    if (m.done) continue
+    if (world.time > m.until) { removeMine(world, m); continue }
+    const armed = world.time >= m.armedAt
+    const mat = m.mesh.material as THREE.MeshBasicMaterial
+    // cracks glow orange while arming, then pulse when live
+    mat.color.set(armed
+      ? (Math.sin(world.time * 6) > 0 ? 0xff7a3c : 0xb84a20)
+      : 0x6b4a30)
+    if (!armed) continue
+    for (const e of world.enemies) {
+      if (!e.targetable || e.def.flying) continue
+      if (Math.hypot(e.pos.x - m.pos.x, e.pos.z - m.pos.z) < m.spec.trigger + e.radius) {
+        removeMine(world, m)
+        explode(world, m.pos, randRange(...m.spec.damage), m.spec.radius, m.spec.stunChance, m.spec.owner)
+        break
+      }
+    }
+  }
+  if (mines.length > 24) {
+    for (let i = mines.length - 1; i >= 0; i--) {
+      if (mines[i].done) mines.splice(i, 1)
+    }
+  }
+}
+
+export function clearMines(world: World): void {
+  for (const m of mines) { if (!m.done) removeMine(world, m) }
+  mines.length = 0
+}
+
+// ---------------- convergence runes (mage capstone) ----------------
+
+/** what the rune needs to know about its tower without importing Tower */
+export interface RuneOwner extends KillCredit {
+  perk: { id: string } | null
+  resonanceMult: number
+}
+
+interface Rune {
+  mesh: THREE.Group
+  pos: THREE.Vector3
+  owner: RuneOwner
+  pulsesLeft: number
+  nextPulseAt: number
+  done: boolean
+}
+
+const runes: Rune[] = []
+const RUNE_RADIUS = 1.4
+const RUNE_PULSES = 4
+const RUNE_PULSE_GAP = 1
+const RUNE_BASE_DAMAGE = 30
+const RUNE_MAX_PER_TOWER = 2
+
+function removeRune(world: World, r: Rune): void {
+  r.done = true
+  world.dynamic.remove(r.mesh)
+  r.mesh.traverse(o => {
+    if (o instanceof THREE.Mesh) {
+      o.geometry.dispose()
+      ;(o.material as THREE.Material).dispose()
+    }
+  })
+}
+
+export function addConvergenceRune(world: World, x: number, z: number, owner: RuneOwner): void {
+  const own = runes.filter(r => !r.done && r.owner === owner)
+  if (own.length >= RUNE_MAX_PER_TOWER) removeRune(world, own[0])
+  const group = new THREE.Group()
+  const mkRing = (radius: number, color: number, opacity: number) => {
+    const geo = new THREE.RingGeometry(radius * 0.86, radius, 32)
+    geo.rotateX(-Math.PI / 2)
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, toneMapped: false, depthWrite: false })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.renderOrder = 2
+    return mesh
+  }
+  group.add(mkRing(RUNE_RADIUS * 0.55, 0xb37aff, 0.55), mkRing(RUNE_RADIUS, 0x8fdfff, 0.35))
+  group.position.set(x, 0.05, z)
+  world.dynamic.add(group)
+  world.particles.magicImpact(x, 0.3, z, 0xb37aff)
+  world.sfx('magic', 0.6)
+  runes.push({ mesh: group, pos: new THREE.Vector3(x, 0, z), owner, pulsesLeft: RUNE_PULSES, nextPulseAt: world.time, done: false })
+}
+
+export function updateRunes(dt: number, world: World): void {
+  for (const r of runes) {
+    if (r.done) continue
+    r.mesh.children[0].rotation.y += dt * 1.8
+    r.mesh.children[1].rotation.y -= dt * 1.2
+    if (world.time < r.nextPulseAt) continue
+    r.pulsesLeft--
+    r.nextPulseAt = world.time + RUNE_PULSE_GAP
+    // pulse: strike the nearest foe in the circle, arcing outward from it
+    let nearest: Enemy | null = null
+    let bestD = Infinity
+    for (const e of world.enemies) {
+      if (!e.targetable) continue
+      const d = Math.hypot(e.pos.x - r.pos.x, e.pos.z - r.pos.z)
+      if (d < RUNE_RADIUS + e.radius && d < bestD) { bestD = d; nearest = e }
+    }
+    if (nearest) {
+      world.fireProjectile({
+        kind: 'chain',
+        from: r.pos.clone().setY(0.15),
+        first: nearest,
+        damage: RUNE_BASE_DAMAGE * world.towerDamageMult('mage') * r.owner.resonanceMult,
+        targets: 3,
+        falloff: 0.7,
+        stunChance: 0,
+        stunDur: 0,
+        mrPierce: r.owner.perk?.id === 'deepveil' ? 0.5 : undefined,
+        credit: r.owner,
+        world,
+      })
+    }
+    if (r.pulsesLeft <= 0) removeRune(world, r)
+  }
+  if (runes.length > 24) {
+    for (let i = runes.length - 1; i >= 0; i--) {
+      if (runes[i].done) runes.splice(i, 1)
+    }
+  }
+}
+
+export function clearRunes(world: World): void {
+  for (const r of runes) { if (!r.done) removeRune(world, r) }
+  runes.length = 0
 }
