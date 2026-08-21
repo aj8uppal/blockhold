@@ -1,6 +1,6 @@
 import { Game } from './game/game.ts'
 import { HUD } from './ui/hud.ts'
-import { Screens } from './ui/screens.ts'
+import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
 import { levelById } from './game/levels.ts'
 import { audio } from './core/audio.ts'
 import './style.css'
@@ -41,11 +41,13 @@ screens.onPlayLevel = (id, difficulty, hero, mode) => {
   hud.reset()
   hud.setChrome(true)
   screens.show('none')
-  // still inside the user's tap gesture: phones go fullscreen as battle starts
+  // still inside the user's tap gesture: phones go fullscreen as battle starts.
+  // iPadOS is skipped on purpose — its Safari fullscreen bans keyboard focus
+  // ("typing isn't allowed") and exits on a swipe; the installed app doesn't.
   if (isTouchDevice()) {
-    if (fullscreenSupported()) {
+    if (fullscreenSupported() && !isIPadOS()) {
       enterFullscreen()
-    } else if (!(navigator as Navigator & { standalone?: boolean }).standalone && !localStorage.getItem('blockhold.a2hs-hint')) {
+    } else if (needsInstallGuide() && !localStorage.getItem('blockhold.a2hs-hint')) {
       localStorage.setItem('blockhold.a2hs-hint', '1')
       setTimeout(() => hud.showToast('Tip: "Play fullscreen" on the main menu shows how to install Blockhold as a real fullscreen app', 8), 1500)
     }

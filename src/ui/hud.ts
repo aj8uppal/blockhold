@@ -77,6 +77,12 @@ export class HUD {
 
   constructor(private game: Game) {
     this.root = document.getElementById('hud')!
+    // Safari (iPad) exits HTML5 fullscreen when anything keeps keyboard focus
+    // ("typing isn't allowed in full screen") — starve that heuristic: no HUD
+    // control needs focus, so drop it the instant a tap grants it
+    this.root.addEventListener('focusin', (e) => {
+      if (document.fullscreenElement && e.target instanceof HTMLElement) e.target.blur()
+    })
     this.buildTopBar()
     this.buildWaveButton()
     this.buildAbilities()

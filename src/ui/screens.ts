@@ -38,12 +38,20 @@ export interface BattleStats {
 
 const fmtTime = (sec: number) => `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`
 
-/** true on iOS-style browsers: touch, no Fullscreen API, not already installed */
+/** iPadOS masquerades as macOS but is the only "Mac" with a touchscreen */
+export function isIPadOS(): boolean {
+  return /iPad/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+
+/** true where the installed app beats (or is the only) fullscreen: iPhones have
+ *  no Fullscreen API, and iPad Safari's fullscreen bans keyboard focus and
+ *  exits on a swipe — the Home Screen app has neither problem */
 export function needsInstallGuide(): boolean {
   const doc = document as Document & { webkitFullscreenEnabled?: boolean }
   const nav = navigator as Navigator & { standalone?: boolean }
   return window.matchMedia('(pointer: coarse)').matches
-    && !(doc.fullscreenEnabled || doc.webkitFullscreenEnabled)
+    && (!(doc.fullscreenEnabled || doc.webkitFullscreenEnabled) || isIPadOS())
     && !nav.standalone
     && !window.matchMedia('(display-mode: standalone)').matches
     && !window.matchMedia('(display-mode: fullscreen)').matches
@@ -97,7 +105,7 @@ export class Screens {
     const card = el('div', 'help-card install-card', overlay)
     el('h2', '', card, `${icon('fullscreen')} Play fullscreen`)
     el('div', 'install-intro', card,
-      'iPhones don\'t let web pages go fullscreen — but an installed Blockhold launches like a real app: fullscreen, offline, with its own icon. Takes ten seconds:')
+      'Safari fullscreen is a bad home for a game: iPhones don\'t allow it at all, and on iPad it blocks input and quits when you swipe. An installed Blockhold launches like a real app instead — true fullscreen, offline, no quirks. Takes ten seconds:')
     const steps = el('div', 'install-steps', card)
     const step = (n: number, ico: string, html: string) => {
       const s = el('div', 'install-step', steps)
