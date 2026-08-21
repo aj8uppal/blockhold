@@ -22,6 +22,7 @@ import { World, ProjectileSpec } from './world.ts'
 import { Projectile, createProjectile, updateBurnZones, clearBurnZones, updateMines, clearMines, updateRunes, clearRunes, clearOwnedEffects } from './projectiles.ts'
 import { armoryTier } from './armory.ts'
 import type { HUD } from '../ui/hud.ts'
+import { icon } from '../ui/icons.ts'
 import { randRange } from '../core/utils.ts'
 
 export type GamePhase = 'idle' | 'playing' | 'victory' | 'defeat'
@@ -140,7 +141,7 @@ export class Game implements World {
       if (shardGain > 0) {
         this.shards += shardGain
         this.shardsEarned += shardGain
-        this.floater(e.pos.x, e.pos.y + e.barY + 0.25, e.pos.z, `+${shardGain}💎`, 'shard')
+        this.floater(e.pos.x, e.pos.y + e.barY + 0.25, e.pos.z, `+${shardGain}${icon('gem')}`, 'shard')
         this.particles.magicImpact(e.pos.x, e.pos.y + 0.4, e.pos.z, 0x8fdfff)
       }
       if (this.hero && this.hero.alive && this.hero.group.position.distanceTo(e.pos) < (this.hero.ranged ? 2.5 : 1.7)) {
@@ -223,7 +224,9 @@ export class Game implements World {
         const bonus = 4 + Math.min(12, this.defenseStreak * 2)
         this.addGold(bonus)
         const end = e.lane.sample(e.lane.length - 0.5)
-        this.floater(end.x, 0.9, end.z, this.defenseStreak >= 2 ? `Wave held! 🔥×${this.defenseStreak} +${bonus}🪙` : `Wave held! +${bonus}🪙`, 'gold')
+        this.floater(end.x, 0.9, end.z, this.defenseStreak >= 2
+          ? `Wave held! ${icon('flame')}×${this.defenseStreak} +${bonus}${icon('coin')}`
+          : `Wave held! +${bonus}${icon('coin')}`, 'gold')
         if (this.defenseStreak > 0 && this.defenseStreak % 5 === 0) {
           this.hud.showBanner(`${this.defenseStreak} WAVES HELD!`, '')
         }
@@ -1009,7 +1012,7 @@ export class Game implements World {
       if (surgeNext && secondsLeft >= 8) {
         this.shards += 1
         this.shardsEarned += 1
-        this.hud.spawnFloater(window.innerWidth / 2, 156, 'Veiltide defied! +1💎', 'shard')
+        this.hud.spawnFloater(window.innerWidth / 2, 156, `Veiltide defied! +1${icon('gem')}`, 'shard')
         this.sfx('crit', 0.8)
       }
     }

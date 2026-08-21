@@ -15,14 +15,14 @@ export interface ArmoryTrack {
 }
 
 export const ARMORY_TRACKS: ArmoryTrack[] = [
-  { id: 'fletching', icon: '🏹', name: 'Fletching', desc: 'Arrow towers deal +8% damage per tier.', tierCosts: [1, 2] },
-  { id: 'arcane', icon: '🔮', name: 'Arcane Focus', desc: 'Mage towers deal +8% damage per tier.', tierCosts: [1, 2] },
-  { id: 'powder', icon: '💥', name: 'Black Powder', desc: 'Cannon blast radius +12% per tier.', tierCosts: [1, 2] },
-  { id: 'drill', icon: '🛡️', name: 'Drill Sergeants', desc: 'Barracks soldiers and reinforcements gain +15% health per tier.', tierCosts: [1, 2] },
-  { id: 'coffers', icon: '🪙', name: 'Royal Coffers', desc: 'Begin every battle with +40 gold.', tierCosts: [1] },
-  { id: 'comet', icon: '☄️', name: 'Comet Calling', desc: 'Meteor Storm recharges 20% faster and calls one extra meteor.', tierCosts: [2] },
-  { id: 'prospector', icon: '💎', name: 'Prospector', desc: 'Begin every battle with +3 shards per tier.', tierCosts: [1, 2] },
-  { id: 'runesmith', icon: '🧿', name: 'Runesmith', desc: 'Road traps re-arm 20% faster per tier.', tierCosts: [1, 2] },
+  { id: 'fletching', icon: 'bow', name: 'Fletching', desc: 'Arrow towers deal +8% damage per tier.', tierCosts: [1, 2] },
+  { id: 'arcane', icon: 'orb', name: 'Arcane Focus', desc: 'Mage towers deal +8% damage per tier.', tierCosts: [1, 2] },
+  { id: 'powder', icon: 'blast', name: 'Black Powder', desc: 'Cannon blast radius +12% per tier.', tierCosts: [1, 2] },
+  { id: 'drill', icon: 'shield', name: 'Drill Sergeants', desc: 'Barracks soldiers and reinforcements gain +15% health per tier.', tierCosts: [1, 2] },
+  { id: 'coffers', icon: 'chest', name: 'Royal Coffers', desc: 'Begin every battle with +40 gold.', tierCosts: [1] },
+  { id: 'comet', icon: 'meteor', name: 'Comet Calling', desc: 'Meteor Storm recharges 20% faster and calls one extra meteor.', tierCosts: [2] },
+  { id: 'prospector', icon: 'gem', name: 'Prospector', desc: 'Begin every battle with +3 shards per tier.', tierCosts: [1, 2] },
+  { id: 'runesmith', icon: 'rune', name: 'Runesmith', desc: 'Road traps re-arm 20% faster per tier.', tierCosts: [1, 2] },
 ]
 
 export function starsEarned(save: SaveData): number {

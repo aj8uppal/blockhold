@@ -134,17 +134,17 @@ export interface TrapDef {
 
 export const TRAP_DEFS: Record<TrapKind, TrapDef> = {
   spike: {
-    kind: 'spike', name: 'Spike Snare', icon: '🗡️', cost: 50,
+    kind: 'spike', name: 'Spike Snare', icon: 'spike', cost: 50,
     damage: [24, 40], radius: 0.55, cooldown: 6, stun: 0.7,
     description: 'Springs on the first foe to cross it: heavy physical damage and a brief pin. Rearms every 6s.',
   },
   frost: {
-    kind: 'frost', name: 'Frost Rune', icon: '❄️', cost: 70,
+    kind: 'frost', name: 'Frost Rune', icon: 'frost', cost: 70,
     slowFactor: 0.55, slowRadius: 0.85,
     description: 'A permanent rune of biting cold. Ground enemies crossing it are slowed to 55% speed.',
   },
   blast: {
-    kind: 'blast', name: 'Blast Charge', icon: '💥', cost: 90,
+    kind: 'blast', name: 'Blast Charge', icon: 'blast', cost: 90,
     damage: [110, 170], radius: 1.15, cooldown: 24, stun: 0.5,
     description: 'A buried powder charge that detonates under groups. Devastating, but slow to re-arm (24s).',
   },
@@ -161,20 +161,20 @@ export interface PerkDef {
 
 export const PERKS: Record<TowerKind, [PerkDef, PerkDef]> = {
   arrow: [
-    { id: 'hawkeye', name: 'Hawkeye', icon: '👁️', description: '+0.8 range.' },
-    { id: 'serrated', name: 'Serrated Arrows', icon: '🩸', description: '+20% damage.' },
+    { id: 'hawkeye', name: 'Hawkeye', icon: 'eye', description: '+0.8 range.' },
+    { id: 'serrated', name: 'Serrated Arrows', icon: 'blood', description: '+20% damage.' },
   ],
   mage: [
-    { id: 'echo', name: 'Echo Casting', icon: '🌀', description: '18% chance to cast twice.' },
-    { id: 'deepveil', name: 'Veilpiercer', icon: '🔮', description: 'Ignores half of magic resistance.' },
+    { id: 'echo', name: 'Echo Casting', icon: 'echo', description: '18% chance to cast twice.' },
+    { id: 'deepveil', name: 'Veilpiercer', icon: 'veil', description: 'Ignores half of magic resistance.' },
   ],
   cannon: [
-    { id: 'tremor', name: 'Tremor Shells', icon: '🌋', description: 'Blasts have a 30% chance to stun for 0.5s.' },
-    { id: 'napalm', name: 'Napalm Payload', icon: '🔥', description: '+30% blast radius.' },
+    { id: 'tremor', name: 'Tremor Shells', icon: 'quake', description: 'Blasts have a 30% chance to stun for 0.5s.' },
+    { id: 'napalm', name: 'Napalm Payload', icon: 'flame', description: '+30% blast radius.' },
   ],
   barracks: [
-    { id: 'vanguard', name: 'Vanguard Oath', icon: '🛡️', description: 'Soldiers gain +25% health.' },
-    { id: 'whetstone', name: 'Whetstone Ritual', icon: '⚔️', description: 'Soldiers deal +25% damage.' },
+    { id: 'vanguard', name: 'Vanguard Oath', icon: 'shield', description: 'Soldiers gain +25% health.' },
+    { id: 'whetstone', name: 'Whetstone Ritual', icon: 'sword', description: 'Soldiers deal +25% damage.' },
   ],
 }
 

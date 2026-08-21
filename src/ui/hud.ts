@@ -8,8 +8,9 @@ import {
   OVERCHARGE_SHARD_COST, OVERCHARGE_DURATION, ASCEND_SHARD_COST, ASCEND_GOLD_COST,
 } from '../game/types.ts'
 import { towerTrees } from '../game/towerDefs.ts'
+import { icon } from './icons.ts'
 
-const TOWER_ICONS: Record<TowerKind, string> = { arrow: '🏹', mage: '🔮', cannon: '💣', barracks: '⚔️' }
+const TOWER_ICONS: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm' }
 const TOWER_NAMES: Record<TowerKind, string> = { arrow: 'Arrow', mage: 'Mage', cannon: 'Cannon', barracks: 'Barracks' }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, html?: string): HTMLElementTagNameMap[K] {
@@ -58,6 +59,7 @@ export class HUD {
   private floaterPool: HTMLElement[] = []
 
   private lastGold = -1
+  private lastOcHtml = ''
   private lastShards = -1
   private lastLives = -1
   private lastWaveText = ''
@@ -87,38 +89,40 @@ export class HUD {
   private buildTopBar(): void {
     const bar = el('div', 'topbar', this.root)
     const left = el('div', 'topbar-group', bar)
-    this.livesEl = el('div', 'stat lives', left, '❤️ <b>20</b>')
-    this.goldEl = el('div', 'stat gold', left, '🪙 <b>0</b>')
-    this.shardsEl = el('div', 'stat shards', left, '💎 <b>0</b>')
+    this.livesEl = el('div', 'stat lives', left, `${icon('heart')} <b>20</b>`)
+    this.goldEl = el('div', 'stat gold', left, `${icon('coin')} <b>0</b>`)
+    this.shardsEl = el('div', 'stat shards', left, `${icon('gem')} <b>0</b>`)
     this.shardsEl.title = 'Veilshards — dropped by Shardbacks, elites, and bosses. Spend on tower Overcharge and Ascension.'
-    this.waveEl = el('div', 'stat wave', left, '🌊 <b>0/10</b>')
+    this.waveEl = el('div', 'stat wave', left, `${icon('wave')} <b>0/10</b>`)
     const right = el('div', 'topbar-group', bar)
     this.speedBtn = el('button', 'icon-btn', right, '1×') as HTMLButtonElement
     this.speedBtn.title = 'Game speed (F)'
     this.speedBtn.onclick = () => this.game.toggleSpeed()
-    this.pauseBtn = el('button', 'icon-btn', right, '⏸') as HTMLButtonElement
+    this.pauseBtn = el('button', 'icon-btn', right, icon('pause', 'plain')) as HTMLButtonElement
     this.pauseBtn.title = 'Pause (P)'
     this.pauseBtn.onclick = () => this.game.togglePause()
-    this.sfxBtn = el('button', 'icon-btn', right, this.game.save.sfxMuted ? '🔇' : '🔊') as HTMLButtonElement
+    const sfxIcon = () => icon(this.game.save.sfxMuted ? 'soundOff' : 'soundOn', 'plain')
+    this.sfxBtn = el('button', 'icon-btn', right, sfxIcon()) as HTMLButtonElement
     this.sfxBtn.title = 'Sound effects'
-    this.sfxBtn.onclick = () => { this.game.toggleSfx(); this.sfxBtn.innerHTML = this.game.save.sfxMuted ? '🔇' : '🔊' }
-    this.musicBtn = el('button', 'icon-btn', right, this.game.save.musicMuted ? '🎵̸' : '🎵') as HTMLButtonElement
+    this.sfxBtn.onclick = () => { this.game.toggleSfx(); this.sfxBtn.innerHTML = sfxIcon() }
+    this.musicBtn = el('button', 'icon-btn', right, icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')) as HTMLButtonElement
     this.musicBtn.title = 'Music'
     this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
     this.musicBtn.onclick = () => {
       this.game.toggleMusic()
+      this.musicBtn.innerHTML = icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')
       this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
     }
     const doc = document as Document & { webkitFullscreenEnabled?: boolean }
     if (doc.fullscreenEnabled || doc.webkitFullscreenEnabled) {
-      const fs = el('button', 'icon-btn', right, '⛶') as HTMLButtonElement
+      const fs = el('button', 'icon-btn', right, icon('fullscreen', 'plain')) as HTMLButtonElement
       fs.title = 'Fullscreen'
       fs.onclick = () => this.onFullscreen()
       document.addEventListener('fullscreenchange', () => {
         fs.classList.toggle('fast', !!document.fullscreenElement)
       })
     }
-    const home = el('button', 'icon-btn', right, '🏰') as HTMLButtonElement
+    const home = el('button', 'icon-btn', right, icon('castle', 'plain')) as HTMLButtonElement
     home.title = 'Back to castle (menu)'
     home.onclick = () => this.onHome()
   }
@@ -144,19 +148,19 @@ export class HUD {
     const bar = el('div', 'abilities', this.root)
     this.heroBtn = el('button', 'ability hero-btn', bar) as HTMLButtonElement
     this.heroBtn.innerHTML =
-      '<span class="ability-icon">🤴</span><span class="cd-sweep"></span>' +
+      `<span class="ability-icon">${icon('helmPlume')}</span><span class="cd-sweep"></span>` +
       '<span class="hero-level">1</span><span class="hero-hp"><span class="hero-hp-fill"></span></span>'
     this.heroBtn.title = 'Sir Aldric — select the hero, click the ground to move him. Hotkey H.'
     this.heroBtn.onclick = () => this.game.selectHero(true)
-    const mk = (key: 'meteor' | 'reinforce', icon: string, name: string, hotkey: string, desc: string) => {
+    const mk = (key: 'meteor' | 'reinforce', ico: string, name: string, hotkey: string, desc: string) => {
       const btn = el('button', 'ability', bar) as HTMLButtonElement
-      btn.innerHTML = `<span class="ability-icon">${icon}</span><span class="cd-sweep"></span><span class="hotkey">${hotkey}</span>`
+      btn.innerHTML = `<span class="ability-icon">${icon(ico)}</span><span class="cd-sweep"></span><span class="hotkey">${hotkey}</span>`
       btn.title = `${name} — ${desc}`
       btn.onclick = () => this.game.setTargetMode(this.game.targetMode === key ? null : key)
       this.abilityBtns[key] = btn
     }
-    mk('meteor', '☄️', 'Meteor Storm', '1', 'Rain three meteors on a target area (true damage + stun). Hotkey 1.')
-    mk('reinforce', '🛡️', 'Reinforcements', '2', 'Summon two militia anywhere on the road for 14s. Hotkey 2.')
+    mk('meteor', 'meteor', 'Meteor Storm', '1', 'Rain three meteors on a target area (true damage + stun). Hotkey 1.')
+    mk('reinforce', 'shield', 'Reinforcements', '2', 'Summon two militia anywhere on the road for 14s. Hotkey 2.')
   }
 
   private buildPauseOverlay(): void {
@@ -202,10 +206,10 @@ export class HUD {
       if (game.phase === 'playing' && w.phase === 'countdown' && !w.isLastWaveStarted) {
         const bonus = w.earlyCallBonus()
         const secs = Math.ceil(w.countdown)
-        const surgeWarn = w.nextWaveIsSurge() ? ' · 🌑 Veiltide!' : ''
+        const surgeWarn = w.nextWaveIsSurge() ? ` · ${icon('moon')} Veiltide!` : ''
         btnText = w.waveIndex < 0
-          ? `⚔️ Begin the assault <span class="call-sub">${secs}s · +${bonus}🪙 if called now${surgeWarn}</span>`
-          : `⚔️ Call wave ${w.waveIndex + 2} <span class="call-sub">${secs}s · +${bonus}🪙 early bonus${surgeWarn}</span>`
+          ? `${icon('swords')} Begin the assault <span class="call-sub">${secs}s · +${bonus}${icon('coin')} if called now${surgeWarn}</span>`
+          : `${icon('swords')} Call wave ${w.waveIndex + 2} <span class="call-sub">${secs}s · +${bonus}${icon('coin')} early bonus${surgeWarn}</span>`
       }
       if (btnText !== this.lastWaveBtnText) {
         this.lastWaveBtnText = btnText
@@ -233,8 +237,8 @@ export class HUD {
     if (hero) {
       if (this.lastHeroId !== hero.heroDef.id) {
         this.lastHeroId = hero.heroDef.id
-        const icon = this.heroBtn.querySelector('.ability-icon') as HTMLElement
-        if (icon) icon.textContent = hero.heroDef.icon
+        const heroIco = this.heroBtn.querySelector('.ability-icon') as HTMLElement
+        if (heroIco) heroIco.innerHTML = icon(hero.heroDef.icon)
         this.heroBtn.title = `${hero.heroDef.name} ${hero.heroDef.title} — select, then click the ground to move. ${hero.heroDef.ability.name}: ${hero.heroDef.ability.blurb} Hotkey H.`
       }
       const sweep = this.heroBtn.querySelector('.cd-sweep') as HTMLElement
@@ -264,9 +268,9 @@ export class HUD {
     // live kill tally on the open tower/trap panel
     const killSource = this.currentTower ?? this.currentTrap
     if (killSource && !this.towerPanel.classList.contains('hidden')) {
-      const killsEl = this.towerPanel.querySelector('.tp-kills')
+      const killsEl = this.towerPanel.querySelector('.tp-kill-n')
       if (killsEl) {
-        const text = ` · ☠ ${killSource.kills}`
+        const text = `${killSource.kills}`
         if (killsEl.textContent !== text) killsEl.textContent = text
       }
     }
@@ -283,9 +287,13 @@ export class HUD {
         const t = this.currentTower
         oc.disabled = !t.canOvercharge(game)
         const cdLeft = Math.max(0, t.overchargeCdUntil - game.time)
-        oc.textContent = t.isOvercharged(game)
-          ? `⚡ Overcharged! ${Math.ceil(t.overchargeUntil - game.time)}s`
-          : cdLeft > 0 ? `⚡ Recharging ${Math.ceil(cdLeft)}s` : `⚡ Overcharge 💎${OVERCHARGE_SHARD_COST}`
+        const html = icon('lightning') + (t.isOvercharged(game)
+          ? ` Overcharged! ${Math.ceil(t.overchargeUntil - game.time)}s`
+          : cdLeft > 0 ? ` Recharging ${Math.ceil(cdLeft)}s` : ` Overcharge ${icon('gem')}${OVERCHARGE_SHARD_COST}`)
+        if (html !== this.lastOcHtml) {
+          this.lastOcHtml = html
+          oc.innerHTML = html
+        }
       }
     }
     if (!this.buildMenu.classList.contains('hidden')) {
@@ -313,7 +321,7 @@ export class HUD {
       const def = towerTrees[kind].levels[0]
       const btn = el('button', 'build-option', this.buildMenu) as HTMLButtonElement
       btn.dataset.cost = `${def.cost}`
-      btn.innerHTML = `<span class="b-icon">${TOWER_ICONS[kind]}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">🪙${def.cost}</span>`
+      btn.innerHTML = `<span class="b-icon">${icon(TOWER_ICONS[kind])}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
       btn.onclick = this.menuGuard(() => this.game.buildTower(kind))
       btn.onmouseenter = () => {
         this.game.previewRange(kind)
@@ -371,7 +379,7 @@ export class HUD {
       const def = TRAP_DEFS[kind]
       const btn = el('button', 'build-option trap-option', this.buildMenu) as HTMLButtonElement
       btn.dataset.cost = `${def.cost}`
-      btn.innerHTML = `<span class="b-icon">${def.icon}</span><span class="b-name">${def.name}</span><span class="b-cost">🪙${def.cost}</span>`
+      btn.innerHTML = `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
       btn.onclick = this.menuGuard(() => this.game.buildTrap(kind))
       btn.onmouseenter = () => {
         const tip = document.getElementById('build-tip')
@@ -397,16 +405,16 @@ export class HUD {
     const p = this.towerPanel
     p.innerHTML = ''
     const head = el('div', 'tp-head', p)
-    el('div', 'tp-icon', head, trap.def.icon)
+    el('div', 'tp-icon', head, icon(trap.def.icon))
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, trap.def.name)
-    el('div', 'tp-level', title, `Road trap<span class="tp-kills" title="Enemies slain by this trap"> · ☠ ${trap.kills}</span>`)
+    el('div', 'tp-level', title, `Road trap<span class="tp-kills" title="Enemies slain by this trap"> · ${icon('skull')} <span class="tp-kill-n">${trap.kills}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
     close.onclick = () => this.game.clearSelection()
     el('div', 'tp-stats', p, trap.def.description)
     const actions = el('div', 'tp-actions', p)
     const row = el('div', 'tp-row', actions)
-    const sell = el('button', 'btn small sell', row, `Dismantle 🪙${Math.round(trap.def.cost * 0.6)}`) as HTMLButtonElement
+    const sell = el('button', 'btn small sell', row, `Dismantle ${icon('coin')}${Math.round(trap.def.cost * 0.6)}`) as HTMLButtonElement
     sell.onclick = this.menuGuard(() => this.game.sellTrap(trap))
     p.classList.remove('hidden')
   }
@@ -419,7 +427,7 @@ export class HUD {
     const p = this.towerPanel
     p.innerHTML = ''
     const head = el('div', 'tp-head', p)
-    el('div', 'tp-icon', head, TOWER_ICONS[tower.kind])
+    el('div', 'tp-icon', head, icon(TOWER_ICONS[tower.kind]))
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, tower.def.name)
     el('div', 'tp-level', title, (tower.level === 5
@@ -427,15 +435,15 @@ export class HUD {
       : tower.level === 4
       ? '★ Specialized'
       : 'Level ' + '●'.repeat(tower.level) + '○'.repeat(3 - tower.level))
-      + `<span class="tp-kills" title="Enemies slain by this building"> · ☠ ${tower.kills}</span>`)
+      + `<span class="tp-kills" title="Enemies slain by this building"> · ${icon('skull')} <span class="tp-kill-n">${tower.kills}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
     close.onclick = () => this.game.clearSelection()
 
     const extras: string[] = []
     if (tower.resonance > 0) {
-      extras.push(`🔗 Resonance ×${tower.resonance}: +${tower.resonance * (tower.isBarracks ? 8 : 6)}% ${tower.isBarracks ? 'soldier health' : 'damage'}`)
+      extras.push(`${icon('link')} Resonance ×${tower.resonance}: +${tower.resonance * (tower.isBarracks ? 8 : 6)}% ${tower.isBarracks ? 'soldier health' : 'damage'}`)
     }
-    if (tower.perk) extras.push(`${tower.perk.icon} ${tower.perk.name} — ${tower.perk.description}`)
+    if (tower.perk) extras.push(`${icon(tower.perk.icon)} ${tower.perk.name} — ${tower.perk.description}`)
     el('div', 'tp-stats', p, statLine(tower.def, this.mults(tower.kind))
       + (extras.length ? `<span class="tp-extras">${extras.join('<br>')}</span>` : ''))
 
@@ -443,7 +451,7 @@ export class HUD {
     tower.upgradeOptions.forEach((opt, i) => {
       const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, actions) as HTMLButtonElement
       btn.dataset.cost = `${opt.cost}`
-      btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">🪙${opt.cost}</span><span class="u-desc">${opt.description}</span>`
+      btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span><span class="u-desc">${opt.description}</span>`
       btn.onclick = this.menuGuard(() => this.game.upgradeTower(tower, i))
       btn.disabled = this.game.gold < opt.cost
     })
@@ -451,24 +459,25 @@ export class HUD {
     if (tower.level >= 4 && !tower.perk) {
       PERKS[tower.kind].forEach((perk, i) => {
         const btn = el('button', 'btn upgrade ascend', actions) as HTMLButtonElement
-        btn.innerHTML = `<span class="u-name">${perk.icon} Ascend: ${perk.name}</span><span class="u-cost">💎${ASCEND_SHARD_COST} 🪙${ASCEND_GOLD_COST}</span><span class="u-desc">${perk.description}</span>`
+        btn.innerHTML = `<span class="u-name">${icon(perk.icon)} Ascend: ${perk.name}</span><span class="u-cost">${icon('gem')}${ASCEND_SHARD_COST} ${icon('coin')}${ASCEND_GOLD_COST}</span><span class="u-desc">${perk.description}</span>`
         btn.onclick = this.menuGuard(() => this.game.ascendTower(tower, i as 0 | 1))
         btn.disabled = this.game.shards < ASCEND_SHARD_COST || this.game.gold < ASCEND_GOLD_COST
       })
     }
     const row = el('div', 'tp-row', actions)
     if (!tower.isBarracks) {
-      const oc = el('button', 'btn small overcharge', row, `⚡ Overcharge 💎${OVERCHARGE_SHARD_COST}`) as HTMLButtonElement
+      const oc = el('button', 'btn small overcharge', row, `${icon('lightning')} Overcharge ${icon('gem')}${OVERCHARGE_SHARD_COST}`) as HTMLButtonElement
       oc.title = `+60% attack speed for ${OVERCHARGE_DURATION}s`
       oc.id = 'oc-btn'
+      this.lastOcHtml = ''
       oc.onclick = this.menuGuard(() => this.game.overchargeTower(tower))
       oc.disabled = !tower.canOvercharge(this.game)
     }
     if (tower.isBarracks) {
-      const rally = el('button', 'btn small', row, '🚩 Rally point') as HTMLButtonElement
+      const rally = el('button', 'btn small', row, `${icon('flag')} Rally point`) as HTMLButtonElement
       rally.onclick = this.menuGuard(() => this.game.setTargetMode('rally'))
     }
-    const sell = el('button', 'btn small sell', row, `Sell 🪙${tower.sellValue}`) as HTMLButtonElement
+    const sell = el('button', 'btn small sell', row, `Sell ${icon('coin')}${tower.sellValue}`) as HTMLButtonElement
     sell.onclick = this.menuGuard(() => this.game.sellTower(tower))
 
     p.classList.remove('hidden')
@@ -498,17 +507,17 @@ export class HUD {
   private rebuildEnemyTip(enemy: Enemy): void {
     const d = enemy.def
     const traits: string[] = []
-    if (d.flying) traits.push('✈ flying')
-    if (enemy.armor > 0.005) traits.push(`🛡 ${Math.round(enemy.armor * 100)}% armor`)
-    if (d.magicResist > 0) traits.push(`✨ ${Math.round(d.magicResist * 100)}% magic resist`)
+    if (d.flying) traits.push(`${icon('feather')} flying`)
+    if (enemy.armor > 0.005) traits.push(`${icon('shield')} ${Math.round(enemy.armor * 100)}% armor`)
+    if (d.magicResist > 0) traits.push(`${icon('sparkle')} ${Math.round(d.magicResist * 100)}% magic resist`)
     if (d.regen) traits.push('regenerates')
     if (d.healAura) traits.push('heals allies')
     if (d.spawnOnDeath) traits.push('spawns brood')
     if (d.ranged) traits.push('ranged caster')
-    if (d.boss) traits.push('👑 BOSS')
+    if (d.boss) traits.push(`${icon('crown')} BOSS`)
     this.tipArmorShown = Math.round(enemy.armor * 100)
     this.enemyTip.innerHTML =
-      `<b>${d.name}</b><span class="et-hp"></span>` +
+      `<b>${d.name}</b> ${icon('heart')}<span class="et-hp"></span>` +
       (traits.length ? `<span class="et-traits">${traits.join(' · ')}</span>` : '') +
       `<span class="et-desc">${d.description}</span>`
   }
@@ -516,7 +525,7 @@ export class HUD {
   private updateEnemyTip(enemy: Enemy): void {
     if (Math.round(enemy.armor * 100) !== this.tipArmorShown) this.rebuildEnemyTip(enemy)  // armor shred
     const hpEl = this.enemyTip.querySelector('.et-hp') as HTMLElement
-    if (hpEl) hpEl.textContent = ` ❤️ ${Math.max(0, Math.ceil(enemy.hp))}/${enemy.maxHp}`
+    if (hpEl) hpEl.textContent = ` ${Math.max(0, Math.ceil(enemy.hp))}/${enemy.maxHp}`
   }
 
   private positionEnemyTip(sx: number, sy: number): void {
@@ -549,14 +558,14 @@ export class HUD {
   }
 
   setTargetMode(mode: TargetMode): void {
-    if (mode === 'meteor') this.modeHint.textContent = '☄️ Click to call the Meteor Storm — Esc to cancel'
-    else if (mode === 'reinforce') this.modeHint.textContent = '🛡️ Click on the road to deploy reinforcements — Esc to cancel'
-    else if (mode === 'rally') this.modeHint.textContent = '🚩 Click near the road to move the rally point — Esc to cancel'
+    if (mode === 'meteor') this.modeHint.innerHTML = `${icon('meteor')} Click to call the Meteor Storm — Esc to cancel`
+    else if (mode === 'reinforce') this.modeHint.innerHTML = `${icon('shield')} Click on the road to deploy reinforcements — Esc to cancel`
+    else if (mode === 'rally') this.modeHint.innerHTML = `${icon('flag')} Click near the road to move the rally point — Esc to cancel`
     this.modeHint.classList.toggle('hidden', mode === null)
   }
 
   setPaused(paused: boolean): void {
-    this.pauseBtn.innerHTML = paused ? '▶️' : '⏸'
+    this.pauseBtn.innerHTML = icon(paused ? 'play' : 'pause', 'plain')
     this.pauseOverlay.classList.toggle('hidden', !paused)
   }
 
@@ -586,7 +595,7 @@ export class HUD {
     if (!f) {
       f = el('div', 'floater', this.root)
     }
-    f.textContent = text
+    f.innerHTML = text
     f.className = `floater ${cls}`
     f.style.left = `${x}px`
     f.style.top = `${y}px`
@@ -628,13 +637,13 @@ function statLine(def: TowerLevelDef, m: StatMults): string {
   if (def.soldier) {
     const s = def.soldier
     const hp = Math.round(s.hp * m.soldierHp)
-    return `👥 ${def.soldierCount ?? 3}× ${s.name} · ❤️ ${hp} · ⚔️ ${s.damage[0]}–${s.damage[1]}` +
-      `${s.armor ? ` · 🛡 ${Math.round(s.armor * 100)}%` : ''} · ⟳ ${def.respawnTime}s respawn`
+    return `${icon('soldiers')} ${def.soldierCount ?? 3}× ${s.name} · ${icon('heart')} ${hp} · ${icon('sword')} ${s.damage[0]}–${s.damage[1]}` +
+      `${s.armor ? ` · ${icon('shield')} ${Math.round(s.armor * 100)}%` : ''} · ${icon('respawn')} ${def.respawnTime}s respawn`
   }
   const lo = Math.round(def.damage![0] * m.dmg), hi = Math.round(def.damage![1] * m.dmg)
   const dps = ((lo + hi) / 2 / def.attackInterval!).toFixed(1)
-  const type = def.damageType === 'magic' ? '✨ magic' : def.splash ? '💥 splash' : '🗡 physical'
+  const type = def.damageType === 'magic' ? `${icon('sparkle')} magic` : def.splash ? `${icon('blast')} splash` : `${icon('sword')} physical`
   const splash = def.splash ? Math.round(def.splash * m.splash * 100) / 100 : 0
-  return `⚔️ ${lo}–${hi} (${type}) · ⏱ ${def.attackInterval}s · 📏 ${def.range} · DPS ${dps}` +
-    (splash ? ` · 💥 r${splash}` : '') + (def.flying ? ' · ✈ hits flyers' : ' · ✖ no flyers')
+  return `${icon('swords')} ${lo}–${hi} (${type}) · ${icon('hourglass')} ${def.attackInterval}s · ${icon('range')} ${def.range} · DPS ${dps}` +
+    (splash ? ` · ${icon('blast')} r${splash}` : '') + (def.flying ? ` · ${icon('feather')} hits flyers` : ' · no flyers')
 }

@@ -9,21 +9,21 @@ const XP_LEVELS = [0, 60, 150, 280, 450, 660, 920, 1240, 1620, 2100]
 
 export const HERO_DEFS: Record<HeroId, HeroDef> = {
   aldric: {
-    id: 'aldric', name: 'Sir Aldric', title: 'the Bulwark', icon: '🤴',
+    id: 'aldric', name: 'Sir Aldric', title: 'the Bulwark', icon: 'helmPlume',
     blurb: 'A frontline champion who pins groups in place and shatters them with Valor Slam.',
     hp: 320, damage: [18, 30], attackInterval: 0.85, armor: 0.35, regen: 7,
     moveSpeed: 1.75, model: 'hero', scale: 1.18,
     ability: { kind: 'slam', name: 'Valor Slam', cooldown: 13, blurb: 'Shockwave: true damage + stun around him.' },
   },
   liora: {
-    id: 'liora', name: 'Liora', title: 'the Gale Warden', icon: '🏹',
+    id: 'liora', name: 'Liora', title: 'the Gale Warden', icon: 'bow',
     blurb: 'A ranger who strikes from range — the only hero who can shoot flyers from the ground.',
     hp: 215, damage: [15, 24], attackInterval: 0.75, armor: 0.1, regen: 6,
     moveSpeed: 2.0, model: 'liora', scale: 1.12, attackRange: 2.3, projectile: 'arrow',
     ability: { kind: 'volley', name: 'Piercing Volley', cooldown: 14, blurb: 'Looses arrows at up to seven foes, gate-runners first.' },
   },
   zephyra: {
-    id: 'zephyra', name: 'Zephyra', title: 'the Stormcaller', icon: '🧙',
+    id: 'zephyra', name: 'Zephyra', title: 'the Stormcaller', icon: 'lightning',
     blurb: 'A tempest mage whose bolts ignore armor — and whose nova freezes whole packs in place.',
     hp: 190, damage: [14, 21], attackInterval: 0.95, armor: 0.05, regen: 6,
     moveSpeed: 1.9, model: 'zephyra', scale: 1.12, attackRange: 2.1, projectile: 'bolt',

@@ -647,6 +647,36 @@ button:focus-visible {
   }
 }
 
+/* ---------- svg icon system ---------- */
+
+.ico { width: 1em; height: 1em; display: inline-block; vertical-align: -0.14em; flex-shrink: 0; }
+.ico-heart { color: #ff5c52; }
+.ico-coin, .ico-chest, .ico-crown, .ico-trophy, .ico-medal { color: #ffd23c; }
+.ico-gem, .ico-link, .ico-veil, .ico-rune, .ico-eye { color: #7fd4ff; }
+.ico-wave { color: #7fb8ff; }
+.ico-flame, .ico-meteor, .ico-volcano { color: #ff8c42; }
+.ico-drop { color: #8fdf6f; }
+.ico-frost { color: #cfe9ff; }
+.ico-lightning { color: #ffe89f; }
+.ico-sparkle, .ico-echo { color: #c9a5ff; }
+.ico-moon { color: #bfd0ff; }
+.ico-blood { color: #e05a4a; }
+.ico-blast { color: #ffb23c; }
+.ico-skull, .ico-shield, .ico-helm, .ico-helmPlume, .ico-spike, .ico-sword, .ico-swords { color: #ccd4df; }
+.ico-bow { color: #9fce7f; }
+.ico-orb { color: #b58fff; }
+.ico-bomb { color: #b8bfc9; }
+.ico-feather { color: #a5d8ea; }
+.ico-flag { color: #4ab0e0; }
+.ico-quake { color: #e0a86f; }
+.ico-mushroom { color: #e8968a; }
+.ico-tree { color: #79c057; }
+.ico-soldiers { color: #ccd4df; }
+.ico.gilded { color: #ffd23c; }
+.ico.plain { color: inherit; }
+.gold-star { color: #ffd23c; }
+.ico-medal.vet { color: #ccd4df; }
+
 /* ---------- rotate prompt (portrait phones) ---------- */
 
 #rotate-overlay {
