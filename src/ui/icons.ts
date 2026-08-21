@@ -70,6 +70,8 @@ const defs: Record<string, string> = {
   musicOff: `<path fill="currentColor" opacity=".6" d="M9.2 19.2a2.9 2.9 0 1 1-1.6-2.6V5.4L20.2 3.2v13.2a2.9 2.9 0 1 1-1.6-2.6V7L9.2 8.8Z"/><path ${S} d="M4.2 4.2 19.8 19.8"/>`,
   fullscreen: `<path ${S} d="M8.6 3.4H5.2a1.8 1.8 0 0 0-1.8 1.8v3.4M15.4 3.4h3.4a1.8 1.8 0 0 1 1.8 1.8v3.4M8.6 20.6H5.2a1.8 1.8 0 0 1-1.8-1.8v-3.4M15.4 20.6h3.4a1.8 1.8 0 0 0 1.8-1.8v-3.4"/>`,
   rotate: `<rect x="7" y="3.4" width="10" height="17.2" rx="2.4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="17.6" r="1.1" fill="currentColor"/><path ${S} d="M20.8 9.4a9.3 9.3 0 0 0-3.4-4.6M3.2 14.6a9.3 9.3 0 0 0 3.4 4.6"/><path fill="currentColor" d="m21.9 6.5-.6 4-3.4-2.2Z"/><path fill="currentColor" d="m2.1 17.5.6-4 3.4 2.2Z"/>`,
+  share: `<path ${S} d="M7.5 9.5H6a1.8 1.8 0 0 0-1.8 1.8v8A1.8 1.8 0 0 0 6 21.1h12a1.8 1.8 0 0 0 1.8-1.8v-8A1.8 1.8 0 0 0 18 9.5h-1.5"/><path ${S} d="M12 14.5V3.2M8.4 6.4 12 2.8l3.6 3.6"/>`,
+  plusSquare: `<rect x="3.4" y="3.4" width="17.2" height="17.2" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><path ${S} d="M12 7.8v8.4M7.8 12h8.4"/>`,
 }
 
 /** enemy ids with a painted tooltip portrait in public/art */

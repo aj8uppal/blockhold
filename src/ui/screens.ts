@@ -38,6 +38,17 @@ export interface BattleStats {
 
 const fmtTime = (sec: number) => `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`
 
+/** true on iOS-style browsers: touch, no Fullscreen API, not already installed */
+export function needsInstallGuide(): boolean {
+  const doc = document as Document & { webkitFullscreenEnabled?: boolean }
+  const nav = navigator as Navigator & { standalone?: boolean }
+  return window.matchMedia('(pointer: coarse)').matches
+    && !(doc.fullscreenEnabled || doc.webkitFullscreenEnabled)
+    && !nav.standalone
+    && !window.matchMedia('(display-mode: standalone)').matches
+    && !window.matchMedia('(display-mode: fullscreen)').matches
+}
+
 export class Screens {
   root: HTMLElement
   onPlayLevel: (levelId: string, difficulty?: Difficulty, hero?: HeroId, mode?: GameMode) => void = () => {}
@@ -73,7 +84,31 @@ export class Screens {
     play.onclick = () => this.show('levels')
     const how = el('button', 'btn ghost', card, 'How to play') as HTMLButtonElement
     how.onclick = () => this.renderHelp()
+    if (needsInstallGuide()) {
+      const install = el('button', 'btn ghost', card, `${icon('fullscreen')} Play fullscreen`) as HTMLButtonElement
+      install.onclick = () => this.renderInstallGuide()
+    }
     el('div', 'menu-footer', wrap, 'A voxel tower defense · Built for the browser')
+  }
+
+  /** iOS has no fullscreen API — walk the player through installing instead */
+  renderInstallGuide(): void {
+    const overlay = el('div', 'help-overlay', this.root)
+    const card = el('div', 'help-card install-card', overlay)
+    el('h2', '', card, `${icon('fullscreen')} Play fullscreen`)
+    el('div', 'install-intro', card,
+      'iPhones don\'t let web pages go fullscreen — but an installed Blockhold launches like a real app: fullscreen, offline, with its own icon. Takes ten seconds:')
+    const steps = el('div', 'install-steps', card)
+    const step = (n: number, ico: string, html: string) => {
+      const s = el('div', 'install-step', steps)
+      s.innerHTML = `<span class="is-num">${n}</span><span class="is-icon">${icon(ico, 'plain')}</span><span class="is-text">${html}</span>`
+    }
+    step(1, 'share', 'Tap the <b>Share</b> button — bottom bar on iPhone, top right on iPad. (Same button in Chrome, next to the address bar.)')
+    step(2, 'plusSquare', 'Scroll down the share sheet and tap <b>Add to Home Screen</b>, then <b>Add</b>.')
+    step(3, 'castle', 'Launch <b>Blockhold</b> from your Home Screen. That\'s the fullscreen app — this tab can stay behind.')
+    const close = el('button', 'btn primary', card, 'Got it') as HTMLButtonElement
+    close.onclick = () => overlay.remove()
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove() }
   }
 
   private renderLevels(): void {

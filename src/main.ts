@@ -47,7 +47,7 @@ screens.onPlayLevel = (id, difficulty, hero, mode) => {
       enterFullscreen()
     } else if (!(navigator as Navigator & { standalone?: boolean }).standalone && !localStorage.getItem('blockhold.a2hs-hint')) {
       localStorage.setItem('blockhold.a2hs-hint', '1')
-      setTimeout(() => hud.showToast('Tip: Add to Home Screen from the share menu to play fullscreen', 7), 1500)
+      setTimeout(() => hud.showToast('Tip: "Play fullscreen" on the main menu shows how to install Blockhold as a real fullscreen app', 8), 1500)
     }
   }
   // end-screen replays reuse the difficulty/hero/mode of the run that just ended
