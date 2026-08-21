@@ -91,6 +91,11 @@ export class Game implements World {
   private selectRing: THREE.Mesh
   private targetRing: THREE.Mesh
   private heroRing: THREE.Mesh
+  private heroGuardRing: THREE.Mesh
+  private lanePreview: THREE.Group | null = null
+  private lanePreviewMats: THREE.MeshBasicMaterial[] = []
+  private lanePreviewGeos: THREE.BufferGeometry[] = []
+  private laneRunners: { mesh: THREE.Mesh, lane: number, phase: number }[] = []
   private hoverPlot: PlotInfo | null = null
   private killCount = 0
 
@@ -111,7 +116,8 @@ export class Game implements World {
     this.selectRing.scale.setScalar(0.62)
     this.targetRing = makeRing(1.15, 0xff8c42, 0.5)
     this.heroRing = makeRing(0.42, 0x7fd4ff, 0.7)
-    this.rangeRing.visible = this.selectRing.visible = this.targetRing.visible = this.heroRing.visible = false
+    this.heroGuardRing = makeRing(1, 0x7fd4ff, 0.2)
+    this.rangeRing.visible = this.selectRing.visible = this.targetRing.visible = this.heroRing.visible = this.heroGuardRing.visible = false
   }
 
   // ---------------- World impl ----------------
@@ -315,7 +321,7 @@ export class Game implements World {
     this.engine.scene.add(this.terrain.group)
     this.engine.scene.add(this.dynamic)
     this.engine.scene.add(this.particles.group)
-    this.engine.scene.add(this.rangeRing, this.selectRing, this.targetRing, this.heroRing)
+    this.engine.scene.add(this.rangeRing, this.selectRing, this.targetRing, this.heroRing, this.heroGuardRing)
     this.engine.applyTheme(THEMES[level.theme], level.width, level.height)
     this.engine.resetView(level.width, level.height)
 
@@ -357,6 +363,7 @@ export class Game implements World {
     this.soldiers.push(this.hero)
     this.dynamic.add(this.hero.group)
 
+    this.buildLanePreview()
     this.phase = 'playing'
     this.onPhaseChange('playing')
     this.hud.setSpeed(1)
@@ -366,8 +373,82 @@ export class Game implements World {
     if (level.intro) this.hud.showToast(level.intro, 5)
   }
 
+  /** pre-battle route preview: colored dashes trace each road from its gate,
+   *  with a runner gliding gate→keep, so multi-entry maps read at a glance */
+  private buildLanePreview(): void {
+    this.removeLanePreview()
+    const colors = [0xffd23c, 0x7fd4ff, 0xdd6bff]
+    const dashGeo = new THREE.PlaneGeometry(0.3, 0.3)
+    dashGeo.rotateZ(Math.PI / 4)
+    dashGeo.rotateX(-Math.PI / 2)
+    const runnerGeo = new THREE.PlaneGeometry(0.55, 0.55)
+    runnerGeo.rotateZ(Math.PI / 4)
+    runnerGeo.rotateX(-Math.PI / 2)
+    this.lanePreviewGeos.push(dashGeo, runnerGeo)
+    const group = new THREE.Group()
+    this.lanes.forEach((lane, li) => {
+      const color = colors[li % colors.length]
+      const dashMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, toneMapped: false, depthWrite: false })
+      const runnerMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, toneMapped: false, depthWrite: false })
+      this.lanePreviewMats.push(dashMat, runnerMat)
+      for (let d = 0.6; d < lane.length - 0.5; d += 0.85) {
+        const p = lane.sample(d)
+        const m = new THREE.Mesh(dashGeo, dashMat)
+        m.position.set(p.x, 0.06, p.z)
+        m.renderOrder = 2
+        group.add(m)
+      }
+      const runner = new THREE.Mesh(runnerGeo, runnerMat)
+      runner.renderOrder = 2
+      group.add(runner)
+      this.laneRunners.push({ mesh: runner, lane: li, phase: li * 1.3 })
+    })
+    this.lanePreview = group
+    this.engine.scene.add(group)
+  }
+
+  private removeLanePreview(): void {
+    if (this.lanePreview) this.engine.scene.remove(this.lanePreview)
+    for (const g of this.lanePreviewGeos) g.dispose()
+    for (const m of this.lanePreviewMats) m.dispose()
+    this.lanePreview = null
+    this.lanePreviewGeos = []
+    this.lanePreviewMats = []
+    this.laneRunners = []
+  }
+
+  private updateLanePreview(dt: number): void {
+    if (!this.lanePreview || !this.waves) return
+    if (this.waves.waveIndex < 0) {
+      // grace period: runners glide the roads, gates pulse
+      for (const r of this.laneRunners) {
+        r.phase += dt * 2.4
+        const lane = this.lanes[r.lane]
+        const p = lane.sample(r.phase % lane.length)
+        r.mesh.position.set(p.x, 0.08, p.z)
+      }
+      if (this.terrain) {
+        this.terrain.spawnMarkers.forEach((m, i) => {
+          m.scale.setScalar(1.35 * (1 + Math.sin(this.time * 3.2 + i * 1.7) * 0.07))
+        })
+      }
+      return
+    }
+    // battle begun: the preview fades away
+    let alive = false
+    for (const m of this.lanePreviewMats) {
+      m.opacity -= dt * 0.8
+      if (m.opacity > 0.02) alive = true
+    }
+    if (!alive) {
+      this.removeLanePreview()
+      this.terrain?.spawnMarkers.forEach(m => m.scale.setScalar(1.35))
+    }
+  }
+
   disposeLevel(): void {
     audio.stopMusic()
+    this.removeLanePreview()
     this.simAccumulator = 0
     this.level = null
     if (this.terrain) {
@@ -399,7 +480,7 @@ export class Game implements World {
     this.targetMode = null
     this.surgeBlend = 0
     this.engine.setSurgeBlend(0)
-    this.rangeRing.visible = this.selectRing.visible = this.targetRing.visible = this.heroRing.visible = false
+    this.rangeRing.visible = this.selectRing.visible = this.targetRing.visible = this.heroRing.visible = this.heroGuardRing.visible = false
     this.phase = 'idle'
   }
 
@@ -597,6 +678,7 @@ export class Game implements World {
     this.clearSelection()
     this.heroSelected = true
     this.heroRing.visible = true
+    this.hud.openHeroPanel(this.hero)
     if (center) {
       this.engine.focusOn(this.hero.group.position.x, this.hero.group.position.z)
     }
@@ -789,6 +871,7 @@ export class Game implements World {
     this.rangeRing.visible = false
     this.selectRing.visible = false
     this.heroRing.visible = false
+    this.heroGuardRing.visible = false
   }
 
   /** preview range for a build option (hover in build menu) */
@@ -1074,12 +1157,19 @@ export class Game implements World {
       if (this.heroSelected && this.hero) {
         if (this.hero.dead) {
           this.heroRing.visible = false
+          this.heroGuardRing.visible = false
         } else {
           this.heroRing.visible = true
           this.heroRing.position.set(this.hero.group.position.x, 0.04, this.hero.group.position.z)
-          this.heroRing.scale.setScalar(1 + Math.sin(this.time * 5) * 0.08)
+          this.heroRing.scale.setScalar(1.15 + Math.sin(this.time * 5) * 0.08)
+          // guard radius: where the hero will engage (his post for melee, himself for ranged)
+          const anchor = this.hero.ranged ? this.hero.group.position : this.hero.home
+          this.heroGuardRing.visible = true
+          this.heroGuardRing.position.set(anchor.x, 0.03, anchor.z)
+          this.heroGuardRing.scale.setScalar(this.hero.guardRange)
         }
       }
+      this.updateLanePreview(dtRaw)
     } else if (this.phase !== 'playing') {
       // menu/end-screen ambience; backdrop dioramas drift slowly with weather
       if (this.phase === 'idle' && this.terrain) {

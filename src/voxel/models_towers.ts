@@ -76,14 +76,23 @@ function arrowTower(level: 1 | 2 | 3): VoxModel {
     box(3.2, h + 1.2, 0, 0.5, 1.0, 6.8, W.woodDark),
   ]
   if (level >= 2) {
-    // roof canopy on two posts
+    // roof canopy on two posts, quiver racks bristling on the rails
     base.push(box(-2.4, h + 3.4, -2.4, 0.6, 4.5, 0.6, W.woodDark))
     base.push(box(2.4, h + 3.4, -2.4, 0.6, 4.5, 0.6, W.woodDark))
     base.push(...gableRoof(0, h + 5.6, -1.2, 8, 5, level === 3 ? W.roofGreen : W.roofRed))
+    for (const x of [-2.4, -1.8, 1.8, 2.4]) {
+      base.push(box(x, h + 2.1, 3.0, 0.22, 1.6, 0.22, W.woodPale))
+    }
   }
   if (level >= 3) {
     base.push(box(0, h + 8.2, -1.2, 0.4, 2.4, 0.4, W.woodDark)) // flag pole
     base.push(box(0.8, h + 8.8, -1.2, 1.8, 1.1, 0.15, W.roofGreen))
+    // gilded ridge cap and watch-braziers on the front corners
+    base.push(box(0, h + 8.0, -1.2, 8.4, 0.5, 0.9, W.gold))
+    for (const x of [-3.0, 3.0]) {
+      base.push(box(x, h + 2.0, 3.2, 0.7, 1.0, 0.7, W.iron))
+      base.push(box(x, h + 2.8, 3.2, 0.55, 0.55, 0.55, 0xffb23c, true))
+    }
   }
   const fig = archerFigure(h + 0.8, level === 3 ? 0x4a7a3f : 0x8a6a4a, level === 3 ? 0x2f4f28 : 0x6d4f2a)
   return { parts: { base, turret: fig.part }, pivots: { turret: fig.pivot } }
@@ -146,12 +155,25 @@ function mageTower(level: 1 | 2 | 3): VoxModel {
     base.push(box(-2.9, h + 2.0, -2.9, 0.55, 0.9, 0.55, bandColor, true))
     base.push(box(2.9, h + 2.0, 2.9, 0.55, 0.9, 0.55, bandColor, true))
   }
+  if (level >= 3) {
+    // all four pinnacles lit, plus a second rune band girdling the spire
+    base.push(box(2.9, h + 1.0, -2.9, 0.8, 1.6, 0.8, W.stoneDark))
+    base.push(box(-2.9, h + 1.0, 2.9, 0.8, 1.6, 0.8, W.stoneDark))
+    base.push(box(2.9, h + 2.0, -2.9, 0.55, 0.9, 0.55, bandColor, true))
+    base.push(box(-2.9, h + 2.0, 2.9, 0.55, 0.9, 0.55, bandColor, true))
+    base.push(box(0, h * 0.82, 0, 4.8, 0.6, 4.8, bandColor))
+  }
   const crystalY = h + 2.6 + level * 0.3
   const crystal: VoxBox[] = [
     box(0, crystalY, 0, 1.5, 2.2, 1.5, bandColor, true),
     box(0, crystalY + 1.4, 0, 0.8, 0.9, 0.8, 0xffffff, true),
     box(0, crystalY - 1.4, 0, 0.8, 0.9, 0.8, bandColor, true),
   ]
+  if (level >= 3) {
+    // twin motes orbit the archmage focus
+    crystal.push(box(-1.7, crystalY + 0.3, 0, 0.6, 0.6, 0.6, 0xffffff, true))
+    crystal.push(box(1.7, crystalY - 0.3, 0, 0.6, 0.6, 0.6, bandColor, true))
+  }
   return { parts: { base, crystal }, pivots: { crystal: [0, crystalY, 0] } }
 }
 
@@ -201,10 +223,20 @@ function cannonTower(level: 1 | 2 | 3): VoxModel {
     box(0, baseH / 2 + 1, 0, 6 - level * 0.3, baseH, 6 - level * 0.3, W.stone),
     box(0, baseH + 1.3, 0, 6.4 - level * 0.3, 0.6, 6.4 - level * 0.3, W.stoneDark),
   ]
-  if (level >= 2) base.push(...crenels(0, baseH + 1.9, 0, 5.4, 5.4, W.stoneDark))
+  if (level >= 2) {
+    base.push(...crenels(0, baseH + 1.9, 0, 5.4, 5.4, W.stoneDark))
+    // cannonball pyramid by the wall
+    base.push(box(-2.7, 1.5, 2.7, 1.5, 0.6, 1.5, W.iron))
+    base.push(box(-2.7, 2.0, 2.7, 0.7, 0.6, 0.7, 0x353942))
+  }
   if (level >= 3) {
     base.push(box(-2.8, 2.2, -2.8, 1.2, 2.8, 1.2, W.iron))
     base.push(box(2.8, 2.2, 2.8, 1.2, 2.8, 1.2, W.iron))
+    // war banners on the iron pylons
+    base.push(box(-2.8, 4.6, -2.8, 0.3, 2.2, 0.3, W.woodDark))
+    base.push(box(-2.2, 5.2, -2.8, 1.3, 0.9, 0.15, 0xc03a2f))
+    base.push(box(2.8, 4.6, 2.8, 0.3, 2.2, 0.3, W.woodDark))
+    base.push(box(3.4, 5.2, 2.8, 1.3, 0.9, 0.15, 0xc03a2f))
   }
   const ty = baseH + 2.2
   const barrelLen = 3 + level * 0.7
@@ -273,6 +305,12 @@ function barracksTower(level: 1 | 2 | 3): VoxModel {
   if (level >= 3) {
     base.push(box(-3.2, 2.6, -3.2, 1.8, 4.4, 1.8, W.stone))    // corner turret
     base.push(...crenels(-3.2, 5.2, -3.2, 1.6, 1.6, W.stoneDark))
+    // kite shields racked on the front wall, gilded lintel
+    for (const [x, c] of [[-2.4, 0x37548f], [2.4, 0xc03a2f]] as const) {
+      base.push(box(x, 1.9, 3.05, 1.0, 1.5, 0.25, c))
+      base.push(box(x, 1.1, 3.05, 0.7, 0.5, 0.25, c))
+    }
+    base.push(box(0, h + 0.6, 2.95, 2.6, 0.5, 0.45, W.gold))
   }
   const poleX = 3.1, poleY = h + 3.2
   const base2: VoxBox[] = [box(poleX, poleY / 2 + 1, -3.1, 0.4, poleY, 0.4, W.woodDark)]

@@ -121,6 +121,9 @@ export class Enemy {
   private phaseTimer = 0
   private summonTimer = 0
   private attackTimer: number
+  /** strike feedback: 1 at the moment damage lands, decays to 0 */
+  private strikeT = 0
+  private hitCount = 0
   private healAuraTimer = 0
   private animT = Math.random() * 10
   private flash = 0
@@ -265,6 +268,7 @@ export class Enemy {
 
   update(dt: number, world: World): void {
     this.animT += dt
+    this.strikeT = Math.max(0, this.strikeT - dt * 4.5)
     if (this.flash > 0) {
       this.flash -= dt
       if (this.flash <= 0) {
@@ -359,10 +363,12 @@ export class Enemy {
         if (this.attackTimer <= 0) {
           this.attackTimer = this.def.attackInterval
           target.takeDamage(randRange(...this.def.attackDamage), world)
+          this.strikeT = 1
+          this.hitCount++
           world.sfx('hit', 0.5)
         }
         // fight pose
-        this.animFight()
+        this.animFight(dt)
       }
     } else if (!stunned) {
       // ranged enemies stop to bombard nearby soldiers
@@ -373,6 +379,8 @@ export class Enemy {
           this.attackTimer -= dt
           if (this.attackTimer <= 0) {
             this.attackTimer = this.def.attackInterval
+            this.strikeT = 1
+            this.hitCount++
             world.fireProjectile({
               kind: 'warlockBolt',
               from: this.pos.clone().add(new THREE.Vector3(0, 0.45, 0)),
@@ -381,7 +389,7 @@ export class Enemy {
               world,
             })
           }
-          this.animFight()
+          this.animFight(dt)
           this.group.rotation.y = this.yaw
           this.bar.set(this.hp / this.maxHp, world.cameraQuat)
           return
@@ -411,6 +419,10 @@ export class Enemy {
   private animWalk(dt: number, speed: number): void {
     const m = this.def.model
     const t = this.animT
+    // shed any leftover strike lean from a fight that just ended
+    if (this.parts.body && Math.abs(this.parts.body.rotation.x) > 0.001) {
+      this.parts.body.rotation.x *= Math.max(0, 1 - dt * 8)
+    }
     if (m === 'veilqueen') {
       const flap = Math.sin(t * 6.5)
       if (this.parts.wingL) this.parts.wingL.rotation.z = flap * 0.45
@@ -470,13 +482,59 @@ export class Enemy {
     }
   }
 
-  private animFight(): void {
-    const t = this.animT
-    const strike = Math.max(0, Math.sin(t * 6))
-    if (this.parts.armR) this.parts.armR.rotation.x = -0.4 - strike * 1.1
-    if (this.parts.armL) this.parts.armL.rotation.x = -0.25
-    if (this.parts.legL) this.parts.legL.rotation.x = 0.12
-    if (this.parts.legR) this.parts.legR.rotation.x = -0.12
+  /** strike-synced combat: wind up as the attack timer runs, whip on the hit,
+   *  with per-creature character instead of one generic arm circle */
+  private animFight(_dt: number): void {
+    const p = clamp(1 - this.attackTimer / this.def.attackInterval, 0, 1)
+    const snap = Math.sin(Math.min(1, this.strikeT) * Math.PI)
+    const P = this.parts
+    const m = this.def.model
+    if (m === 'spiderling' || m === 'broodmother' || m === 'shardback') {
+      // mandible splay, then a whole-body bite lunge
+      if (P.legsL) P.legsL.rotation.y = 0.28 + snap * 0.3
+      if (P.legsR) P.legsR.rotation.y = -0.28 - snap * 0.3
+      if (P.body) P.body.rotation.x = -p * 0.15 + snap * 0.42
+      this.group.position.y = snap * 0.09
+      return
+    }
+    if (m === 'sprinter') {
+      // rearing pounce on the forelegs
+      for (const n of ['legFL', 'legFR'] as const) {
+        if (P[n]) P[n]!.rotation.x = -p * 0.9 + snap * 1.4
+      }
+      if (P.head) P.head.rotation.x = -p * 0.3 + snap * 0.55
+      this.group.position.y = snap * 0.13
+      return
+    }
+    if (m === 'brute' || m === 'juggernaut') {
+      // slow two-handed overhead slam
+      for (const a of [P.armL, P.armR]) {
+        if (a) a.rotation.x = -0.3 - p * 1.7 + snap * 2.6
+      }
+      if (P.body) P.body.rotation.x = -p * 0.12 + snap * 0.3
+      return
+    }
+    if (m === 'husk') {
+      // alternating zombie claw rakes
+      const [a, b] = this.hitCount % 2 ? [P.armL, P.armR] : [P.armR, P.armL]
+      if (a) a.rotation.x = -1.15 - p * 0.5 + snap * 1.7
+      if (b) b.rotation.x = -1.15
+      if (P.head) P.head.rotation.z = Math.sin(this.animT * 2.1) * 0.12
+      return
+    }
+    if (m === 'acolyte' || m === 'warlock' || m === 'mistwalker') {
+      // a rising incantation released on the strike
+      if (P.armR) P.armR.rotation.x = -0.3 - p * 1.5 + snap * 1.8
+      if (P.armL) P.armL.rotation.x = -0.4 - snap * 0.5
+      if (P.body) P.body.rotation.z = Math.sin(this.animT * 3) * 0.05
+      return
+    }
+    // armored grunts: braced shoulder bash
+    if (P.armR) P.armR.rotation.x = -0.4 - p * 1.1 + snap * 1.9
+    if (P.armL) P.armL.rotation.x = -0.35
+    if (P.body) P.body.rotation.x = snap * 0.16
+    if (P.legL) P.legL.rotation.x = 0.12
+    if (P.legR) P.legR.rotation.x = -0.12
   }
 }
 
@@ -496,6 +554,8 @@ export class Soldier {
   /** kills by this soldier are credited here (its barracks, or the hero itself) */
   credit: KillCredit | null = null
   private attackTimer = 0
+  private strikeT = 0
+  private hitCount = 0
   private healPulseTimer = 0
   private animT = Math.random() * 10
   private flash = 0
@@ -554,6 +614,7 @@ export class Soldier {
   revive(spawnPos: THREE.Vector3): void {
     this.dead = false
     this.musterConsumed = false
+    this.strikeT = 0
     this.hp = this.maxHp
     this.flash = 0
     setFlash(this.group, 0)
@@ -574,6 +635,7 @@ export class Soldier {
     if (this.dead) return
     if (this.expiresAt !== null && world.time > this.expiresAt) { this.die(world); return }
     this.animT += dt
+    this.strikeT = Math.max(0, this.strikeT - dt * 4.5)
     this.tickFlash(dt)
 
     // regen & heal pulse
@@ -639,13 +701,15 @@ export class Soldier {
       }
       this.yaw = lerpAngle(this.yaw, Math.atan2(this.target.pos.x - pos.x, this.target.pos.z - pos.z), dt * 9)
       if (pos.distanceTo(this.target.pos) < 0.68) {
+        this.animFight(dt)
         this.attackTimer -= dt
-        this.animFight()
         if (this.attackTimer <= 0) {
           this.attackTimer = this.def.attackInterval
           const dmg = randRange(...this.def.damage)
           const dealt = this.target.takeDamage(dmg, 'physical', world, { credit: this.credit ?? undefined })
           if (this.def.lifesteal) this.hp = Math.min(this.maxHp, this.hp + dealt * this.def.lifesteal)
+          this.strikeT = 1
+          this.hitCount++
           world.sfx('hit', 0.4)
         }
       }
@@ -671,28 +735,52 @@ export class Soldier {
     const swing = Math.sin(this.animT * 9) * 0.5
     const legL = this.part('legL'), legR = this.part('legR')
     const armL = this.part('armL'), armR = this.part('armR')
+    const body = this.part('body')
     if (legL) legL.rotation.x = swing
     if (legR) legR.rotation.x = -swing
     if (armL) armL.rotation.x = -swing * 0.6
     if (armR) armR.rotation.x = swing * 0.6
+    if (body) body.rotation.x *= 0.85
     this.group.position.y = Math.abs(Math.sin(this.animT * 9)) * 0.03
   }
 
-  private animFight(): void {
-    const strike = Math.max(0, Math.sin(this.animT * 7))
-    const armR = this.part('armR'), armL = this.part('armL')
-    if (armR) armR.rotation.x = -0.5 - strike * 1.2
-    if (armL) armL.rotation.x = -0.3
+  /** strike-synced swings with per-soldier character */
+  private animFight(_dt: number): void {
+    const p = clamp(1 - this.attackTimer / this.def.attackInterval, 0, 1)
+    const snap = Math.sin(Math.min(1, this.strikeT) * Math.PI)
+    const armR = this.part('armR'), armL = this.part('armL'), body = this.part('body')
+    const m = this.def.model
+    if (m === 'berserker') {
+      // frenzied alternating axes
+      const [a, b] = this.hitCount % 2 ? [armL, armR] : [armR, armL]
+      if (a) a.rotation.x = -0.5 - p * 1.3 + snap * 2.2
+      if (b) b.rotation.x = -0.3 + snap * 0.4
+    } else if (m === 'paladin') {
+      // two-handed consecrated slam
+      for (const a of [armL, armR]) {
+        if (a) a.rotation.x = -0.4 - p * 1.6 + snap * 2.4
+      }
+    } else {
+      // sword raised as the blow winds up, shield braced
+      if (armR) armR.rotation.x = -0.4 - p * 1.1 + snap * 1.9
+      if (armL) armL.rotation.x = -0.55
+    }
+    if (body) body.rotation.x = snap * 0.17
+    const legL = this.part('legL'), legR = this.part('legR')
+    if (legL) legL.rotation.x = 0.12
+    if (legR) legR.rotation.x = -0.12
     this.group.position.y = 0
   }
 
   private animIdle(): void {
     const legL = this.part('legL'), legR = this.part('legR')
     const armL = this.part('armL'), armR = this.part('armR')
+    const body = this.part('body')
     if (legL) legL.rotation.x = 0
     if (legR) legR.rotation.x = 0
     if (armL) armL.rotation.x = Math.sin(this.animT * 1.8) * 0.05
     if (armR) armR.rotation.x = -Math.sin(this.animT * 1.8) * 0.05
+    if (body) body.rotation.x = 0
     this.group.position.y = 0
   }
 }

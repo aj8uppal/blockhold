@@ -1,4 +1,5 @@
 import type { Game, TargetMode } from '../game/game.ts'
+import type { Hero } from '../game/hero.ts'
 import type { Tower } from '../game/towers.ts'
 import type { PlotInfo } from '../game/terrain.ts'
 import type { Enemy } from '../game/units.ts'
@@ -9,6 +10,10 @@ import {
 } from '../game/types.ts'
 import { towerTrees } from '../game/towerDefs.ts'
 import { icon, BOSS_ART } from './icons.ts'
+
+function chip(label: string, value: string, cls = ''): string {
+  return `<span class="chip${cls ? ' ' + cls : ''}"><span class="chip-label">${label}</span><span class="chip-value">${value}</span></span>`
+}
 
 const TOWER_ICONS: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm' }
 const TOWER_NAMES: Record<TowerKind, string> = { arrow: 'Arrow', mage: 'Mage', cannon: 'Cannon', barracks: 'Barracks' }
@@ -265,8 +270,9 @@ export class HUD {
       btn.classList.toggle('ready', st.cooldown <= 0)
       btn.classList.toggle('active', game.targetMode === key)
     }
-    // live kill tally on the open tower/trap panel
-    const killSource = this.currentTower ?? this.currentTrap
+    this.refreshHeroPanel()
+    // live kill tally on the open tower/trap/hero panel
+    const killSource = this.currentTower ?? this.currentTrap ?? this.currentHero
     if (killSource && !this.towerPanel.classList.contains('hidden')) {
       const killsEl = this.towerPanel.querySelector('.tp-kill-n')
       if (killsEl) {
@@ -401,6 +407,7 @@ export class HUD {
   openTrapPanel(trap: Trap): void {
     this.currentTower = null
     this.currentTrap = trap
+    this.currentHero = null
     this.menuOpenedAt = performance.now()
     const p = this.towerPanel
     p.innerHTML = ''
@@ -423,6 +430,8 @@ export class HUD {
 
   openTowerPanel(tower: Tower): void {
     this.currentTower = tower
+    this.currentTrap = null
+    this.currentHero = null
     this.menuOpenedAt = performance.now()
     const p = this.towerPanel
     p.innerHTML = ''
@@ -430,22 +439,54 @@ export class HUD {
     el('div', 'tp-icon', head, icon(TOWER_ICONS[tower.kind]))
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, tower.def.name)
-    el('div', 'tp-level', title, (tower.level === 5
-      ? '✦ Capstone'
-      : tower.level === 4
-      ? '★ Specialized'
-      : 'Level ' + '●'.repeat(tower.level) + '○'.repeat(3 - tower.level))
+    el('div', 'tp-level', title, (tower.level === 5 ? '✦ ' : tower.level === 4 ? '★ ' : '')
+      + `Tier ${tower.level}/5`
       + `<span class="tp-kills" title="Enemies slain by this building"> · ${icon('skull')} <span class="tp-kill-n">${tower.kills}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
     close.onclick = () => this.game.clearSelection()
+
+    // labeled stat chips read faster than an inline icon run
+    const m = this.mults(tower.kind)
+    const def = tower.def
+    if (def.soldier) {
+      const s = def.soldier
+      el('div', 'stat-chips', p,
+        chip('Squad', `${icon('soldiers')} ${def.soldierCount ?? 3}× ${s.name}`, 'wide') +
+        chip('Health', `${icon('heart')} ${Math.round(s.hp * m.soldierHp)}`) +
+        chip('Damage', `${icon('sword')} ${s.damage[0]}–${s.damage[1]}`) +
+        chip('Armor', `${icon('shield')} ${Math.round(s.armor * 100)}%`) +
+        chip('Respawn', `${icon('respawn')} ${def.respawnTime}s`))
+    } else {
+      const lo = Math.round(def.damage![0] * m.dmg), hi = Math.round(def.damage![1] * m.dmg)
+      const typeIco = def.damageType === 'magic' ? 'sparkle' : def.splash ? 'blast' : 'sword'
+      el('div', 'stat-chips', p,
+        chip('Damage', `${icon(typeIco)} ${lo}–${hi}`) +
+        chip('Rate', `${icon('hourglass')} ${def.attackInterval}s`) +
+        chip('Range', `${icon('range')} ${def.range}`) +
+        chip('DPS', `${icon('swords')} ${((lo + hi) / 2 / def.attackInterval!).toFixed(1)}`))
+      const traits: string[] = []
+      if (def.splash) traits.push(`${icon('blast')} blast r${Math.round(def.splash * m.splash * 100) / 100}`)
+      if (def.damageType === 'magic') traits.push(`${icon('sparkle')} ignores armor`)
+      traits.push(def.flying ? `${icon('feather')} hits flyers` : 'no flyers')
+      el('div', 'tp-traits', p, traits.join(' · '))
+    }
+
+    // the road this tower has taken: tiers, branch, perk, capstone
+    if (tower.level >= 2 || tower.perk) {
+      const tree = towerTrees[tower.kind]
+      const steps: string[] = tree.levels.slice(0, Math.min(tower.level, 3)).map(l => l.name)
+      if (tower.level >= 4 && tower.branch !== null) steps.push(`★ ${tree.branches[tower.branch].name}`)
+      if (tower.level >= 5) steps.push(`✦ ${tree.capstone.name}`)
+      if (tower.perk) steps.push(`${icon(tower.perk.icon)} ${tower.perk.name}`)
+      el('div', 'tp-lineage', p, steps.join(' <span class="dim">→</span> '))
+    }
 
     const extras: string[] = []
     if (tower.resonance > 0) {
       extras.push(`${icon('link')} Resonance ×${tower.resonance}: +${tower.resonance * (tower.isBarracks ? 8 : 6)}% ${tower.isBarracks ? 'soldier health' : 'damage'}`)
     }
     if (tower.perk) extras.push(`${icon(tower.perk.icon)} ${tower.perk.name} — ${tower.perk.description}`)
-    el('div', 'tp-stats', p, statLine(tower.def, this.mults(tower.kind))
-      + (extras.length ? `<span class="tp-extras">${extras.join('<br>')}</span>` : ''))
+    if (extras.length) el('div', 'tp-traits', p, extras.join('<br>'))
 
     const actions = el('div', 'tp-actions', p)
     tower.upgradeOptions.forEach((opt, i) => {
@@ -486,7 +527,83 @@ export class HUD {
   closeTowerPanel(): void {
     this.currentTower = null
     this.currentTrap = null
+    this.currentHero = null
     this.towerPanel.classList.add('hidden')
+  }
+
+  // ---------------- hero panel ----------------
+
+  private currentHero: Hero | null = null
+  private heroPanelLevel = 0
+  private heroPanelEls: { hpFill: HTMLElement, hpNum: HTMLElement, xpFill: HTMLElement, xpNum: HTMLElement, cd: HTMLElement } | null = null
+  private heroPanelCache = { hp: '', xp: '', hpW: -1, xpW: -1 }
+
+  openHeroPanel(hero: Hero): void {
+    this.currentTower = null
+    this.currentTrap = null
+    this.currentHero = hero
+    this.heroPanelLevel = hero.level
+    this.menuOpenedAt = performance.now()
+    const p = this.towerPanel
+    p.innerHTML = ''
+    const head = el('div', 'tp-head', p)
+    el('div', 'tp-icon', head, `<img class="tp-portrait" src="art/hero-${hero.heroDef.id}.webp" alt="">`)
+    const title = el('div', 'tp-title', head)
+    el('div', 'tp-name', title, hero.heroDef.name)
+    el('div', 'tp-level', title, `${hero.heroDef.title} · Level <span class="hp-lvl">${hero.level}</span>`
+      + `<span class="tp-kills" title="Foes slain by the hero"> · ${icon('skull')} <span class="tp-kill-n">${hero.kills}</span></span>`)
+    const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    close.onclick = () => this.game.clearSelection()
+
+    const bars = el('div', 'stat-bars', p)
+    bars.innerHTML =
+      '<div class="stat-bar"><span class="sb-label">HP</span><span class="sb-track"><span class="sb-fill hp"></span></span><span class="sb-num hp-num"></span></div>' +
+      '<div class="stat-bar"><span class="sb-label">XP</span><span class="sb-track"><span class="sb-fill xp"></span></span><span class="sb-num xp-num"></span></div>'
+
+    const d = hero.def
+    el('div', 'stat-chips', p,
+      chip('Damage', `${icon('sword')} ${d.damage[0]}–${d.damage[1]}`) +
+      chip('Armor', `${icon('shield')} ${Math.round(d.armor * 100)}%`) +
+      chip('Regen', `${icon('heart')} ${d.regen ?? 0}/s`) +
+      (hero.ranged
+        ? chip('Range', `${icon('range')} ${hero.heroDef.attackRange}`)
+        : chip('Guards', `${icon('range')} r ${hero.guardRange}`)))
+
+    el('div', 'tp-traits', p,
+      `✦ <b>${hero.heroDef.ability.name}</b> — ${hero.heroDef.ability.blurb} <span class="ability-cd-num"></span>`)
+    el('div', 'tp-lineage', p, hero.ranged
+      ? 'Holds her ground where she stands. Click the ground to reposition her.'
+      : 'Fights whatever enters the ring around his post. Click the ground to move the post.')
+    this.heroPanelEls = {
+      hpFill: p.querySelector('.sb-fill.hp') as HTMLElement,
+      hpNum: p.querySelector('.hp-num') as HTMLElement,
+      xpFill: p.querySelector('.sb-fill.xp') as HTMLElement,
+      xpNum: p.querySelector('.xp-num') as HTMLElement,
+      cd: p.querySelector('.ability-cd-num') as HTMLElement,
+    }
+    this.heroPanelCache = { hp: '', xp: '', hpW: -1, xpW: -1 }
+    p.classList.remove('hidden')
+  }
+
+  /** live hero panel numbers via cached refs; rebuilt wholesale on level-up */
+  private refreshHeroPanel(): void {
+    const hero = this.currentHero
+    const els = this.heroPanelEls
+    if (!hero || !els || this.towerPanel.classList.contains('hidden')) return
+    if (hero.level !== this.heroPanelLevel) { this.openHeroPanel(hero); return }
+    const c = this.heroPanelCache
+    const hpW = hero.dead ? 0 : Math.round(Math.max(0, hero.hp / hero.maxHp) * 100)
+    const hpText = hero.dead ? `back in ${Math.ceil(hero.respawnCountdown)}s` : `${Math.max(0, Math.ceil(hero.hp))}/${hero.maxHp}`
+    if (hpW !== c.hpW) { c.hpW = hpW; els.hpFill.style.width = `${hpW}%` }
+    if (hpText !== c.hp) { c.hp = hpText; els.hpNum.textContent = hpText }
+    const next = hero.xpToNext
+    const xpW = next === Infinity ? 100 : Math.round(Math.min(100, hero.xp / next * 100))
+    const xpText = next === Infinity ? 'MAX' : `${hero.xp}/${next}`
+    if (xpW !== c.xpW) { c.xpW = xpW; els.xpFill.style.width = `${xpW}%` }
+    if (xpText !== c.xp) { c.xp = xpText; els.xpNum.textContent = xpText }
+    const t = hero.abilityCooldown
+    const cdText = hero.dead ? '' : t <= 0 ? '· Ready' : `· ${Math.ceil(t)}s`
+    if (els.cd.textContent !== cdText) els.cd.textContent = cdText
   }
 
   // ---------------- enemy tooltip ----------------

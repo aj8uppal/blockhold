@@ -17,6 +17,9 @@ const boltColors: Record<string, number> = {
   mage5a: 0xd8a5ff, mage5b: 0xbfefff,
 }
 
+/** each upgrade visibly grows the building: presence tracks power */
+const TIER_SCALE = [0.9, 1.0, 1.1, 1.2, 1.3]
+
 /** where the ascension sigil floats, per tower model */
 function towerCrownHeight(model: string): number {
   const t5 = model.includes('5')
@@ -53,6 +56,9 @@ export class Tower {
   private turretYaw = 0
   private recoil = 0
   private buildT = 0
+  private sizeMult = 1
+  /** seconds spent ready-with-target but blocked by the aim gate */
+  private stallT = 0
   private crystalT = Math.random() * 10
 
   constructor(readonly kind: TowerKind, readonly plot: PlotInfo, world: World) {
@@ -104,7 +110,7 @@ export class Tower {
     const geo = new THREE.OctahedronGeometry(0.09)
     const mat = new THREE.MeshBasicMaterial({ color: 0x8fdfff, toneMapped: false })
     this.crownMesh = new THREE.Mesh(geo, mat)
-    this.crownMesh.position.y = towerCrownHeight(this.def.model)
+    this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult
     this.group.add(this.crownMesh)
     if (this.isBarracks) this.respawnAllSoldiers(world)
     world.particles.magicImpact(this.pos.x, this.pos.y + 0.8, this.pos.z, 0x8fdfff)
@@ -128,6 +134,7 @@ export class Tower {
     this.def = def
     this.model = buildModel(towerModel(def.model), `tower:${def.model}`)
     this.group.add(this.model)
+    this.sizeMult = TIER_SCALE[this.level - 1]
     this.buildT = 0
     if (this.isBarracks) {
       if (initial) this.pickDefaultRally(world)
@@ -149,7 +156,7 @@ export class Tower {
       this.level = 5
       this.applyLevel(resolveCapstone(this.kind, this.branch), world)
       // the ascension sigil rides the new silhouette
-      if (this.crownMesh) this.crownMesh.position.y = towerCrownHeight(this.def.model)
+      if (this.crownMesh) this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult
       world.particles.magicImpact(this.pos.x, this.pos.y + 1.0, this.pos.z, 0xffe89f)
     }
     world.particles.buildDust(this.pos.x, this.pos.y + 0.15, this.pos.z)
@@ -285,7 +292,7 @@ export class Tower {
   // ---------------- combat ----------------
 
   private muzzle(): THREE.Vector3 {
-    return this.pos.clone().add(new THREE.Vector3(0, muzzleHeights[this.def.model], 0))
+    return this.pos.clone().add(new THREE.Vector3(0, muzzleHeights[this.def.model] * this.sizeMult, 0))
   }
 
   private acquireTarget(world: World): void {
@@ -308,11 +315,11 @@ export class Tower {
   }
 
   update(dt: number, world: World): void {
-    // build pop-in
+    // build pop-in (settles at the tier's presence scale)
     if (this.buildT < 1) {
       this.buildT = Math.min(1, this.buildT + dt * 3)
       const overshoot = 1 + Math.sin(this.buildT * Math.PI) * 0.12
-      this.model.scale.setScalar(clamp(this.buildT * 1.15, 0.05, 1) * overshoot)
+      this.model.scale.setScalar(clamp(this.buildT * 1.15, 0.05, 1) * overshoot * this.sizeMult)
     }
 
     // ambient part animation
@@ -328,14 +335,14 @@ export class Tower {
     // ascension sigil + overcharge ring
     if (this.crownMesh) {
       this.crownMesh.rotation.y += dt * 2.2
-      this.crownMesh.position.y = towerCrownHeight(this.def.model) + Math.sin(world.time * 2.4) * 0.04
+      this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult + Math.sin(world.time * 2.4) * 0.04
     }
     if (this.chargeRing) {
       const on = this.isOvercharged(world)
       this.chargeRing.visible = on
       if (on) {
         const t = (this.overchargeUntil - world.time) / OVERCHARGE_DURATION
-        this.chargeRing.scale.setScalar(1 + Math.sin(world.time * 8) * 0.08)
+        this.chargeRing.scale.setScalar(this.sizeMult * (1 + Math.sin(world.time * 8) * 0.08))
         ;(this.chargeRing.material as THREE.MeshBasicMaterial).opacity = 0.35 + t * 0.4
       }
     }
@@ -346,17 +353,37 @@ export class Tower {
     }
 
     this.cooldown -= dt
+    const prevTarget = this.target
     this.acquireTarget(world)
+    if (this.target !== prevTarget) this.stallT = 0
     const turret = getPart(this.model, 'turret')
 
     if (this.target) {
       const t = this.target
-      const desired = Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z)
+      const dx = t.pos.x - this.pos.x, dz = t.pos.z - this.pos.z
+      const desired = Math.atan2(dx, dz)
+      // a poisoned yaw (NaN from any upstream glitch) must heal, not stall forever
+      if (!Number.isFinite(this.turretYaw)) this.turretYaw = desired
       this.turretYaw = lerpAngle(this.turretYaw, desired, dt * 10)
       if (turret) turret.rotation.y = this.turretYaw
-      let aimDiff = Math.abs(((desired - this.turretYaw + Math.PI) % (Math.PI * 2)) - Math.PI)
-      if (this.kind === 'mage') aimDiff = 0 // crystals don't need to swivel
+      // true angular distance, correct for any accumulated yaw winding
+      let aimDiff = Math.abs(desired - this.turretYaw) % (Math.PI * 2)
+      if (aimDiff > Math.PI) aimDiff = Math.PI * 2 - aimDiff
+      // crystals don't swivel; point-blank foes shuffle faster than any turret tracks
+      if (this.kind === 'mage' || dx * dx + dz * dz < 1.7) aimDiff = 0
+      // watchdog: a ready tower staring at a live target must never stall out
+      if (this.cooldown <= 0 && aimDiff >= 0.35) {
+        this.stallT += dt
+        if (this.stallT > 4) {
+          console.warn('[blockhold] anti-stall fire', this.kind, this.def.model,
+            'yaw', this.turretYaw.toFixed(2), 'want', desired.toFixed(2), 'd', Math.hypot(dx, dz).toFixed(2))
+          aimDiff = 0
+        }
+      } else {
+        this.stallT = 0
+      }
       if (this.cooldown <= 0 && aimDiff < 0.35) {
+        this.stallT = 0
         const rate = this.isOvercharged(world) ? 1 + OVERCHARGE_RATE_BONUS : 1
         this.cooldown = this.def.attackInterval! / rate
         this.fire(t, world)
