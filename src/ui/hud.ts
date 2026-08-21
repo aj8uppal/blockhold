@@ -8,7 +8,7 @@ import {
   OVERCHARGE_SHARD_COST, OVERCHARGE_DURATION, ASCEND_SHARD_COST, ASCEND_GOLD_COST,
 } from '../game/types.ts'
 import { towerTrees } from '../game/towerDefs.ts'
-import { icon } from './icons.ts'
+import { icon, BOSS_ART } from './icons.ts'
 
 const TOWER_ICONS: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm' }
 const TOWER_NAMES: Record<TowerKind, string> = { arrow: 'Arrow', mage: 'Mage', cannon: 'Cannon', barracks: 'Barracks' }
@@ -148,7 +148,7 @@ export class HUD {
     const bar = el('div', 'abilities', this.root)
     this.heroBtn = el('button', 'ability hero-btn', bar) as HTMLButtonElement
     this.heroBtn.innerHTML =
-      `<span class="ability-icon">${icon('helmPlume')}</span><span class="cd-sweep"></span>` +
+      `<span class="ability-icon"><img class="hero-face" src="art/hero-aldric.webp" alt=""></span><span class="cd-sweep"></span>` +
       '<span class="hero-level">1</span><span class="hero-hp"><span class="hero-hp-fill"></span></span>'
     this.heroBtn.title = 'Sir Aldric — select the hero, click the ground to move him. Hotkey H.'
     this.heroBtn.onclick = () => this.game.selectHero(true)
@@ -238,7 +238,7 @@ export class HUD {
       if (this.lastHeroId !== hero.heroDef.id) {
         this.lastHeroId = hero.heroDef.id
         const heroIco = this.heroBtn.querySelector('.ability-icon') as HTMLElement
-        if (heroIco) heroIco.innerHTML = icon(hero.heroDef.icon)
+        if (heroIco) heroIco.innerHTML = `<img class="hero-face" src="art/hero-${hero.heroDef.id}.webp" alt="">`
         this.heroBtn.title = `${hero.heroDef.name} ${hero.heroDef.title} — select, then click the ground to move. ${hero.heroDef.ability.name}: ${hero.heroDef.ability.blurb} Hotkey H.`
       }
       const sweep = this.heroBtn.querySelector('.cd-sweep') as HTMLElement
@@ -516,7 +516,8 @@ export class HUD {
     if (d.ranged) traits.push('ranged caster')
     if (d.boss) traits.push(`${icon('crown')} BOSS`)
     this.tipArmorShown = Math.round(enemy.armor * 100)
-    this.enemyTip.innerHTML =
+    const portrait = BOSS_ART.has(d.id) ? `<img class="et-portrait" src="art/boss-${d.id}.webp" alt="">` : ''
+    this.enemyTip.innerHTML = portrait +
       `<b>${d.name}</b> ${icon('heart')}<span class="et-hp"></span>` +
       (traits.length ? `<span class="et-traits">${traits.join(' · ')}</span>` : '') +
       `<span class="et-desc">${d.description}</span>`

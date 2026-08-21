@@ -15,7 +15,6 @@ const THEME_ART: Record<string, string> = {
   swamp: 'linear-gradient(160deg, #8fae72 0%, #5f7a4f 55%, #3a4f42 100%)',
   void: 'linear-gradient(160deg, #8f7ab8 0%, #5f4a8f 55%, #2a1d45 100%)',
 }
-const THEME_ICON: Record<string, string> = { forest: 'tree', winter: 'frost', ember: 'volcano', swamp: 'mushroom', void: 'crown' }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, html?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag)
@@ -63,6 +62,10 @@ export class Screens {
   private renderMenu(): void {
     const wrap = el('div', 'screen menu-screen', this.root)
     const card = el('div', 'menu-hero', wrap)
+    // painted key art under a dark scrim; inline so the URL resolves at runtime
+    card.style.background =
+      'linear-gradient(180deg, rgba(28, 19, 12, 0.82), rgba(22, 15, 10, 0.9) 62%, rgba(20, 14, 9, 0.96)), ' +
+      'url(art/title.webp) center / cover'
     el('div', 'menu-crest', card, icon('castle', 'gilded'))
     el('h1', 'game-title', card, 'BLOCKHOLD')
     el('div', 'game-tagline', card, 'Hold the line, block by block.')
@@ -87,8 +90,9 @@ export class Screens {
       const locked = i >= save.unlocked
       const stars = save.stars[lvl.id] ?? 0
       const card = el('button', `level-card${locked ? ' locked' : ''}`, grid) as HTMLButtonElement
-      const art = el('div', 'level-art', card, locked ? icon('lock', 'plain') : icon(THEME_ICON[lvl.theme]))
-      art.style.background = THEME_ART[lvl.theme]
+      const art = el('div', 'level-art', card, locked ? icon('lock', 'plain') : '')
+      // painted card over the theme gradient (which shows until the image lands)
+      art.style.background = `url(art/card-${lvl.id}.webp) center / cover, ${THEME_ART[lvl.theme]}`
       el('div', 'level-name', card, `${i + 1}. ${lvl.name}`)
       el('div', 'level-sub', card, lvl.subtitle)
       el('div', 'level-meta', card, `${lvl.waves.length} waves · ${lvl.lanes.length === 1 ? 'single road' : `${lvl.lanes.length} roads`}`)
@@ -141,7 +145,7 @@ export class Screens {
     const heroBtns = new Map<HeroId, HTMLButtonElement>()
     for (const def of Object.values(HERO_DEFS)) {
       const btn = el('button', 'hero-option', heroRow) as HTMLButtonElement
-      btn.innerHTML = `<span class="hero-icon">${icon(def.icon)}</span>` +
+      btn.innerHTML = `<img class="hero-portrait" src="art/hero-${def.id}.webp" alt="">` +
         `<span class="hero-name">${def.name}</span><span class="hero-title">${def.title}</span>` +
         `<span class="hero-blurb">${def.blurb}</span>` +
         `<span class="hero-stats">${icon('heart')} ${def.hp} · ${icon('sword')} ${def.damage[0]}–${def.damage[1]}${def.attackRange ? ` · ${icon('range')} ${def.attackRange}` : ' · melee'}</span>` +

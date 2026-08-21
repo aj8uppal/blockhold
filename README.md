@@ -2,7 +2,7 @@
 
 *Hold the line, block by block.*
 
-A 3D voxel tower defense for the browser. Built with Three.js + TypeScript + Vite — no game engine, no art assets: every model is authored in code as colored voxel boxes, and every sound is synthesized with WebAudio.
+A 3D voxel tower defense for the browser. Built with Three.js + TypeScript + Vite — no game engine: every 3D model is authored in code as colored voxel boxes, every sound is synthesized with WebAudio, and every UI symbol is a hand-written SVG. The 2D art (map cards, hero and boss portraits, key art) is generated with Midjourney and shipped as compressed webp.
 
 It starts from the classic tower-defense grammar and grows its own mechanics: road traps, a shard economy with tower ascension, Veiltide surge waves, resonance placement bonuses, phasing enemies, and a flying final boss.
 

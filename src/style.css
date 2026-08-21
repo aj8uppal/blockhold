@@ -153,6 +153,8 @@ button:disabled { cursor: not-allowed; }
   transition: transform 0.12s ease, border-color 0.12s ease;
 }
 .ability .ability-icon { font-size: 26px; line-height: 54px; }
+.hero-btn .ability-icon { position: absolute; inset: 3px; line-height: 0; }
+.hero-btn .hero-face { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 .ability .hotkey {
   position: absolute; top: 3px; left: 6px;
   font-size: 10px; font-weight: 800; color: rgba(244, 232, 207, 0.6);
@@ -371,6 +373,10 @@ button:disabled { cursor: not-allowed; }
   100% { opacity: 0; transform: translate(-50%, -190%) scale(0.95); }
 }
 
+.enemy-tip .et-portrait {
+  float: right; width: 62px; height: 62px; border-radius: 9px; object-fit: cover;
+  margin: 0 0 4px 8px; border: 1px solid rgba(216, 69, 47, 0.5);
+}
 .enemy-tip {
   position: absolute;
   width: 240px;
@@ -609,7 +615,12 @@ button:disabled { cursor: not-allowed; }
   background: rgba(127, 212, 255, 0.1);
   box-shadow: 0 0 14px rgba(127, 212, 255, 0.3);
 }
-.hero-option .hero-icon { font-size: 30px; }
+.hero-option .hero-portrait {
+  width: 84px; height: 84px; border-radius: 12px; object-fit: cover;
+  border: 2px solid rgba(232, 178, 60, 0.4);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+}
+.hero-option.picked .hero-portrait { border-color: var(--gold-bright); }
 .hero-option .hero-name { font-weight: 800; font-size: 15px; color: var(--gold-bright); }
 .hero-option .hero-title { font-size: 11.5px; font-style: italic; color: rgba(244, 232, 207, 0.7); margin-top: -4px; }
 .hero-option .hero-blurb { font-size: 11.5px; line-height: 1.4; color: rgba(244, 232, 207, 0.8); min-height: 44px; }
@@ -675,6 +686,7 @@ button:focus-visible {
 .ico.gilded { color: #ffd23c; }
 .ico.plain { color: inherit; }
 .gold-star { color: #ffd23c; }
+
 .ico-medal.vet { color: #ccd4df; }
 
 /* ---------- rotate prompt (portrait phones) ---------- */
@@ -747,7 +759,7 @@ button:focus-visible {
 @media (max-height: 560px) {
   .help-card { max-height: 92vh; padding: 14px 18px; gap: 8px; overflow-y: auto; }
   .hero-option .hero-blurb { display: none; }
-  .hero-option .hero-icon { font-size: 22px; }
+  .hero-option .hero-portrait { width: 56px; height: 56px; }
   .diff-option .diff-blurb { display: none; min-height: 0; }
   .diff-option { padding: 10px 8px; }
   .levels-grid { gap: 10px; }

@@ -72,6 +72,9 @@ const defs: Record<string, string> = {
   rotate: `<rect x="7" y="3.4" width="10" height="17.2" rx="2.4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="17.6" r="1.1" fill="currentColor"/><path ${S} d="M20.8 9.4a9.3 9.3 0 0 0-3.4-4.6M3.2 14.6a9.3 9.3 0 0 0 3.4 4.6"/><path fill="currentColor" d="m21.9 6.5-.6 4-3.4-2.2Z"/><path fill="currentColor" d="m2.1 17.5.6-4 3.4 2.2Z"/>`,
 }
 
+/** enemy ids with a painted tooltip portrait in public/art */
+export const BOSS_ART = new Set(['juggernaut', 'veilqueen', 'veilregent'])
+
 /** render an icon by name; extra classes are appended (e.g. sizing hooks) */
 export function icon(name: string, cls = ''): string {
   const body = defs[name]
