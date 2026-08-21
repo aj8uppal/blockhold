@@ -121,9 +121,11 @@ canvas.addEventListener('pointerdown', (e) => {
     dragOrbit = e.button === 2 || e.button === 1 || e.shiftKey
     dragStart = { x: e.clientX, y: e.clientY }
     dragged = false
+    if (!dragOrbit) game.engine.panGrab(e.clientX, e.clientY)
   } else {
     // entering multi-touch cancels any pending click; reset gesture baselines
     dragged = true
+    game.engine.panRelease()
     pinchDist = pinchDistance()
     pinchAngle = twistAngle()
     lastCentroid = null
@@ -160,16 +162,18 @@ canvas.addEventListener('pointermove', (e) => {
     const cx = (pts[0].x + pts[1].x) / 2, cy = (pts[0].y + pts[1].y) / 2
     if (lastCentroid) {
       game.engine.tilt((cy - lastCentroid.y) * 0.9)
-      game.engine.pan(-(cx - lastCentroid.x) / 2, 0)
+      game.engine.pan(-(cx - lastCentroid.x), 0)
     }
     lastCentroid = { x: cx, y: cy }
     return
   }
   if (Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 6) dragged = true
   if (dragged) {
-    // orbit/tilt: right-drag, middle-drag, or shift+drag (latched); otherwise pan
+    // orbit/tilt: right-drag, middle-drag, or shift+drag (latched); otherwise pan.
+    // Panning pins the grabbed ground point under the pointer; if the pointer
+    // has no ground under it (near the horizon), fall back to delta panning.
     if (dragOrbit) game.engine.orbit(dx, dy)
-    else game.engine.pan(-dx, -dy)
+    else if (!game.engine.panTo(e.clientX, e.clientY)) game.engine.pan(-dx, -dy)
   }
 })
 
@@ -177,10 +181,16 @@ const endPointer = (e: PointerEvent, isClick: boolean) => {
   try { canvas.releasePointerCapture(e.pointerId) } catch { /* not captured */ }
   const had = pointers.delete(e.pointerId)
   if (!had) return
+  game.engine.panRelease()
   if (pointers.size > 0) {
     pinchDist = pinchDistance()
     pinchAngle = pointers.size >= 2 ? twistAngle() : null
     lastCentroid = null
+    // two fingers down to one: the survivor continues as a pinned pan
+    if (pointers.size === 1 && !dragOrbit) {
+      const rest = [...pointers.values()][0]
+      game.engine.panGrab(rest.x, rest.y)
+    }
     return
   }
   const wasDrag = dragged

@@ -2,6 +2,9 @@ import * as THREE from 'three'
 import { clamp, lerp } from './utils.ts'
 import { ThemeColors } from '../game/terrain.ts'
 
+const panRaycaster = new THREE.Raycaster()
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+
 export class Engine {
   renderer: THREE.WebGLRenderer
   scene: THREE.Scene
@@ -212,14 +215,85 @@ export class Engine {
     this.distGoal = clamp(this.distGoal * Math.exp(delta * 0.0011), 5.5, this.maxZoomOut)
   }
 
+  /** screen-delta pan on the ground plane (keyboard, two-finger centroid).
+   *  Scaled by world-units-per-pixel and pitch foreshortening so the world
+   *  roughly tracks the pointer at any zoom/tilt/orbit. */
   pan(dx: number, dz: number): void {
-    // pan in camera-relative ground plane
+    const wpp = 2 * this.dist * Math.tan(this.camera.fov * Math.PI / 360) / window.innerHeight
+    const vert = 1 / Math.max(0.3, Math.sin(this.pitch))
     const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw)
-    const speed = this.dist * 0.0016
-    this.camTargetGoal.x += (dx * cos - dz * sin) * speed
-    this.camTargetGoal.z += (dz * cos + dx * sin) * speed
+    this.camTargetGoal.x += (dx * cos + dz * vert * sin) * wpp
+    this.camTargetGoal.z += (dz * vert * cos - dx * sin) * wpp
     this.camTargetGoal.x = clamp(this.camTargetGoal.x, -this.bounds.x, this.bounds.x)
     this.camTargetGoal.z = clamp(this.camTargetGoal.z, -this.bounds.z, this.bounds.z)
+  }
+
+  // ---- grab-the-ground pan (primary pointer drag) ----
+
+  private goalCam: THREE.PerspectiveCamera | null = null
+  private panAnchor: THREE.Vector3 | null = null
+
+  /** camera posed at the goal rig state — panning against goals (not the lerped
+   *  live camera) makes each correction exact instead of compounding */
+  private poseGoalCamera(): THREE.PerspectiveCamera {
+    const cam = this.goalCam ??= new THREE.PerspectiveCamera()
+    cam.fov = this.camera.fov
+    cam.aspect = this.camera.aspect
+    cam.updateProjectionMatrix()
+    cam.position.set(
+      this.camTargetGoal.x + Math.sin(this.yawGoal) * Math.cos(this.pitchGoal) * this.distGoal,
+      this.camTargetGoal.y + Math.sin(this.pitchGoal) * this.distGoal,
+      this.camTargetGoal.z + Math.cos(this.yawGoal) * Math.cos(this.pitchGoal) * this.distGoal,
+    )
+    cam.lookAt(this.camTargetGoal)
+    cam.updateMatrixWorld()
+    return cam
+  }
+
+  private groundAtGoal(sx: number, sy: number): THREE.Vector3 | null {
+    panRaycaster.setFromCamera(
+      new THREE.Vector2((sx / window.innerWidth) * 2 - 1, -(sy / window.innerHeight) * 2 + 1),
+      this.poseGoalCamera(),
+    )
+    const out = new THREE.Vector3()
+    return panRaycaster.ray.intersectPlane(groundPlane, out) ? out : null
+  }
+
+  /** grab the ground point under the pointer; panTo keeps it under the finger.
+   *  A grab near the horizon (far outside the framed view) is refused — one
+   *  pixel there spans enormous ground distance, so delta panning feels better. */
+  panGrab(sx: number, sy: number): void {
+    const p = this.groundAtGoal(sx, sy)
+    this.panAnchor = p && Math.hypot(p.x - this.camTargetGoal.x, p.z - this.camTargetGoal.z) < this.distGoal * 1.2
+      ? p
+      : null
+  }
+
+  /** returns false when the pointer has no ground under it (caller may fall back to pan()) */
+  panTo(sx: number, sy: number): boolean {
+    if (!this.panAnchor) return false
+    const hit = this.groundAtGoal(sx, sy)
+    if (!hit) return false
+    let dx = this.panAnchor.x - hit.x
+    let dz = this.panAnchor.z - hit.z
+    // near the horizon one pixel spans huge ground distance; cap the step
+    const cap = this.distGoal * 0.9
+    const len = Math.hypot(dx, dz)
+    if (len > cap) { dx *= cap / len; dz *= cap / len }
+    const wantX = this.camTargetGoal.x + dx
+    const wantZ = this.camTargetGoal.z + dz
+    this.camTargetGoal.x = clamp(wantX, -this.bounds.x, this.bounds.x)
+    this.camTargetGoal.z = clamp(wantZ, -this.bounds.z, this.bounds.z)
+    // clamped or capped: re-anchor to what is now under the finger, otherwise
+    // the unapplied overshoot must be unwound before a reverse drag responds
+    if (len > cap || Math.abs(wantX - this.camTargetGoal.x) > 1e-6 || Math.abs(wantZ - this.camTargetGoal.z) > 1e-6) {
+      this.panAnchor = this.groundAtGoal(sx, sy)
+    }
+    return true
+  }
+
+  panRelease(): void {
+    this.panAnchor = null
   }
 
   focusOn(x: number, z: number): void {
