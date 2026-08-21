@@ -430,9 +430,16 @@ button:disabled { cursor: not-allowed; }
 
 #screens .screen {
   position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center;
   gap: 18px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
+           calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
 }
+/* safe centering: flexible spacers center short content but never clip tall
+   content off the top the way justify-content: center does */
+#screens .screen::before, #screens .screen::after { content: ''; flex: 1 0 0; }
 .menu-screen, .levels-screen {
   /* translucent veil: the live diorama drifts behind the menus */
   background:
@@ -818,6 +825,9 @@ button:focus-visible {
   .levels-grid { gap: 10px; }
   .level-card { width: 172px; padding: 8px 8px 10px; }
   .level-art { height: 62px; font-size: 28px; border-radius: 9px; }
+  .level-sub { display: none; }
+  .levels-title { font-size: 20px; }
+  .levels-head { gap: 10px; }
   .level-name { font-size: 13.5px; }
   .level-sub, .level-meta { font-size: 10px; }
   .end-card { padding: 18px 26px; gap: 6px; max-height: 94vh; overflow-y: auto; }
