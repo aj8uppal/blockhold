@@ -4,7 +4,7 @@ import { audio, SfxName } from '../core/audio.ts'
 import { loadSave, writeSave, SaveData } from '../core/save.ts'
 import {
   LevelDef, TowerKind, Difficulty, DIFFICULTIES, HeroId, TrapKind, TRAP_DEFS,
-  OVERCHARGE_SHARD_COST, ASCEND_SHARD_COST, ASCEND_GOLD_COST,
+  OVERCHARGE_SHARD_COST, ASCEND_SHARD_COST, ASCEND_GOLD_COST, PERKS,
 } from './types.ts'
 import { Trap, TrapSpotInfo } from './traps.ts'
 import { Hazard, createHazard } from './hazards.ts'
@@ -26,7 +26,8 @@ import { armoryTier, hasArmory } from './armory.ts'
 import type { HUD } from '../ui/hud.ts'
 import { icon } from '../ui/icons.ts'
 import { randRange, simChance, setSimSeed } from '../core/utils.ts'
-import { newRunSeed, runStamp, type RunStamp } from './ruleset.ts'
+import { newRunSeed, runStamp, RULESET_VERSION, type RunStamp } from './ruleset.ts'
+import { writeCheckpoint, clearCheckpoint, readCheckpoint, type Checkpoint } from './checkpoint.ts'
 import { attachDebris, shatter, updateDebris, clearDebris, type DeathFlavor } from './debris.ts'
 
 export type GamePhase = 'idle' | 'playing' | 'victory' | 'defeat'
@@ -280,6 +281,58 @@ export class Game implements World {
     }
   }
 
+  /**
+   * Snapshot only when the board is genuinely quiet - no live enemies, no
+   * projectiles, not mid-spawn. There is nothing transient to serialise at
+   * that moment, so a resumed battle is exactly the one the player left.
+   *
+   * Waves in this game deliberately overlap, so quiet moments are not
+   * guaranteed every wave - the long breaks after bosses are the reliable
+   * ones. A resume therefore returns to the last clean boundary rather than
+   * the exact moment of interruption, which is still far better than losing
+   * a twenty-minute run to a closed tab.
+   */
+  private checkpointT = 0
+  private maybeCheckpoint(): void {
+    if (this.phase !== 'playing' || !this.level || !this.waves) return
+    if (this.enemies.some(e => e.alive) || this.projectiles.length) return
+    if (this.waves.phase === 'spawning') return
+    const waveIndex = this.waves.waveIndex + 1
+    if (waveIndex < 1 || waveIndex >= this.waves.totalWaves) return
+    writeCheckpoint({
+      ruleset: RULESET_VERSION,
+      levelId: this.level.id,
+      difficulty: this.difficulty,
+      heroId: (this.hero?.heroDef.id ?? this.save.lastHero) as HeroId,
+      endless: this.isEndless,
+      seed: this.runSeed,
+      waveIndex,
+      gold: this.gold,
+      lives: this.lives,
+      shards: this.shards,
+      time: this.time,
+      goldEarned: this.goldEarned,
+      shardsEarned: this.shardsEarned,
+      killCount: this.killCount,
+      perfectWaves: this.perfectWaves,
+      defenseStreak: this.defenseStreak,
+      bestStreak: this.bestStreak,
+      earlyCallSeconds: this.earlyCallSeconds,
+      heroLevel: this.hero?.level ?? 1,
+      heroXp: this.hero?.xp ?? 0,
+      towers: this.towers.map(t => ({
+        plot: t.plot.index,
+        kind: t.kind,
+        level: t.level,
+        branch: t.branch,
+        perk: t.perk?.id ?? null,
+        policy: t.targetPolicy,
+      })),
+      traps: this.traps.map(t => ({ spot: t.spot.index, kind: t.kind })),
+      savedAt: this.time,
+    })
+  }
+
   get surgeActive(): boolean {
     if (!this.waves || !this.level) return false
     const wave = this.level.waves[this.waves.waveIndex]
@@ -373,12 +426,13 @@ export class Game implements World {
     difficulty: Difficulty = 'normal',
     heroId: HeroId = 'aldric',
     mode: 'campaign' | 'endless' = 'campaign',
-    opts: { seed?: number } = {},
+    opts: { seed?: number, resume?: Checkpoint } = {},
   ): void {
     this.disposeLevel()
+    const resume = opts.resume ?? null
     // Seed before anything draws: endless wave generation itself is a
     // consumer, so the run is only reproducible if this comes first.
-    this.runSeed = opts.seed ?? newRunSeed()
+    this.runSeed = resume?.seed ?? opts.seed ?? newRunSeed()
     setSimSeed(this.runSeed)
     this.isEndless = mode === 'endless'
     this.level = this.isEndless ? { ...level, waves: generateEndlessWaves(level, undefined, this.runSeed) } : level
@@ -453,7 +507,58 @@ export class Game implements World {
     audio.init()
     audio.resume()
     audio.startMusic()
-    if (level.intro) this.hud.showToast(level.intro, 5)
+    if (resume) this.applyCheckpoint(resume)
+    else if (level.intro) this.hud.showToast(level.intro, 5)
+  }
+
+  /** rebuild the board a checkpoint describes */
+  private applyCheckpoint(c: Checkpoint): void {
+    if (!this.terrain || !this.waves) return
+    this.gold = c.gold
+    this.lives = c.lives
+    this.shards = c.shards
+    this.time = c.time
+    this.goldEarned = c.goldEarned
+    this.shardsEarned = c.shardsEarned
+    this.killCount = c.killCount
+    this.perfectWaves = c.perfectWaves
+    this.defenseStreak = c.defenseStreak
+    this.bestStreak = c.bestStreak
+    this.earlyCallSeconds = c.earlyCallSeconds
+    for (const snap of c.towers) {
+      const plot = this.terrain.plots[snap.plot]
+      if (!plot || plot.occupied) continue
+      plot.occupied = true
+      const tower = new Tower(snap.kind, plot, this)
+      // walk the tree back up to the recorded tier, taking the same branch
+      for (let lvl = 1; lvl < snap.level; lvl++) {
+        tower.upgrade(lvl === 3 ? (snap.branch ?? 0) : 0, this)
+      }
+      if (snap.perk) {
+        const idx = PERKS[snap.kind].findIndex(p => p.id === snap.perk)
+        if (idx >= 0) tower.ascend(idx as 0 | 1, this)
+      }
+      tower.targetPolicy = snap.policy
+      this.towers.push(tower)
+      this.dynamic.add(tower.group)
+    }
+    for (const snap of c.traps) {
+      const spot = this.terrain.trapSpots[snap.spot]
+      if (!spot || spot.occupied) continue
+      spot.occupied = true
+      spot.mesh.visible = false
+      const trap = new Trap(snap.kind, spot, this)
+      this.traps.push(trap)
+      this.dynamic.add(trap.group)
+    }
+    this.recomputeResonance()
+    if (this.hero) {
+      this.hero.level = c.heroLevel
+      this.hero.xp = c.heroXp
+    }
+    this.waves.resumeAt(c.waveIndex)
+    this.removeLanePreview()
+    this.hud.showToast(`Resumed at wave ${c.waveIndex + 1}`, 3)
   }
 
   /** pre-battle route preview: colored dashes trace each road from its gate,
@@ -572,6 +677,8 @@ export class Game implements World {
 
   private endGame(won: boolean): void {
     if (this.phase !== 'playing') return
+    // the run is over either way: there is nothing left to resume
+    clearCheckpoint()
     this.phase = won ? 'victory' : 'defeat'
     this.targetMode = null
     this.hud.closeBuildMenu()
@@ -1282,6 +1389,11 @@ export class Game implements World {
     // debris is presentation only, so it runs on the render clock and never
     // draws from the simulation RNG stream
     if (!this.paused) updateDebris(Math.min(dtRaw, 0.05))
+    // look for a quiet board roughly once a second
+    if (this.phase === 'playing' && !this.paused) {
+      this.checkpointT += dtRaw
+      if (this.checkpointT >= 1) { this.checkpointT = 0; this.maybeCheckpoint() }
+    }
 
     // Veiltide lighting: ease toward violet while a surge is on the field
     const surgeTarget = this.phase === 'playing' && this.surgeActive ? 1 : 0

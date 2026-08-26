@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadSave } from '../src/core/save.ts'
+import { loadSave, exportSave, importSave } from '../src/core/save.ts'
 
 const getItem = vi.fn((_key: string): string | null => null)
 
@@ -60,5 +60,36 @@ describe('loadSave', () => {
     getItem.mockReturnValue('{ definitely not json')
 
     expect(loadSave()).toEqual({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestScore: {}, medals: {}, lastHero: 'aldric', sfxMuted: false, musicMuted: false })
+  })
+})
+
+describe('save durability', () => {
+  const sample: SaveData = {
+    unlocked: 4, stars: { greenhollow: 3, frostmere: 2 }, armory: { coffers: 1 },
+    bestEndless: { greenhollow: 41 }, bestScore: { 'greenhollow:normal': 9100 },
+    medals: { greenhollow: ['noleak'] }, lastHero: 'liora', sfxMuted: false, musicMuted: true,
+  }
+
+  it('round-trips a save through an export code', () => {
+    const restored = importSave(exportSave(sample))
+    expect(restored).toEqual(sample)
+  })
+
+  it('survives whitespace around a pasted code', () => {
+    expect(importSave(`\n  ${exportSave(sample)}  \n`)).toEqual(sample)
+  })
+
+  it('refuses anything that is not a Blockhold save', () => {
+    expect(importSave('not base64 at all !!')).toBeNull()
+    expect(importSave(btoa('{"nope":true}'))).toBeNull()
+    expect(importSave('')).toBeNull()
+  })
+
+  it('validates imported data rather than trusting it', () => {
+    // a hand-edited code claiming 999 unlocked levels and 99 stars is clamped
+    const evil = btoa(JSON.stringify({ v: 1, d: { ...sample, unlocked: 999, stars: { greenhollow: 99 } } }))
+    const restored = importSave(evil)!
+    expect(restored.unlocked).toBeLessThanOrEqual(16)
+    expect(restored.stars.greenhollow).toBeLessThanOrEqual(3)
   })
 })

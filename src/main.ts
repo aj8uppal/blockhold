@@ -1,3 +1,5 @@
+import { requestDurableStorage } from './core/save.ts'
+import { readCheckpoint } from './game/checkpoint.ts'
 import { Game } from './game/game.ts'
 import { HUD } from './ui/hud.ts'
 import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
@@ -59,6 +61,14 @@ screens.onPlayLevel = (id, difficulty, hero, mode) => {
     hero ?? (game.save.lastHero as never) ?? 'aldric',
     mode ?? (game.isEndless ? 'endless' : 'campaign'),
   )
+}
+screens.onResume = () => {
+  const cp = readCheckpoint()
+  if (!cp) return
+  hud.reset()
+  hud.setChrome(true)
+  screens.show('none')
+  game.startLevel(levelById(cp.levelId), cp.difficulty, cp.heroId, cp.endless ? 'endless' : 'campaign', { resume: cp })
 }
 screens.onMenu = () => {
   game.showMenuBackdrop()
@@ -216,6 +226,15 @@ canvas.addEventListener('wheel', (e) => {
 }, { passive: false })
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault())
+
+// Backgrounding a tab should not cost the player a run: a phone call, a tab
+// switch or a lock screen now pauses the battle instead of letting it run on.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && game.phase === 'playing' && !game.paused) game.togglePause()
+})
+
+// best-effort storage really is evicted; ask to keep the campaign
+void requestDurableStorage()
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return

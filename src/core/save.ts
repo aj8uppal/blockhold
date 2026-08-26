@@ -18,11 +18,13 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
   return Math.max(min, Math.min(max, n))
 }
 
-export function loadSave(): SaveData {
+const DEFAULT_SAVE = (): SaveData =>
+  ({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestScore: {}, medals: {}, lastHero: 'aldric', sfxMuted: false, musicMuted: false })
+
+/** validate anything claiming to be a save; the same gate for disk and for imports */
+export function parseSave(d: unknown): SaveData | null {
   try {
-    const raw = localStorage.getItem(KEY)
-    if (raw) {
-      const d: unknown = JSON.parse(raw)
+    {
       if (d && typeof d === 'object') {
         const o = d as Record<string, unknown>
         const stars: Record<string, number> = {}
@@ -68,10 +70,62 @@ export function loadSave(): SaveData {
         }
       }
     }
-  } catch { /* corrupted save falls through to default */ }
-  return { unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestScore: {}, medals: {}, lastHero: 'aldric', sfxMuted: false, musicMuted: false }
+  } catch { /* corrupted input is not a save */ }
+  return null
 }
 
-export function writeSave(data: SaveData): void {
-  try { localStorage.setItem(KEY, JSON.stringify(data)) } catch { /* private mode etc. */ }
+export function loadSave(): SaveData {
+  try {
+    const raw = localStorage.getItem(KEY)
+    if (raw) return parseSave(JSON.parse(raw)) ?? DEFAULT_SAVE()
+  } catch { /* corrupted save falls through to default */ }
+  return DEFAULT_SAVE()
+}
+
+/**
+ * Writes used to swallow failure silently, so a full quota or a locked-down
+ * browser lost a player's whole campaign without ever saying so. It reports
+ * now, and the HUD surfaces the first failure.
+ */
+export function writeSave(data: SaveData): boolean {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(data))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Ask the browser to keep this origin's data rather than treating it as
+ * evictable cache. Best-effort storage really is evicted - an installed
+ * Blockhold can lose 21 stars to a storage sweep - and the request is free.
+ */
+export async function requestDurableStorage(): Promise<boolean> {
+  try {
+    if (!navigator.storage?.persist) return false
+    if (await navigator.storage.persisted?.()) return true
+    return await navigator.storage.persist()
+  } catch {
+    return false
+  }
+}
+
+/** the save as a copyable code, so progress can outlive one browser */
+export function exportSave(data: SaveData): string {
+  return btoa(unescape(encodeURIComponent(JSON.stringify({ v: 1, d: data }))))
+}
+
+/** restore from a code; returns null when it is not a Blockhold save */
+export function importSave(code: string): SaveData | null {
+  try {
+    const raw = decodeURIComponent(escape(atob(code.trim())))
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    const box = parsed as { v?: number, d?: unknown }
+    if (box.v !== 1 || !box.d) return null
+    return parseSave(box.d)   // same gate the on-disk save goes through
+  } catch {
+    return null
+  }
 }

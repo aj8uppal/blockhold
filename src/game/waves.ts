@@ -38,6 +38,18 @@ export class WaveManager {
   get allSpawned(): boolean { return this.isLastWaveStarted && this.queue.length === 0 }
 
   /**
+   * Resume a battle that was saved at a cleared-wave boundary: the field was
+   * empty, so there is no queue to rebuild - just the countdown to the wave
+   * the player had not yet faced.
+   */
+  resumeAt(nextWaveIndex: number): void {
+    this.waveIndex = nextWaveIndex - 1
+    this.phase = 'countdown'
+    this.countdown = WAVE_BREAK
+    this.queue = []
+  }
+
+  /**
    * What's coming. Carries the traits that decide a build, not just names:
    * the player must be able to read "air plus armored" without hovering,
    * because hover does not exist on touch.

@@ -5,6 +5,7 @@ import { ARMORY_TRACKS, starsAvailable, starsEarned, buyTier, respec, armoryTier
 import { writeSave } from '../core/save.ts'
 import type { SaveData } from '../core/save.ts'
 import { icon } from './icons.ts'
+import { readCheckpoint } from '../game/checkpoint.ts'
 
 export type ScreenName = 'menu' | 'levels' | 'victory' | 'defeat' | 'none'
 
@@ -66,6 +67,7 @@ export class Screens {
   root: HTMLElement
   onPlayLevel: (levelId: string, difficulty?: Difficulty, hero?: HeroId, mode?: GameMode) => void = () => {}
   onMenu: () => void = () => {}
+  onResume: () => void = () => {}
 
   constructor(private save: () => SaveData) {
     this.root = document.getElementById('screens')!
@@ -103,6 +105,14 @@ export class Screens {
     play.onclick = () => {
       if (fresh) this.onPlayLevel(levels[0].id, 'normal', 'aldric', 'campaign')
       else this.show('levels')
+    }
+    // a battle interrupted mid-campaign is worth more than a fresh one
+    const cp = readCheckpoint()
+    if (cp) {
+      const lvl = levels.find(l => l.id === cp.levelId)
+      const resume = el('button', 'btn primary', card,
+        `${icon('respawn')} Resume ${lvl?.name ?? 'battle'} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
+      resume.onclick = () => this.onResume()
     }
     const how = el('button', 'btn ghost', card, 'How to play') as HTMLButtonElement
     how.onclick = () => this.renderHelp()
