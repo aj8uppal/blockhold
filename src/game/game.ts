@@ -12,7 +12,8 @@ import { enemyDef } from './enemyDefs.ts'
 import { towerTrees, SELL_REFUND } from './towerDefs.ts'
 import { reactionFor, REACTION_RADIUS } from './towers.ts'
 import { buildPaths, LanePath } from './path.ts'
-import { disposeClonedMaterials } from '../voxel/builder.ts'
+import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
+import { holdModel, holdPieces, holdCacheKey } from './hold.ts'
 import { levels, generateEndlessWaves } from './levels.ts'
 import { Terrain, PlotInfo, THEMES } from './terrain.ts'
 import { Particles } from './particles.ts'
@@ -416,20 +417,33 @@ export class Game implements World {
   // ---------------- level lifecycle ----------------
 
   /** slowly-orbiting diorama of the latest unlocked map, shown behind menus */
+  /**
+   * The menu used to show whichever battlefield you had unlocked last, which
+   * looked the same on your first night as after clearing the campaign. It
+   * shows your own Hold now: the keep you have actually earned.
+   */
   showMenuBackdrop(): void {
     this.disposeLevel()
     const level = levels[Math.min(this.save.unlocked, levels.length) - 1]
-    const paths = buildPaths(level)
-    this.lanes = paths.lanes
-    this.terrain = new Terrain(level, paths)
     this.level = level
-    this.engine.scene.add(this.terrain.group)
     this.engine.scene.add(this.particles.group)
     attachDebris(this.engine.scene)
     this.engine.applyTheme(THEMES[level.theme], level.width, level.height)
-    this.engine.resetView(level.width, level.height)
-    this.engine.pitchGoal = 0.72
+
+    const pieces = holdPieces(this.save)
+    this.holdGroup = buildModel(holdModel(pieces), holdCacheKey(pieces), { receiveShadow: true })
+    this.holdGroup.scale.setScalar(3.2)
+    this.engine.scene.add(this.holdGroup)
+    this.engine.resetView(16, 12)
+    // frame the keep itself, not the empty sky around it
+    this.engine.distGoal = this.engine.dist = 13.5
+    this.engine.camTargetGoal.set(0, 0, -0.6)
+    this.engine.camTarget.copy(this.engine.camTargetGoal)
+    this.engine.pitchGoal = this.engine.pitch = 0.6
+    this.engine.yawGoal = this.engine.yaw = -0.55
   }
+
+  private holdGroup: THREE.Group | null = null
 
   startLevel(
     level: LevelDef,
@@ -659,6 +673,11 @@ export class Game implements World {
     this.hazard?.dispose(this)
     this.hazard = null
     this.removeLanePreview()
+    if (this.holdGroup) {
+      this.engine.scene.remove(this.holdGroup)
+      disposeClonedMaterials(this.holdGroup)
+      this.holdGroup = null
+    }
     clearDebris()
     this.simAccumulator = 0
     this.level = null

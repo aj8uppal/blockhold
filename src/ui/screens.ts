@@ -7,6 +7,7 @@ import type { SaveData } from '../core/save.ts'
 import { icon } from './icons.ts'
 import { readCheckpoint } from '../game/checkpoint.ts'
 import { dailyNumber } from '../game/ruleset.ts'
+import { holdPieces, holdSummary } from '../game/hold.ts'
 import { dailyShareText, challengeUrl, type DailyResult } from '../game/share.ts'
 
 export type ScreenName = 'menu' | 'levels' | 'victory' | 'defeat' | 'none'
@@ -130,7 +131,7 @@ export class Screens {
       const install = el('button', 'btn ghost', card, `${icon('fullscreen')} Play fullscreen`) as HTMLButtonElement
       install.onclick = () => this.renderInstallGuide()
     }
-    el('div', 'menu-footer', wrap, 'A voxel tower defense · Built for the browser')
+    el('div', 'menu-footer', wrap, holdSummary(holdPieces(save)))
   }
 
   /** iOS has no fullscreen API — walk the player through installing instead */
