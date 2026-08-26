@@ -26,13 +26,13 @@ Start gold: 260. Waves: 16. Pressure-flagged waves: 0.
 | 7 | 1,670 | 168 | 37.1 / 61.4 (gold 853) | arrival 1,236.7 HP/s; fly 0.0%; armor≥0.4 50.3%; MR≥0.5 0.0%; no pressure flag |
 | 8 | 1,241 | 163 | 27.6 / 75.0 (gold 1,041) | arrival 803.9 HP/s; fly 37.4%; armor≥0.4 42.3%; MR≥0.5 0.0%; no pressure flag |
 | 9 | 2,382 | 234 | 52.9 / 88.2 (gold 1,224) | arrival 2,066.7 HP/s; fly 0.0%; armor≥0.4 40.7%; MR≥0.5 0.0%; no pressure flag |
-| 10 | 2,068 | 216 | 46.0 / 106.5 (gold 1,478) | arrival 1,182.9 HP/s; fly 22.4%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
-| 11 | 1,600 | 176 | 35.6 / 123.5 (gold 1,714) | arrival 1,013.0 HP/s; fly 0.0%; armor≥0.4 73.8%; MR≥0.5 0.0%; no pressure flag |
-| 12 | 2,210 | 228 | 49.1 / 137.6 (gold 1,910) | arrival 2,321.8 HP/s; fly 21.0%; armor≥0.4 28.5%; MR≥0.5 0.0%; no pressure flag |
-| 13 | 1,704 | 184 | 37.9 / 155.4 (gold 2,158) | arrival 735.5 HP/s; fly 0.0%; armor≥0.4 20.0%; MR≥0.5 0.0%; no pressure flag |
-| 14 | 2,280 | 256 | 50.7 / 170.1 (gold 2,362) | arrival 2,019.4 HP/s; fly 30.5%; armor≥0.4 36.8%; MR≥0.5 0.0%; no pressure flag |
-| 15 | 2,337 | 283 | 51.9 / 190.0 (gold 2,638) | arrival 1,819.7 HP/s; fly 19.9%; armor≥0.4 55.0%; MR≥0.5 0.0%; no pressure flag |
-| 16 | 3,950 | 404 | 87.8 / 211.8 (gold 2,941) | arrival 3,219.3 HP/s; fly 14.7%; armor≥0.4 21.3%; MR≥0.5 0.0%; no pressure flag |
+| 10 | 2,242 | 234 | 49.8 / 106.5 (gold 1,478) | arrival 2,142.6 HP/s; fly 15.5%; armor≥0.4 0.0%; MR≥0.5 0.0%; no pressure flag |
+| 11 | 1,600 | 176 | 35.6 / 124.7 (gold 1,732) | arrival 1,013.0 HP/s; fly 0.0%; armor≥0.4 73.8%; MR≥0.5 0.0%; no pressure flag |
+| 12 | 2,210 | 228 | 49.1 / 138.9 (gold 1,928) | arrival 2,321.8 HP/s; fly 21.0%; armor≥0.4 28.5%; MR≥0.5 0.0%; no pressure flag |
+| 13 | 1,704 | 184 | 37.9 / 156.7 (gold 2,176) | arrival 735.5 HP/s; fly 0.0%; armor≥0.4 20.0%; MR≥0.5 0.0%; no pressure flag |
+| 14 | 2,280 | 256 | 50.7 / 171.4 (gold 2,380) | arrival 2,019.4 HP/s; fly 30.5%; armor≥0.4 36.8%; MR≥0.5 0.0%; no pressure flag |
+| 15 | 2,337 | 283 | 51.9 / 191.3 (gold 2,656) | arrival 1,819.7 HP/s; fly 19.9%; armor≥0.4 55.0%; MR≥0.5 0.0%; no pressure flag |
+| 16 | 4,670 | 482 | 103.8 / 213.1 (gold 2,959) | arrival 4,307.8 HP/s; fly 12.4%; armor≥0.4 18.0%; MR≥0.5 0.0%; no pressure flag |
 
 ## Frostmere Pass (`frostmere`)
 
@@ -57,7 +57,7 @@ Start gold: 300. Waves: 18. Pressure-flagged waves: 0.
 | 15 | 1,703 | 183 | 37.8 / 202.7 (gold 2,814) | arrival 1,103.4 HP/s; fly 0.0%; armor≥0.4 43.2%; MR≥0.5 0.0%; no pressure flag |
 | 16 | 2,248 | 274 | 50.0 / 217.3 (gold 3,017) | arrival 949.1 HP/s; fly 25.8%; armor≥0.4 15.1%; MR≥0.5 20.8%; no pressure flag |
 | 17 | 2,558 | 318 | 56.8 / 238.5 (gold 3,311) | arrival 2,182.5 HP/s; fly 0.0%; armor≥0.4 41.0%; MR≥0.5 30.5%; no pressure flag |
-| 18 | 3,670 | 396 | 81.6 / 262.8 (gold 3,649) | arrival 1,363.0 HP/s; fly 0.0%; armor≥0.4 28.6%; MR≥0.5 17.7%; no pressure flag |
+| 18 | 4,390 | 474 | 97.6 / 262.8 (gold 3,649) | arrival 2,451.6 HP/s; fly 0.0%; armor≥0.4 23.9%; MR≥0.5 14.8%; no pressure flag |
 
 ## The Emberwastes (`emberwastes`)
 
@@ -221,8 +221,8 @@ An absent optional `startShards` field is counted as 0 in this definition-only a
 
 | Map | Waves | ⅔ cutoff | Start shards | Shardbacks by cutoff / total | Bosses by cutoff / total | Shards by cutoff / total | Ascension by cutoff (maps 3–5) | Max total overcharges | Max total ascensions |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |
-| 1. greenhollow | 16 | 11 | 0 | 6 / 10 | 0 / 0 | 12 / 20 | n/a | 6 | 3 |
-| 2. frostmere | 18 | 12 | 0 | 4 / 8 | 0 / 0 | 8 / 16 | n/a | 5 | 2 |
+| 1. greenhollow | 16 | 11 | 0 | 7 / 12 | 1 / 2 | 19 / 34 | n/a | 11 | 5 |
+| 2. frostmere | 18 | 12 | 0 | 4 / 9 | 0 / 1 | 8 / 23 | n/a | 7 | 3 |
 | 3. emberwastes | 20 | 14 | 0 | 4 / 8 | 1 / 3 | 12 / 28 | **PASS** | 9 | 4 |
 | 4. mistfen | 21 | 14 | 3 | 8 / 12 | 0 / 1 | 19 / 31 | **PASS** | 10 | 5 |
 | 5. shatteredcrown | 24 | 16 | 4 | 6 / 10 | 0 / 4 | 16 / 40 | **PASS** | 13 | 6 |

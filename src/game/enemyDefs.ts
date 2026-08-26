@@ -54,6 +54,12 @@ const defs: EnemyDef[] = [
     model: 'juggernaut', scale: 1.6, description: 'The siege engine of the Veil made flesh. If it reaches the gate, Blockhold falls.',
   },
   {
+    id: 'hollowking', name: 'The Hollow King', hp: 1150, speed: 0.34, armor: 0.25, magicResist: 0.15,
+    bounty: 120, livesCost: 20, boss: true, shardDrop: 3, attackDamage: [26, 38], attackInterval: 1.9,
+    model: 'hollowking', scale: 1.5,
+    description: 'The first crown the Veil ever took. He walks the meadow road at the head of his own dead court.',
+  },
+  {
     id: 'shardback', name: 'Shardback', hp: 170, speed: 0.5, armor: 0.45, magicResist: 0.2,
     bounty: 14, livesCost: 1, shardDrop: 2, attackDamage: [6, 10], attackInterval: 1.4,
     model: 'shardback', description: 'A plated burrower crusted with veilcrystal. Crack it open for shards.',

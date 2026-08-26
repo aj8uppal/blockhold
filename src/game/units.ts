@@ -14,6 +14,7 @@ export const enemyModelFactories: Record<string, () => VoxModel> = {
   acolyte: units.acolyteModel,
   gargoyle: units.gargoyleModel,
   brute: units.bruteModel,
+  hollowking: units.hollowKingModel,
   spiderling: () => units.spiderModel(false),
   broodmother: () => units.spiderModel(true),
   warlock: units.warlockModel,

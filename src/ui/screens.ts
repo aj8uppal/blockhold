@@ -38,6 +38,11 @@ export interface BattleStats {
 
 const fmtTime = (sec: number) => `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`
 
+/** nobody has played yet: no stars anywhere and nothing unlocked past the first map */
+function isFirstRun(save: SaveData): boolean {
+  return save.unlocked <= 1 && Object.values(save.stars).every(s => !s)
+}
+
 /** iPadOS masquerades as macOS but is the only "Mac" with a touchscreen */
 export function isIPadOS(): boolean {
   return /iPad/.test(navigator.userAgent)
@@ -79,6 +84,7 @@ export class Screens {
   }
 
   private renderMenu(): void {
+    const save = this.save()
     const wrap = el('div', 'screen menu-screen', this.root)
     const card = el('div', 'menu-hero', wrap)
     // painted key art under a dark scrim; inline so the URL resolves at runtime
@@ -88,8 +94,16 @@ export class Screens {
     el('div', 'menu-crest', card, icon('castle', 'gilded'))
     el('h1', 'game-title', card, 'BLOCKHOLD')
     el('div', 'game-tagline', card, 'Hold the line, block by block.')
-    const play = el('button', 'btn primary big', card, `${icon('swords')} &nbsp;To Battle`) as HTMLButtonElement
-    play.onclick = () => this.show('levels')
+    // A newcomer has nothing to choose between yet, and a link-shared game has
+    // about ten seconds. Drop them straight into the first battle; the level
+    // select, heroes and difficulty appear once they have played one.
+    const fresh = isFirstRun(save)
+    const play = el('button', 'btn primary big', card,
+      `${icon('swords')} &nbsp;${fresh ? 'Play' : 'To Battle'}`) as HTMLButtonElement
+    play.onclick = () => {
+      if (fresh) this.onPlayLevel(levels[0].id, 'normal', 'aldric', 'campaign')
+      else this.show('levels')
+    }
     const how = el('button', 'btn ghost', card, 'How to play') as HTMLButtonElement
     how.onclick = () => this.renderHelp()
     if (needsInstallGuide()) {
