@@ -91,6 +91,14 @@ screens.onRecordTape = async () => {
   telemetry.track({ type: 'share_copied', kind: 'siege_tape' })
   return true
 }
+screens.onPlayBellfoundry = () => {
+  const seed = newRunSeed()
+  hud.reset()
+  hud.setChrome(true)
+  screens.show('none')
+  game.startLevel(dailyLevel(seed), 'normal', (game.save.lastHero as never) ?? 'aldric', 'campaign',
+    { seed, bellfoundry: true })
+}
 screens.onPlayWatches = () => {
   const seed = newRunSeed()
   game.resetWatches()

@@ -912,3 +912,24 @@ button:focus-visible {
 
 /* settings live behind pause now, not in the combat bar */
 .pause-settings { display: flex; gap: 10px; justify-content: center; margin: 4px 0 2px; }
+
+/* ---------- the Bellfoundry beat meter ---------- */
+
+.beat-meter {
+  position: absolute;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  display: flex; gap: 6px;
+  padding: 7px 12px;
+  background: rgba(20, 14, 9, 0.85);
+  border: 1px solid rgba(232, 178, 60, 0.35);
+  border-radius: 999px;
+  pointer-events: none;
+}
+.beat-meter i {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: rgba(244, 232, 207, 0.22);
+  transition: background 0.06s linear, transform 0.06s linear;
+}
+.beat-meter i.downbeat { box-shadow: 0 0 0 1px rgba(232, 178, 60, 0.5); }
+.beat-meter i.on { background: var(--gold-bright); transform: scale(1.45); }

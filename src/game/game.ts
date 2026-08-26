@@ -81,6 +81,8 @@ export class Game implements World {
    * by the third you are standing behind two earlier versions of your own
    * plan. Replay becomes a single-player mechanic rather than a spectator one.
    */
+  /** the Bellfoundry: shots that land on the beat ring out and hit harder */
+  isBellfoundry = false
   isWatches = false
   watchIndex = 0
   private ghostLayers: { plot: number, kind: TowerKind, level: number, branch: 0 | 1 | null }[][] = []
@@ -542,7 +544,7 @@ export class Game implements World {
     difficulty: Difficulty = 'normal',
     heroId: HeroId = 'aldric',
     mode: 'campaign' | 'endless' = 'campaign',
-    opts: { seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean } = {},
+    opts: { seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean } = {},
   ): void {
     this.disposeLevel()
     const resume = opts.resume ?? null
@@ -550,6 +552,7 @@ export class Game implements World {
     // consumer, so the run is only reproducible if this comes first.
     this.runSeed = resume?.seed ?? opts.seed ?? newRunSeed()
     setSimSeed(this.runSeed)
+    this.isBellfoundry = opts.bellfoundry ?? false
     this.isWatches = opts.watches ?? this.isWatches
     this.isDaily = opts.daily !== undefined
     this.dailyDay = opts.daily ?? 0

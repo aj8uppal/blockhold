@@ -349,7 +349,7 @@ export interface MusicState {
 }
 
 /** one bar, and how far ahead of the audio clock bars are scheduled */
-const BAR_SECONDS = 4.8
+export const BAR_SECONDS = 4.8
 const BAR_LOOKAHEAD = 0.6
 const SEMITONE = 2 ** (1 / 12)
 

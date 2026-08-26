@@ -74,6 +74,7 @@ export class Screens {
   onResume: () => void = () => {}
   onPlayDaily: () => void = () => {}
   onPlayWatches: () => void = () => {}
+  onPlayBellfoundry: () => void = () => {}
   onNextWatch: () => void = () => {}
 
   constructor(private save: () => SaveData) {
@@ -127,6 +128,9 @@ export class Screens {
     const daily = el('button', 'btn ghost', card,
       `${icon('moon')} Daily Hold #${day}${done ? ` · wave ${save.dailyBest!.wave}` : ''}`) as HTMLButtonElement
     daily.onclick = () => this.onPlayDaily()
+    const bell = el('button', 'btn ghost', card, `${icon('music')} The Bellfoundry`) as HTMLButtonElement
+    bell.title = 'The battle keeps time. Shots that land on the beat ring out and hit harder.'
+    bell.onclick = () => this.onPlayBellfoundry()
     const watches = el('button', 'btn ghost', card, `${icon('respawn')} The Three Watches`) as HTMLButtonElement
     watches.title = 'One siege, fought three times. Each watch your earlier defense returns to fight beside you.'
     watches.onclick = () => this.onPlayWatches()

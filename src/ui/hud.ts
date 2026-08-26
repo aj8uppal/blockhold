@@ -13,6 +13,7 @@ import { TARGET_POLICY_LABEL, REACTIONS } from '../game/towers.ts'
 import { isCoarsePointer } from '../core/utils.ts'
 import { isPortalMode } from '../core/platform.ts'
 import { EARTHWORK_DEFS, type EarthworkSpot } from '../game/earthworks.ts'
+import { beatIndex, BEATS_PER_BAR } from '../game/beat.ts'
 import { icon, BOSS_ART } from './icons.ts'
 
 function chip(label: string, value: string, cls = ''): string {
@@ -46,6 +47,8 @@ export class HUD {
   private waveBtn!: HTMLButtonElement
   private wavePreviewEl!: HTMLElement
   private lastWavePreviewHtml = ''
+  private beatEl!: HTMLElement
+  private lastBeat = -1
   /** coarse pointers arm a build option on first tap and commit on the second */
   private armedBuild: string | null = null
   private abilityBtns: Record<'meteor' | 'reinforce', HTMLButtonElement> = {} as never
@@ -100,6 +103,8 @@ export class HUD {
     this.bannerEl = el('div', 'banner hidden', this.root)
     this.toastEl = el('div', 'toast hidden', this.root)
     this.modeHint = el('div', 'mode-hint hidden', this.root)
+    this.beatEl = el('div', 'beat-meter hidden', this.root)
+    this.beatEl.innerHTML = Array.from({ length: BEATS_PER_BAR }, () => '<i></i>').join('')
     this.buildPauseOverlay()
     game.hud = this
   }
@@ -345,6 +350,22 @@ export class HUD {
       sweep.style.setProperty('--p', `${h.abilityFraction * 100}%`)
       this.signatureBtn.classList.toggle('ready', h.signatureReady)
       this.signatureBtn.classList.toggle('downed', h.dead)
+    }
+    // the beat meter: only in the Bellfoundry, and only while a battle runs
+    if (game.isBellfoundry && game.phase === 'playing') {
+      this.beatEl.classList.remove('hidden')
+      const b = beatIndex(game.time)
+      if (b !== this.lastBeat) {
+        this.lastBeat = b
+        const pips = this.beatEl.children
+        for (let i = 0; i < pips.length; i++) {
+          pips[i].classList.toggle('on', i === b)
+          pips[i].classList.toggle('downbeat', i === 0)
+        }
+      }
+    } else if (!this.beatEl.classList.contains('hidden')) {
+      this.beatEl.classList.add('hidden')
+      this.lastBeat = -1
     }
     this.refreshHeroPanel()
     // live kill tally on the open tower/trap/hero panel

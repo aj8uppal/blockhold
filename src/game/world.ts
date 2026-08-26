@@ -51,6 +51,8 @@ export interface World {
   readonly heroReviveMult: number
   /** fraction of invested gold returned on a sell (Full Salvage raises it to 1) */
   readonly sellRefund: number
+  /** the Bellfoundry is keeping time this battle */
+  readonly isBellfoundry: boolean
   /** is this point inside a player-dug cutting? */
   cuttingAt(x: number, z: number): boolean
   shake(strength: number): void

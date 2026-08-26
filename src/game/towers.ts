@@ -12,6 +12,7 @@ import { buildModel, getPart, disposeClonedMaterials } from '../voxel/builder.ts
 import { towerModel, muzzleHeights, rallyFlagModel } from '../voxel/models_towers.ts'
 import { randRange, lerpAngle, clamp, simChance } from '../core/utils.ts'
 import { RAMPART_RANGE_BONUS, RAMPART_DAMAGE_BONUS } from './earthworks.ts'
+import { onBeat, BEAT_BONUS } from './beat.ts'
 
 /**
  * Cross-family reactions replace the old same-family resonance.
@@ -593,9 +594,17 @@ export class Tower {
 
   private fire(target: Enemy, world: World, isEcho = false): void {
     const def = this.def
+    // the Bellfoundry never withholds a shot; it rewards the ones that land
+    // on the beat, so a defense can be arranged to ring rather than clatter
+    const rang = world.isBellfoundry && onBeat(world.time)
     let dmg = randRange(...def.damage!) * world.towerDamageMult(this.kind) * this.resonanceMult
       * (this.onHighGround ? 1 + RAMPART_DAMAGE_BONUS : 1)
       * (this.isGhost ? GHOST_POWER : 1)
+      * (rang ? 1 + BEAT_BONUS : 1)
+    if (rang) {
+      world.sfx('crit', 0.28)
+      world.particles.hitSpark(this.pos.x, this.pos.y + 0.9, this.pos.z, 0xffd24a)
+    }
     if (this.perk?.id === 'serrated') dmg *= 1.2
     const from = this.muzzle()
     switch (this.kind) {
