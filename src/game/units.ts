@@ -7,6 +7,7 @@ import { buildModel, setFlash, getPart, VoxModel } from '../voxel/builder.ts'
 import * as units from '../voxel/models_units.ts'
 import { clamp, lerpAngle, randRange, simRandom } from '../core/utils.ts'
 import { CUTTING_SLOW, CUTTING_VULN } from './earthworks.ts'
+import { HP_BAR_NAME } from './debris.ts'
 
 export const enemyModelFactories: Record<string, () => VoxModel> = {
   husk: units.huskModel,
@@ -178,6 +179,7 @@ export class Enemy {
       this.parts[name] = getPart(this.group, name)
     }
     this.bar = new HealthBar(def.boss ? 0.9 : 0.5 * Math.max(1, s))
+    this.bar.group.name = HP_BAR_NAME
     this.bar.group.position.y = this.barY
     this.group.add(this.bar.group)
     const start = lane.sample(startDist, this.offset)
@@ -701,6 +703,7 @@ export class Soldier {
     if (def.scale) this.group.scale.setScalar(def.scale)
     this.group.position.copy(spawnPos)
     this.bar = new HealthBar(0.45)
+    this.bar.group.name = HP_BAR_NAME
     this.bar.group.position.y = 0.72   // local; group scale applies
     this.group.add(this.bar.group)
   }

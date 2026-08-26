@@ -519,11 +519,12 @@ export class Terrain {
 
 function earthMarkerModel(kind: EarthworkKind): VoxModel {
   const c = kind === 'rampart' ? 0x7a6a44 : 0x4a5a6a
+  // lifted clear of y=0 so the corner marks do not z-fight the ground
   const mark: VoxBox[] = [
-    box(0, 0.05, -4.2, 3.0, 0.1, 0.5, c),
-    box(0, 0.05, 4.2, 3.0, 0.1, 0.5, c),
-    box(-4.2, 0.05, 0, 0.5, 0.1, 3.0, c),
-    box(4.2, 0.05, 0, 0.5, 0.1, 3.0, c),
+    box(0, 0.12, -4.2, 3.0, 0.14, 0.5, c),
+    box(0, 0.12, 4.2, 3.0, 0.14, 0.5, c),
+    box(-4.2, 0.12, 0, 0.5, 0.14, 3.0, c),
+    box(4.2, 0.12, 0, 0.5, 0.14, 3.0, c),
   ]
   return { parts: { mark }, scale: 0.1 }
 }

@@ -79,29 +79,48 @@ export class Earthwork {
 }
 
 const C = {
-  soil: 0x6b5535, soilDark: 0x51402a, grass: 0x5f8f4a,
-  stone: 0x8d8f96, shadow: 0x2f2a22,
+  soil: 0x7a6240, soilDark: 0x5c4830, grass: 0x5f8f4a,
+  stone: 0x8d8f96, timber: 0x6b4f2a,
+  pitFloor: 0x3a2f22, pitWall: 0x2b2318,
 }
 
 function earthworkModel(kind: EarthworkKind): VoxModel {
   if (kind === 'rampart') {
+    // every face sits clear of y=0: the terrain is already drawing there, and
+    // coplanar geometry z-fights into stripes
     const bank: VoxBox[] = [
-      box(0, 1.6, 0, 9, 3.2, 9, C.soil),
-      box(0, 3.3, 0, 9.4, 0.4, 9.4, C.grass),
-      box(0, 0.4, 0, 9.8, 0.8, 9.8, C.soilDark),
-      box(-3.2, 3.8, -3.2, 1.2, 1.2, 1.2, C.stone),
-      box(3.2, 3.8, 3.2, 1.2, 1.2, 1.2, C.stone),
+      box(0, 1.9, 0, 9.0, 3.2, 9.0, C.soil),
+      box(0, 3.62, 0, 9.4, 0.35, 9.4, C.grass),
+      box(0, 0.45, 0, 9.8, 0.7, 9.8, C.soilDark),
+      box(-3.2, 4.15, -3.2, 1.2, 1.2, 1.2, C.stone),
+      box(3.2, 4.15, 3.2, 1.2, 1.2, 1.2, C.stone),
     ]
     return { parts: { bank }, scale: 0.1 }
   }
-  // a cutting is a hole: dark walls and a sunken floor
-  const channel: VoxBox[] = [
-    box(0, -1.0, 0, 9.6, 2.0, 9.6, C.shadow),
-    box(0, -1.9, 0, 9.0, 0.4, 9.0, C.soilDark),
-    box(-4.6, -0.6, 0, 0.6, 2.4, 9.6, C.soil),
-    box(4.6, -0.6, 0, 0.6, 2.4, 9.6, C.soil),
+
+  /**
+   * A cutting cannot be a real hole: the road is opaque merged geometry that
+   * is still drawn underneath, so a floor sunk below it would simply be
+   * hidden. It is built instead as an excavation sitting proud of the road -
+   * a dark recessed floor inside a rim of spoil, which is what digging a
+   * channel actually leaves behind. Nothing touches y=0.
+   */
+  const dug: VoxBox[] = [
+    box(0, 0.22, 0, 7.6, 0.36, 7.6, C.pitFloor),        // the sunken floor
+    box(-3.9, 0.75, 0, 0.9, 1.5, 8.8, C.pitWall),       // channel walls
+    box(3.9, 0.75, 0, 0.9, 1.5, 8.8, C.pitWall),
+    box(0, 0.75, -3.9, 7.0, 1.5, 0.9, C.pitWall),
+    box(0, 0.75, 3.9, 7.0, 1.5, 0.9, C.pitWall),
+    // spoil heaped along the lip, so it reads as dug rather than painted
+    box(-4.5, 1.65, -2.0, 1.1, 0.7, 3.2, C.soil),
+    box(4.5, 1.65, 2.0, 1.1, 0.7, 3.2, C.soil),
+    box(-2.0, 1.6, 4.5, 3.0, 0.6, 1.1, C.soilDark),
+    box(2.2, 1.6, -4.5, 2.6, 0.6, 1.1, C.soilDark),
+    // timber shoring at the ends
+    box(-4.5, 1.9, -4.5, 1.0, 1.2, 1.0, C.timber),
+    box(4.5, 1.9, 4.5, 1.0, 1.2, 1.0, C.timber),
   ]
-  return { parts: { channel }, scale: 0.1 }
+  return { parts: { dug }, scale: 0.1 }
 }
 
 /**
@@ -121,20 +140,37 @@ export function deriveEarthworkSpots(
     cellKind(c + 1, r) === 'road' || cellKind(c - 1, r) === 'road'
     || cellKind(c, r + 1) === 'road' || cellKind(c, r - 1) === 'road'
 
+  /**
+   * Lane mouths and the gate are crowded with authored scenery, and a
+   * rampart dropped on the spawn arch simply disappears inside it. Keep
+   * earthworks off both ends of every lane.
+   */
+  const SPAWN_GAP = 4
+  const GATE_GAP = 3
+  const ends: { cell: [number, number], gap: number }[] = []
+  for (const lane of level.lanes) {
+    if (!lane.length) continue
+    ends.push({ cell: lane[0], gap: SPAWN_GAP })
+    ends.push({ cell: lane[lane.length - 1], gap: GATE_GAP })
+  }
+  const nearEnd = (c: number, r: number) =>
+    ends.some(e => Math.hypot(e.cell[0] - c, e.cell[1] - r) < e.gap)
+
   const ramparts: [number, number][] = []
   const cuttings: [number, number][] = []
   for (let r = 0; r < level.height; r++) {
     for (let c = 0; c < level.width; c++) {
+      if (nearEnd(c, r)) continue
       const k = cellKind(c, r)
       if (k === 'grass' && touchesRoad(c, r)) ramparts.push([c, r])
       else if (k === 'road' && !isTrapSpot(c, r)) cuttings.push([c, r])
     }
   }
-  // spread them out instead of clustering them all at the entrance
+  // spread across the board instead of clustering wherever the scan started
   const spread = <T>(arr: T[], n: number): T[] => {
     if (arr.length <= n) return arr
     const step = arr.length / n
-    return Array.from({ length: n }, (_, i) => arr[Math.floor(i * step)])
+    return Array.from({ length: n }, (_, i) => arr[Math.floor(i * step + step / 2)] ?? arr[arr.length - 1])
   }
   for (const cell of spread(ramparts, limit.rampart)) out.push({ cell, kind: 'rampart' })
   for (const cell of spread(cuttings, limit.cutting)) out.push({ cell, kind: 'cutting' })

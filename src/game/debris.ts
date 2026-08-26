@@ -28,6 +28,9 @@ interface Chunk {
   groundY: number
 }
 
+/** the health bar rides on the unit group but is not part of the model */
+export const HP_BAR_NAME = '__hpbar'
+
 /** keeps a heavy wave from turning into a debris field */
 const MAX_CHUNKS = 160
 const GRAVITY = 15
@@ -83,7 +86,11 @@ export function shatter(
   } = {},
 ): void {
   if (!root) return
-  const parts = [...group.children]
+  // Only the model's authored parts. A unit group also carries things that are
+  // not made of blocks - the health bar above its head - and throwing those
+  // was both wrong to look at and destructive: see the shared-material guard
+  // in updateDebris.
+  const parts = group.children.filter(c => c.name && c.name !== HP_BAR_NAME)
   if (!parts.length) return
   makeRoom(parts.length)
 
@@ -169,7 +176,13 @@ export function updateDebris(dt: number): void {
       c.obj.traverse(o => {
         if (o instanceof THREE.Mesh) {
           const mats = Array.isArray(o.material) ? o.material : [o.material]
-          for (const m of mats) { m.transparent = true; m.opacity = k }
+          // fading writes to the material, so a shared one must never be
+          // touched: doing so dims that material everywhere it is used
+          for (const m of mats) {
+            if (m.userData.shared) continue
+            m.transparent = true
+            m.opacity = k
+          }
         }
       })
     }
