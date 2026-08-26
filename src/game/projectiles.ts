@@ -161,6 +161,7 @@ function explode(world: World, at: THREE.Vector3, damage: number, splash: number
   world.particles.explosion(at.x, at.y + 0.15, at.z, Math.max(0.7, splash))
   world.sfx('explosion', 0.8)
   world.shake(0.05 + splash * 0.05)
+  if (splash >= 0.6) world.impact('heavy')
   for (const e of world.enemies) {
     if (!e.targetable || e.def.flying) continue
     const d = e.pos.distanceTo(at)

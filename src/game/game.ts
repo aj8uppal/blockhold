@@ -26,6 +26,7 @@ import type { HUD } from '../ui/hud.ts'
 import { icon } from '../ui/icons.ts'
 import { randRange, simChance, setSimSeed } from '../core/utils.ts'
 import { newRunSeed, runStamp, type RunStamp } from './ruleset.ts'
+import { attachDebris, shatter, updateDebris, clearDebris, type DeathFlavor } from './debris.ts'
 
 export type GamePhase = 'idle' | 'playing' | 'victory' | 'defeat'
 export type TargetMode = 'meteor' | 'reinforce' | 'rally' | null
@@ -160,11 +161,18 @@ export class Game implements World {
       if (this.hero && this.hero.alive && this.hero.group.position.distanceTo(e.pos) < (this.hero.ranged ? 2.5 : 1.7)) {
         this.hero.gainXp(e.def.bounty, this)
       }
-      this.particles.coinBurst(e.pos.x, e.pos.y + 0.4, e.pos.z)
-      this.sfx('coin', 0.5)
+      // the payment lands a beat after the kill, so the death reads first
+      const cx = e.pos.x, cy = e.pos.y + 0.4, cz = e.pos.z
+      this.deferFx(0.12, () => {
+        this.particles.coinBurst(cx, cy, cz)
+        this.sfx('coin', 0.5)
+      })
     }
     this.particles.deathPuff(e.pos.x, e.pos.y + 0.2, e.pos.z, 0x777788)
     this.sfx('die', 0.6)
+    // weight the moment: a fodder kill must not feel like a boss falling
+    this.impact(e.def.boss ? 'boss' : e.elite ? 'elite' : 'light')
+    if (!e.def.boss) this.engine.addShake(e.elite ? 0.09 : 0.035)
     if (e.def.spawnOnDeath) {
       for (let i = 0; i < e.def.spawnOnDeath.count; i++) {
         // spill the brood behind the parent, never past the gate
@@ -269,6 +277,12 @@ export class Game implements World {
 
   shake(strength: number): void { this.engine.addShake(strength) }
 
+  shatterUnit(group: THREE.Group, opts: { force?: number, flavor?: DeathFlavor, scale?: number }): void {
+    // deliberately Math.random, not the sim stream: debris is presentation, and
+    // a quality tier that drew fewer chunks would otherwise desync the run
+    shatter(group, opts)
+  }
+
   towerDamageMult(kind: string): number {
     if (kind === 'arrow') return 1 + 0.08 * armoryTier(this.save, 'fletching')
     if (kind === 'mage') return 1 + 0.08 * armoryTier(this.save, 'arcane')
@@ -307,6 +321,7 @@ export class Game implements World {
     this.level = level
     this.engine.scene.add(this.terrain.group)
     this.engine.scene.add(this.particles.group)
+    attachDebris(this.engine.scene)
     this.engine.applyTheme(THEMES[level.theme], level.width, level.height)
     this.engine.resetView(level.width, level.height)
     this.engine.pitchGoal = 0.72
@@ -477,6 +492,7 @@ export class Game implements World {
     this.hazard?.dispose(this)
     this.hazard = null
     this.removeLanePreview()
+    clearDebris()
     this.simAccumulator = 0
     this.level = null
     if (this.terrain) {
@@ -1164,11 +1180,57 @@ export class Game implements World {
   // ---------------- main update ----------------
 
   private simAccumulator = 0
+  /**
+   * Impact hold. Scales wall-clock time into the fixed-step accumulator, so
+   * the simulation runs *fewer* 1/60 ticks per real second while it is active
+   * but the tick sequence is identical - the run stays reproducible.
+   *
+   * Deliberately tiered rather than global: a swarm TD where every one of 45
+   * deaths freezes the frame would stutter, not punch.
+   */
+  private hitstopT = 0
+  private hitstopScale = 1
+  private lastLightStopAt = -99
+  /** reward feedback runs a beat after the kill, so the death reads before the payment */
+  private pendingFx: { at: number, run: () => void }[] = []
+
+  /** hold the frame on a hit worth feeling; `weight` picks the tier */
+  impact(weight: 'light' | 'heavy' | 'elite' | 'boss'): void {
+    const now = performance.now() / 1000
+    if (weight === 'light') {
+      // light hits share one budget so a swarm cannot chain-freeze the frame
+      if (now - this.lastLightStopAt < 0.5) return
+      this.lastLightStopAt = now
+    }
+    const [dur, scale] =
+      weight === 'boss' ? [0.20, 0.06] :
+      weight === 'elite' ? [0.10, 0.18] :
+      weight === 'heavy' ? [0.055, 0.16] :
+      [0.03, 0.34]
+    // never shorten a bigger hold that is already running
+    if (this.hitstopT > dur) return
+    this.hitstopT = dur
+    this.hitstopScale = scale
+  }
+
+  /** run something a beat later, on the render clock */
+  private deferFx(delaySec: number, run: () => void): void {
+    this.pendingFx.push({ at: performance.now() / 1000 + delaySec, run })
+  }
 
   update(dtRaw: number): void {
+    if (this.pendingFx.length) {
+      const now = performance.now() / 1000
+      for (let i = this.pendingFx.length - 1; i >= 0; i--) {
+        if (this.pendingFx[i].at <= now) { this.pendingFx[i].run(); this.pendingFx.splice(i, 1) }
+      }
+    }
     this.engine.updateCamera(dtRaw)
     this.cameraQuat.copy(this.engine.camera.quaternion)
     this.terrain?.update(dtRaw)
+    // debris is presentation only, so it runs on the render clock and never
+    // draws from the simulation RNG stream
+    if (!this.paused) updateDebris(Math.min(dtRaw, 0.05))
 
     // Veiltide lighting: ease toward violet while a surge is on the field
     const surgeTarget = this.phase === 'playing' && this.surgeActive ? 1 : 0
@@ -1181,7 +1243,12 @@ export class Game implements World {
       // fixed-timestep simulation so game speed is frame-rate independent;
       // budget covers a 0.1s frame at 2x speed (12 steps) before slowing down
       const H = 1 / 60
-      this.simAccumulator = Math.min(this.simAccumulator + dtRaw * this.speed, H * 14)
+      let dtSim = dtRaw
+      if (this.hitstopT > 0) {
+        this.hitstopT = Math.max(0, this.hitstopT - dtRaw)
+        dtSim *= this.hitstopScale
+      }
+      this.simAccumulator = Math.min(this.simAccumulator + dtSim * this.speed, H * 14)
       while (this.simAccumulator >= H && this.phase === 'playing') {
         this.simAccumulator -= H
         this.simStep(H)

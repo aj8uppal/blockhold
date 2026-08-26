@@ -127,6 +127,9 @@ export class Enemy {
   private attackTimer: number
   /** strike feedback: 1 at the moment damage lands, decays to 0 */
   private strikeT = 0
+  /** what last landed on this unit, so its debris carries that damage type */
+  private lastHitType: DamageType = 'physical'
+  private lastHitForce = 1
   private hitCount = 0
   /** hexling: the tower this imp is perched on, silencing */
   hexTarget: Tower | null = null
@@ -222,6 +225,8 @@ export class Enemy {
     }
     const dealt = Math.max(0, amount * mult)
     this.hp -= dealt
+    this.lastHitType = type
+    this.lastHitForce = Math.max(0.7, Math.min(2.4, dealt / Math.max(24, this.maxHp * 0.16)))
     if (!opts.silent) {
       this.flash = 0.16
       setFlash(this.group, 0.65)
@@ -284,6 +289,12 @@ export class Enemy {
     }
     this.releaseBlockers()
     this.bar.group.visible = false
+    // come apart into the blocks this thing was built from
+    world.shatterUnit(this.group, {
+      force: this.lastHitForce * (this.def.boss ? 1.5 : 1),
+      flavor: this.lastHitType === 'magic' ? 'magic' : 'physical',
+      scale: this.def.scale ?? 1,
+    })
     world.onEnemyKilled(this)
   }
 
@@ -585,10 +596,13 @@ export class Enemy {
   }
 
   /** strike-synced combat: wind up as the attack timer runs, whip on the hit,
-   *  with per-creature character instead of one generic arm circle */
+   *  with per-creature character instead of one generic arm circle.
+   *  The snap peaks at strikeT = 1, which is the frame damage lands. Using a
+   *  full sine put the visible peak 111ms *after* the health dropped, so the
+   *  player saw the damage and then the weapon. */
   private animFight(_dt: number): void {
     const p = clamp(1 - this.attackTimer / this.def.attackInterval, 0, 1)
-    const snap = Math.sin(Math.min(1, this.strikeT) * Math.PI)
+    const snap = Math.sin(Math.min(1, this.strikeT) * Math.PI / 2)
     const P = this.parts
     const m = this.def.model
     if (m === 'spiderling' || m === 'broodmother' || m === 'shardback') {
@@ -849,7 +863,7 @@ export class Soldier {
   /** strike-synced swings with per-soldier character */
   private animFight(_dt: number): void {
     const p = clamp(1 - this.attackTimer / this.def.attackInterval, 0, 1)
-    const snap = Math.sin(Math.min(1, this.strikeT) * Math.PI)
+    const snap = Math.sin(Math.min(1, this.strikeT) * Math.PI / 2)
     const armR = this.part('armR'), armL = this.part('armL'), body = this.part('body')
     const m = this.def.model
     if (m === 'berserker') {

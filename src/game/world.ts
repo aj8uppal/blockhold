@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { DeathFlavor } from './debris.ts'
 import type { LanePath } from './path.ts'
 import type { Particles } from './particles.ts'
 import type { Enemy, Soldier } from './units.ts'
@@ -47,6 +48,10 @@ export interface World {
   spawnEnemyAt(id: string, laneIndex: number, dist: number, opts?: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean }): void
   fireProjectile(p: ProjectileSpec): void
   shake(strength: number): void
+  /** hold the frame on a hit worth feeling */
+  impact(weight: 'light' | 'heavy' | 'elite' | 'boss'): void
+  /** break a dead unit's model into its authored blocks */
+  shatterUnit(group: THREE.Group, opts: { force?: number, flavor?: DeathFlavor, scale?: number }): void
 }
 
 export type ProjectileSpec =
