@@ -12,6 +12,46 @@ import { buildModel, getPart, disposeClonedMaterials } from '../voxel/builder.ts
 import { towerModel, muzzleHeights, rallyFlagModel } from '../voxel/models_towers.ts'
 import { randRange, lerpAngle, clamp, simChance } from '../core/utils.ts'
 
+/**
+ * Cross-family reactions replace the old same-family resonance.
+ *
+ * The previous rule gave +6% damage per adjacent tower of the *same* family,
+ * capped at two. It was invisible at the numbers involved and it rewarded
+ * building four of the same thing in a clump - the opposite of a placement
+ * decision. Reactions pay for mixing families instead, and each one does
+ * something nameable rather than nudging a percentage.
+ */
+export type ReactionId = 'enchanted' | 'runic' | 'ranging' | 'shieldwall'
+
+export interface ReactionDef {
+  id: ReactionId
+  name: string
+  icon: string
+  pair: [TowerKind, TowerKind]
+  description: string
+}
+
+export const REACTIONS: ReactionDef[] = [
+  { id: 'enchanted', name: 'Enchanted Shafts', icon: 'sparkle', pair: ['arrow', 'mage'],
+    description: 'Arrows ignore 30% of armor.' },
+  { id: 'runic', name: 'Runic Shells', icon: 'rune', pair: ['cannon', 'mage'],
+    description: 'Cannon blasts leave survivors slowed for 1.5s.' },
+  { id: 'ranging', name: 'Ranging Crews', icon: 'range', pair: ['arrow', 'cannon'],
+    description: 'Both towers gain +12% range.' },
+  { id: 'shieldwall', name: 'Shield Wall', icon: 'shield', pair: ['barracks', 'barracks'],
+    description: 'Soldiers guarded by a neighbouring tower gain +18% health.' },
+]
+
+/** the reaction a pair of adjacent families produces, if any */
+export function reactionFor(a: TowerKind, b: TowerKind): ReactionDef | null {
+  if (a === b) return null
+  for (const r of REACTIONS) {
+    if (r.id === 'shieldwall') continue
+    if ((r.pair[0] === a && r.pair[1] === b) || (r.pair[0] === b && r.pair[1] === a)) return r
+  }
+  return null
+}
+
 export type TargetPolicy = 'first' | 'last' | 'strong' | 'weak'
 export const TARGET_POLICY_LABEL: Record<TargetPolicy, string> = {
   first: 'First', last: 'Last', strong: 'Strongest', weak: 'Weakest',
@@ -63,6 +103,9 @@ export class Tower {
   rallyFlag: THREE.Group | null = null
   /** count of same-family neighbors (0-2), set by Game.recomputeResonance */
   resonance = 0
+  /** cross-family reactions currently active on this tower */
+  reactions = new Set<ReactionId>()
+  has(r: ReactionId): boolean { return this.reactions.has(r) }
   /** enemies this building (and its soldiers) has slain */
   kills = 0
   perk: PerkDef | null = null
@@ -83,7 +126,7 @@ export class Tower {
   private stallT = 0
   private crystalT = Math.random() * 10
 
-  constructor(readonly kind: TowerKind, readonly plot: PlotInfo, world: World) {
+  constructor(readonly kind: TowerKind, readonly plot: PlotInfo, private readonly world: World) {
     this.group = new THREE.Group()
     this.group.position.copy(plot.pos)
     this.applyLevel(towerTrees[kind].levels[0], world, true)
@@ -94,12 +137,12 @@ export class Tower {
 
   /** effective range including perks */
   get range(): number {
-    return this.def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0)
+    return (this.def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0)) * (this.has('ranging') ? 1.12 : 1)
   }
 
-  /** resonance damage bonus from same-family neighbors */
+  /** retained so capstone specials keep a single damage scalar to multiply by */
   get resonanceMult(): number {
-    return 1 + 0.06 * this.resonance
+    return 1
   }
 
   /** where a hexling sits when it silences this tower */
@@ -153,7 +196,7 @@ export class Tower {
   }
 
   get sellValue(): number {
-    return Math.round(investedGold(this.kind, this.level, this.branch) * SELL_REFUND)
+    return Math.round(investedGold(this.kind, this.level, this.branch) * this.world.sellRefund)
   }
 
   private applyLevel(def: TowerLevelDef, world: World, initial = false): void {
@@ -225,7 +268,7 @@ export class Tower {
     const base = this.def.soldier
     const hpMult = world.soldierHpMult()
       * (this.perk?.id === 'vanguard' ? 1.25 : 1)
-      * (1 + 0.08 * this.resonance)
+      * (this.has('shieldwall') ? 1.18 : 1)
     const newMax = Math.round(base.hp * hpMult)
     for (const s of this.soldiers) {
       if (s.maxHp === newMax) continue
@@ -298,7 +341,7 @@ export class Tower {
     const base = this.def.soldier!
     const hpMult = world.soldierHpMult()
       * (this.perk?.id === 'vanguard' ? 1.25 : 1)
-      * (1 + 0.08 * this.resonance)
+      * (this.has('shieldwall') ? 1.18 : 1)
     const dmgMult = this.perk?.id === 'whetstone' ? 1.25 : 1
     const def = {
       ...base,
@@ -479,7 +522,8 @@ export class Tower {
     const poison = def.special?.kind === 'poison' && simChance(def.special.chance)
       ? { dps: def.special.dps, duration: def.special.duration }
       : undefined
-    world.fireProjectile({ kind: 'arrow', from, target, damage, crit, poison, credit: this, world })
+    world.fireProjectile({ kind: 'arrow', from, target, damage, crit, poison, credit: this, world,
+      armorPierce: this.has('enchanted') ? 0.3 : undefined })
   }
 
   private fire(target: Enemy, world: World, isEcho = false): void {
@@ -547,7 +591,7 @@ export class Tower {
         const burn = def.special?.kind === 'burnGround' ? def.special : undefined
         const splashMult = world.splashMult() * (this.perk?.id === 'napalm' ? 1.3 : 1)
         world.fireProjectile({
-          kind: 'bomb', from, at, damage: dmg, splash: def.splash! * splashMult,
+          kind: 'bomb', from, at, damage: dmg, splash: def.splash! * splashMult, slow: this.has('runic'),
           cluster: cluster ? { count: cluster.count, damage: cluster.damage, radius: cluster.radius * splashMult } : undefined,
           burn: burn ? { dps: burn.dps, duration: burn.duration, radius: burn.radius * splashMult } : undefined,
           // Faultline Arsenal: every shell buries a seismic charge in the crater
@@ -592,7 +636,7 @@ export class Tower {
     // retainers honor the same soldier bonuses the panel advertises
     const hpMult = world.soldierHpMult()
       * (this.perk?.id === 'vanguard' ? 1.25 : 1)
-      * (1 + 0.08 * this.resonance)
+      * (this.has('shieldwall') ? 1.18 : 1)
     const dmgMult = this.perk?.id === 'whetstone' ? 1.25 : 1
     const def = {
       ...RETAINER,

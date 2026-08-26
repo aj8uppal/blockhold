@@ -211,10 +211,10 @@ export class Enemy {
   }
 
   /** returns damage actually dealt */
-  takeDamage(amount: number, type: DamageType, world: World, opts: { crit?: boolean, silent?: boolean, mrPierce?: number, credit?: KillCredit } = {}): number {
+  takeDamage(amount: number, type: DamageType, world: World, opts: { crit?: boolean, silent?: boolean, mrPierce?: number, armorPierce?: number, credit?: KillCredit } = {}): number {
     if (!this.alive || this.phased) return 0
     let mult = 1
-    if (type === 'physical') mult = 1 - this.armor
+    if (type === 'physical') mult = 1 - this.armor * (1 - (opts.armorPierce ?? 0))
     else if (type === 'magic') mult = 1 - this.def.magicResist * (1 - (opts.mrPierce ?? 0))
     // a wardbearer's banner half-shields the horde ahead of it
     if (world.time < this.wardedUntil) {

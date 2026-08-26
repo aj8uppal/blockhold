@@ -114,7 +114,8 @@ export class Hero extends Soldier {
   die(world: World): void {
     if (this.dead) return
     this.deathPos.copy(this.group.position)
-    this.respawnCountdown = RESPAWN_TIME
+    // Second Wind halves the wait; the full-health return is handled on revive
+    this.respawnCountdown = RESPAWN_TIME * (world.heroReviveMult ?? 1)
     this.moveOrder = null
     this.waypoints = []
     super.die(world)

@@ -9,7 +9,8 @@ import {
 import { Trap, TrapSpotInfo } from './traps.ts'
 import { Hazard, createHazard } from './hazards.ts'
 import { enemyDef } from './enemyDefs.ts'
-import { towerTrees } from './towerDefs.ts'
+import { towerTrees, SELL_REFUND } from './towerDefs.ts'
+import { reactionFor } from './towers.ts'
 import { buildPaths, LanePath } from './path.ts'
 import { disposeClonedMaterials } from '../voxel/builder.ts'
 import { levels, generateEndlessWaves } from './levels.ts'
@@ -21,7 +22,7 @@ import { Tower } from './towers.ts'
 import { WaveManager } from './waves.ts'
 import { World, ProjectileSpec } from './world.ts'
 import { Projectile, createProjectile, updateBurnZones, clearBurnZones, updateMines, clearMines, updateRunes, clearRunes, clearOwnedEffects } from './projectiles.ts'
-import { armoryTier } from './armory.ts'
+import { armoryTier, hasArmory } from './armory.ts'
 import type { HUD } from '../ui/hud.ts'
 import { icon } from '../ui/icons.ts'
 import { randRange, simChance, setSimSeed } from '../core/utils.ts'
@@ -187,6 +188,15 @@ export class Game implements World {
 
   onEnemyLeaked(e: Enemy): void {
     // a boss reaching the gate ends the defense outright
+    // Gate Ward absorbs the first leak of a battle outright (never a boss)
+    if (!e.def.boss && !this.gateWardSpent && hasArmory(this.save, 'bulwark')) {
+      this.gateWardSpent = true
+      this.hud.showToast('Gate Ward holds — that one cost you nothing', 2.6)
+      this.sfx('lightning', 0.7)
+      this.defenseStreak = 0
+      this.resolveWaveEnemy(e, true)
+      return
+    }
     const fatal = e.def.boss || this.lives - e.def.livesCost <= 0
     if (fatal) this.engine.cinematic(e.pos.x, e.pos.z, 9, 2.4, 0.7)
     this.lives = e.def.boss ? 0 : Math.max(0, this.lives - e.def.livesCost)
@@ -302,15 +312,27 @@ export class Game implements World {
     shatter(group, opts)
   }
 
-  towerDamageMult(kind: string): number {
-    if (kind === 'arrow') return 1 + 0.08 * armoryTier(this.save, 'fletching')
-    if (kind === 'mage') return 1 + 0.08 * armoryTier(this.save, 'arcane')
+  towerDamageMult(_kind: string): number {
+    // the Armory no longer sells flat damage; it sells verbs
     return 1
   }
 
   splashMult(): number {
-    return 1 + 0.12 * armoryTier(this.save, 'powder')
+    return 1
   }
+
+  /** Second Wind: the hero returns in half the time */
+  get heroReviveMult(): number {
+    return hasArmory(this.save, 'secondwind') ? 0.5 : 1
+  }
+
+  /** Full Salvage: sell for everything invested rather than 70% */
+  get sellRefund(): number {
+    return hasArmory(this.save, 'salvage') ? 1 : SELL_REFUND
+  }
+
+  /** Gate Ward: eat the first leak of the battle */
+  private gateWardSpent = false
 
   soldierHpMult(): number {
     return 1 + 0.15 * armoryTier(this.save, 'drill')
@@ -392,6 +414,7 @@ export class Game implements World {
     this.time = 0
     this.simAccumulator = 0
     this.killCount = 0
+    this.gateWardSpent = false
     this.abilities.meteor.cooldown = 0
     this.abilities.reinforce.cooldown = 0
     this.waves = new WaveManager(
@@ -1018,7 +1041,7 @@ export class Game implements World {
   sellTrap(trap: Trap): void {
     if (this.paused) return
     if (trap.kills > 0) this.retiredKillers.push({ name: trap.def.name, kills: trap.kills })
-    const refund = Math.round(trap.def.cost * 0.6)
+    const refund = Math.round(trap.def.cost * (hasArmory(this.save, 'salvage') ? 1 : 0.6))
     this.addGold(refund, trap.group.position.x, 0.4, trap.group.position.z)
     this.goldEarned -= refund  // refunds are not earnings
     trap.spot.occupied = false
@@ -1096,13 +1119,22 @@ export class Game implements World {
   }
 
   /** resonance: same-family neighbors buff each other (recomputed on build/sell) */
+  /**
+   * Cross-family reactions. The old rule paid +6% damage per adjacent tower of
+   * the *same* family, which was invisible at those numbers and rewarded
+   * clumping four of one thing. Mixing families is the decision now.
+   */
   recomputeResonance(): void {
     for (const t of this.towers) {
-      let n = 0
-      for (const o of this.towers) {
-        if (o !== t && o.kind === t.kind && o.pos.distanceTo(t.pos) < 2.3) n++
+      const neighbours = this.towers.filter(o => o !== t && o.pos.distanceTo(t.pos) < 2.3)
+      t.reactions.clear()
+      for (const o of neighbours) {
+        const r = reactionFor(t.kind, o.kind)
+        if (r) t.reactions.add(r.id)
       }
-      t.resonance = Math.min(2, n)
+      // a barracks braced by any neighbouring tower raises tougher soldiers
+      if (t.isBarracks && neighbours.length > 0) t.reactions.add('shieldwall')
+      t.resonance = t.reactions.size
       t.refreshSoldierStats(this)  // live soldiers pick up the change immediately
     }
   }

@@ -15,15 +15,28 @@ export interface ArmoryTrack {
 }
 
 export const ARMORY_TRACKS: ArmoryTrack[] = [
-  { id: 'fletching', icon: 'bow', name: 'Fletching', desc: 'Arrow towers deal +8% damage per tier.', tierCosts: [1, 2] },
-  { id: 'arcane', icon: 'orb', name: 'Arcane Focus', desc: 'Mage towers deal +8% damage per tier.', tierCosts: [1, 2] },
-  { id: 'powder', icon: 'blast', name: 'Black Powder', desc: 'Cannon blast radius +12% per tier.', tierCosts: [1, 2] },
-  { id: 'drill', icon: 'shield', name: 'Drill Sergeants', desc: 'Barracks soldiers and reinforcements gain +15% health per tier.', tierCosts: [1, 2] },
-  { id: 'coffers', icon: 'chest', name: 'Royal Coffers', desc: 'Begin every battle with +40 gold.', tierCosts: [1] },
-  { id: 'comet', icon: 'meteor', name: 'Comet Calling', desc: 'Meteor Storm recharges 20% faster and calls one extra meteor.', tierCosts: [2] },
-  { id: 'prospector', icon: 'gem', name: 'Prospector', desc: 'Begin every battle with +3 shards per tier.', tierCosts: [1, 2] },
+  { id: 'salvage', icon: 'coin', name: 'Full Salvage', desc: 'Sell towers and traps for their full price instead of 70%.', tierCosts: [3] },
+  { id: 'bulwark', icon: 'castle', name: 'Gate Ward', desc: 'The first enemy to reach the gate each battle costs you nothing.', tierCosts: [4] },
+  { id: 'secondwind', icon: 'respawn', name: 'Second Wind', desc: 'Your hero returns from the field in half the time.', tierCosts: [3] },
+  { id: 'comet', icon: 'meteor', name: 'Comet Calling', desc: 'Meteor Storm recharges 20% faster and calls one extra meteor.', tierCosts: [3] },
   { id: 'runesmith', icon: 'rune', name: 'Runesmith', desc: 'Road traps re-arm 20% faster per tier.', tierCosts: [1, 2] },
+  { id: 'coffers', icon: 'chest', name: 'Royal Coffers', desc: 'Begin every battle with +40 gold per tier.', tierCosts: [1, 2] },
+  { id: 'prospector', icon: 'gem', name: 'Prospector', desc: 'Begin every battle with +3 shards per tier.', tierCosts: [1, 2] },
+  { id: 'drill', icon: 'shield', name: 'Drill Sergeants', desc: 'Barracks soldiers and reinforcements gain +15% health per tier.', tierCosts: [1, 2] },
 ]
+
+/**
+ * The campaign yields exactly 21 stars. The board deliberately costs 30, so
+ * finishing it no longer buys everything and the free respec has a job:
+ * the old board cost exactly 21 too, which closed the loop the moment a
+ * player finished and made the respec pointless.
+ */
+export const ARMORY_TOTAL_COST = ARMORY_TRACKS.reduce((sum, t) => sum + t.tierCosts.reduce((a, b) => a + b, 0), 0)
+
+/** true once a track's effect is bought at all */
+export function hasArmory(save: SaveData, id: string): boolean {
+  return armoryTier(save, id) > 0
+}
 
 export function starsEarned(save: SaveData): number {
   return Object.values(save.stars).reduce((a, b) => a + b, 0)

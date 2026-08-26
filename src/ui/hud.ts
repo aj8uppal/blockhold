@@ -9,7 +9,7 @@ import {
   OVERCHARGE_SHARD_COST, OVERCHARGE_DURATION, ASCEND_SHARD_COST, ASCEND_GOLD_COST,
 } from '../game/types.ts'
 import { towerTrees } from '../game/towerDefs.ts'
-import { TARGET_POLICY_LABEL } from '../game/towers.ts'
+import { TARGET_POLICY_LABEL, REACTIONS } from '../game/towers.ts'
 import { isCoarsePointer } from '../core/utils.ts'
 import { icon, BOSS_ART } from './icons.ts'
 
@@ -577,8 +577,8 @@ export class HUD {
     }
 
     const extras: string[] = []
-    if (tower.resonance > 0) {
-      extras.push(`${icon('link')} Resonance ×${tower.resonance}: +${tower.resonance * (tower.isBarracks ? 8 : 6)}% ${tower.isBarracks ? 'soldier health' : 'damage'}`)
+    for (const r of REACTIONS) {
+      if (tower.has(r.id)) extras.push(`${icon(r.icon)} <b>${r.name}</b> — ${r.description}`)
     }
     if (tower.perk) extras.push(`${icon(tower.perk.icon)} ${tower.perk.name} — ${tower.perk.description}`)
     if (extras.length) el('div', 'tp-traits', p, extras.join('<br>'))

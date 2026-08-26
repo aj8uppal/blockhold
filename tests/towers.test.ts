@@ -62,9 +62,15 @@ describe('tower economy', () => {
       for (const [level, branch] of [
         [1, null], [2, null], [3, null], [4, 0], [4, 1], [5, 0], [5, 1],
       ] as const) {
-        const tower = Object.assign(Object.create(Tower.prototype) as Tower, { kind, level, branch })
+        const tower = Object.assign(Object.create(Tower.prototype) as Tower,
+          { kind, level, branch, world: { sellRefund: SELL_REFUND } })
         const expected = Math.round(investedGold(kind, level, branch) * SELL_REFUND)
         expect(tower.sellValue, `${kind} level ${level} branch ${branch}`).toBe(expected)
+
+        // Full Salvage returns the whole investment
+        const salvaged = Object.assign(Object.create(Tower.prototype) as Tower,
+          { kind, level, branch, world: { sellRefund: 1 } })
+        expect(salvaged.sellValue).toBe(investedGold(kind, level, branch))
       }
     }
   })

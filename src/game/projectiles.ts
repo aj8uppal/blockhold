@@ -64,9 +64,9 @@ class ArrowProjectile extends Ballistic {
     return t.state !== 'gone' ? t.pos.clone().setY(t.pos.y + 0.35) : this.mesh.position.clone()
   }
   protected impact(): void {
-    const { target, world, damage, crit, poison, credit } = this.spec
+    const { target, world, damage, crit, poison, credit, armorPierce } = this.spec
     if (target.alive) {
-      const dealt = target.takeDamage(damage, 'physical', world, { crit, credit })
+      const dealt = target.takeDamage(damage, 'physical', world, { crit, credit, armorPierce })
       if (dealt > 0 && poison) target.applyPoison(poison.dps, poison.duration, world, credit)
       if (dealt > 0) {
         world.particles.hitSpark(target.pos.x, target.pos.y + 0.4, target.pos.z)
@@ -131,7 +131,7 @@ class BombProjectile extends Ballistic {
   }
   protected impact(): void {
     const { at, world, damage, splash, cluster, burn, stunChance, credit } = this.spec
-    explode(world, at, damage, splash, stunChance, credit)
+    explode(world, at, damage, splash, stunChance, credit, this.spec.slow)
     if (cluster) {
       for (let i = 0; i < cluster.count; i++) {
         const angle = simRandom() * Math.PI * 2
@@ -157,7 +157,7 @@ class BombProjectile extends Ballistic {
   }
 }
 
-function explode(world: World, at: THREE.Vector3, damage: number, splash: number, stunChance = 0, credit?: KillCredit): void {
+function explode(world: World, at: THREE.Vector3, damage: number, splash: number, stunChance = 0, credit?: KillCredit, slow = false): void {
   world.particles.explosion(at.x, at.y + 0.15, at.z, Math.max(0.7, splash))
   world.sfx('explosion', 0.8)
   world.shake(0.05 + splash * 0.05)
@@ -169,6 +169,7 @@ function explode(world: World, at: THREE.Vector3, damage: number, splash: number
       const falloff = 1 - 0.5 * (d / (splash + e.radius))
       const dealt = e.takeDamage(damage * falloff, 'physical', world, { credit })
       if (dealt > 0 && stunChance > 0 && simChance(stunChance)) e.applyStun(0.5, world)
+      if (dealt > 0 && slow) e.applySlow(0.6, 1.5, world)
     }
   }
 }
