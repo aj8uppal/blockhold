@@ -27,6 +27,15 @@ export class Engine {
   bounds = { x: 12, z: 8 }
   private shakeAmp = 0
   private shakeT = 0
+  /**
+   * Directed camera. Reserved for moments the player is watching rather than
+   * playing - a level opening, a boss arriving, the gate falling. It never
+   * fires during placement or targeting, and any camera input cancels it
+   * immediately: taking the camera away mid-decision is the fastest way to
+   * make direction feel like a bug.
+   */
+  private cineT = 0
+  private cineRestore: { dist: number, pitch: number } | null = null
 
   /** 0 = desktop full, 1 = mobile (smaller shadows, capped DPR), 2 = potato (no shadows) */
   qualityTier = 0
@@ -212,23 +221,27 @@ export class Engine {
   // ---- camera control ----
 
   orbit(dx: number, dy: number): void {
+    this.cancelCinematic()
     this.yawGoal -= dx * 0.0052
     this.pitchGoal = clamp(this.pitchGoal + dy * 0.004, 0.34, 1.5)
   }
 
   /** tilt only (camera pitch), used by two-finger vertical drag and T/G keys */
   tilt(dy: number): void {
+    this.cancelCinematic()
     this.pitchGoal = clamp(this.pitchGoal + dy * 0.004, 0.34, 1.5)
   }
 
   /** orbit by a raw angle (radians) — used by the two-finger twist gesture */
   orbitByAngle(rad: number): void {
+    this.cancelCinematic()
     this.yawGoal += rad
   }
 
   private maxZoomOut = 22
 
   zoom(delta: number): void {
+    this.cancelCinematic()
     this.distGoal = clamp(this.distGoal * Math.exp(delta * 0.0011), 5.5, this.maxZoomOut)
   }
 
@@ -236,6 +249,7 @@ export class Engine {
    *  Scaled by world-units-per-pixel and pitch foreshortening so the world
    *  roughly tracks the pointer at any zoom/tilt/orbit. */
   pan(dx: number, dz: number): void {
+    this.cancelCinematic()
     const wpp = 2 * this.dist * Math.tan(this.camera.fov * Math.PI / 360) / window.innerHeight
     const vert = 1 / Math.max(0.3, Math.sin(this.pitch))
     const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw)
@@ -280,6 +294,7 @@ export class Engine {
    *  A grab near the horizon (far outside the framed view) is refused — one
    *  pixel there spans enormous ground distance, so delta panning feels better. */
   panGrab(sx: number, sy: number): void {
+    this.cancelCinematic()
     const p = this.groundAtGoal(sx, sy)
     this.panAnchor = p && Math.hypot(p.x - this.camTargetGoal.x, p.z - this.camTargetGoal.z) < this.distGoal * 1.2
       ? p
@@ -322,9 +337,14 @@ export class Engine {
     this.camTargetGoal.set(0, 0, 0.5)
     this.yawGoal = 0
     this.pitchGoal = 0.98
-    // frame the whole island with a little margin; portrait needs more headroom
-    const fitH = (mapH * 0.62) / Math.tan((this.camera.fov * Math.PI / 180) / 2)
-    const fitW = (mapW * 0.56) / Math.tan((this.camera.fov * Math.PI / 180) / 2) / this.camera.aspect
+    // Frame the island. The old margins left roughly a third of a phone screen
+    // as empty sky while units rendered 8-14px tall, so short viewports get a
+    // tighter fit: the whole board still reads, it just fills the frame.
+    const tight = window.innerHeight <= 500 || window.matchMedia('(pointer: coarse)').matches
+    const mh = tight ? 0.545 : 0.62
+    const mw = tight ? 0.50 : 0.56
+    const fitH = (mapH * mh) / Math.tan((this.camera.fov * Math.PI / 180) / 2)
+    const fitW = (mapW * mw) / Math.tan((this.camera.fov * Math.PI / 180) / 2) / this.camera.aspect
     const maxDist = this.camera.aspect < 1 ? 34 : 22
     this.maxZoomOut = maxDist
     this.distGoal = clamp(Math.max(fitH, fitW), 10, maxDist)
@@ -338,7 +358,34 @@ export class Engine {
     this.shakeAmp = Math.min(0.5, this.shakeAmp + strength)
   }
 
+  /** frame a spot for `hold` seconds, then hand the camera back */
+  cinematic(x: number, z: number, dist: number, hold: number, pitch?: number): void {
+    if (!this.cineRestore) this.cineRestore = { dist: this.distGoal, pitch: this.pitchGoal }
+    this.cineT = Math.max(this.cineT, hold)
+    this.focusOn(x, z)
+    this.distGoal = clamp(dist, 5.5, this.maxZoomOut)
+    if (pitch !== undefined) this.pitchGoal = pitch
+  }
+
+  /** the player moved the camera: their input always wins */
+  cancelCinematic(): void {
+    if (!this.cineRestore) return
+    this.cineT = 0
+    this.cineRestore = null
+  }
+
+  private releaseCinematic(): void {
+    if (!this.cineRestore) return
+    this.distGoal = this.cineRestore.dist
+    this.pitchGoal = this.cineRestore.pitch
+    this.cineRestore = null
+  }
+
   updateCamera(dt: number): void {
+    if (this.cineT > 0) {
+      this.cineT -= dt
+      if (this.cineT <= 0) this.releaseCinematic()
+    }
     const k = 1 - Math.exp(-dt * 9)
     this.yaw = lerp(this.yaw, this.yawGoal, k)
     this.pitch = lerp(this.pitch, this.pitchGoal, k)

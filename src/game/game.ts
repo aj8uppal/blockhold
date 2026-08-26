@@ -187,6 +187,8 @@ export class Game implements World {
 
   onEnemyLeaked(e: Enemy): void {
     // a boss reaching the gate ends the defense outright
+    const fatal = e.def.boss || this.lives - e.def.livesCost <= 0
+    if (fatal) this.engine.cinematic(e.pos.x, e.pos.z, 9, 2.4, 0.7)
     this.lives = e.def.boss ? 0 : Math.max(0, this.lives - e.def.livesCost)
     this.defenseStreak = 0
     this.lastLeak = { name: e.def.name, wave: e.waveTag >= 0 ? e.waveTag + 1 : (this.waves?.waveIndex ?? 0) + 1 }
@@ -227,6 +229,12 @@ export class Game implements World {
     })
     this.enemies.push(e)
     this.dynamic.add(e.group)
+    // a boss walking on is the strongest authored moment in a map; stage it
+    if (def.boss && this.phase === 'playing') {
+      this.engine.cinematic(e.pos.x, e.pos.z, 8.5, 2.0, 0.72)
+      this.engine.addShake(0.16)
+      this.impact('heavy')
+    }
     if (e.waveTag >= 0) {
       const track = this.waveTracks.get(e.waveTag) ?? { spawned: 0, gone: 0, leaked: false }
       track.spawned++
