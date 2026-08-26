@@ -378,6 +378,34 @@ export function levelById(id: string): LevelDef {
  * the identical 999 waves, which is the opposite of what the mode promises.
  * Length matches the 200 waves the campaign actually advertises.
  */
+/**
+ * The Daily Hold: one short battle that is the same for everybody in the
+ * world on a given UTC day, built entirely from the date so it needs no
+ * server to agree on.
+ *
+ * It starts partway up the endless ramp rather than at wave one - a daily
+ * has to bite immediately, because its whole job is to be finished and
+ * talked about in one sitting.
+ */
+export const DAILY_WAVES = 12
+const DAILY_RAMP_SKIP = 7
+
+export function dailyLevel(seed: number): LevelDef {
+  const base = levels[seed % levels.length]
+  const waves = generateEndlessWaves(base, DAILY_WAVES + DAILY_RAMP_SKIP, seed).slice(DAILY_RAMP_SKIP)
+  return {
+    ...base,
+    id: 'daily',
+    name: 'The Daily Hold',
+    subtitle: 'One battle. Everyone gets the same one.',
+    waves,
+    startGold: base.startGold + 120,
+    startLives: 15,
+    startShards: 4,
+    intro: undefined,
+  }
+}
+
 export function generateEndlessWaves(level: LevelDef, count = 200, seed = level.seed): WaveDef[] {
   // deterministic PRNG (mulberry32)
   let s = (seed * 7919 + 12345) >>> 0

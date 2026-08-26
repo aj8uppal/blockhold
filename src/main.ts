@@ -1,6 +1,9 @@
 import { requestDurableStorage } from './core/save.ts'
 import { readCheckpoint } from './game/checkpoint.ts'
 import { telemetry } from './core/telemetry.ts'
+import { dailySeed, dailyNumber } from './game/ruleset.ts'
+import { dailyLevel } from './game/levels.ts'
+import { readChallengeSeed } from './game/share.ts'
 import { Game } from './game/game.ts'
 import { HUD } from './ui/hud.ts'
 import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
@@ -63,6 +66,19 @@ screens.onPlayLevel = (id, difficulty, hero, mode) => {
     mode ?? (game.isEndless ? 'endless' : 'campaign'),
   )
 }
+// a challenge link drops the visitor straight onto the sender's exact board
+const challengeSeed = readChallengeSeed()
+
+screens.onPlayDaily = () => {
+  const seed = challengeSeed ?? dailySeed()
+  hud.reset()
+  hud.setChrome(true)
+  screens.show('none')
+  screens.dailySeedForShare = seed
+  game.startLevel(dailyLevel(seed), 'normal', (game.save.lastHero as never) ?? 'aldric', 'campaign',
+    { seed, daily: dailyNumber() })
+}
+screens.onShared = (kind) => telemetry.track({ type: 'share_copied', kind })
 screens.onResume = () => {
   const cp = readCheckpoint()
   if (!cp) return
@@ -90,9 +106,14 @@ game.onPhaseChange = (phase, stars) => {
   else if (phase === 'defeat') screens.show('defeat', { levelId: game.level!.id, stats: game.battleStats() })
 }
 
-screens.show('menu')
-game.showMenuBackdrop()
-hud.setChrome(false)
+if (challengeSeed !== null) {
+  // arriving from someone else's link: play their board, skip the menu
+  screens.onPlayDaily()
+} else {
+  screens.show('menu')
+  game.showMenuBackdrop()
+  hud.setChrome(false)
+}
 
 // dev/testing handle
 ;(window as unknown as Record<string, unknown>).vg = { game, hud, screens }

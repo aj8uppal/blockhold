@@ -6,12 +6,26 @@ export interface SaveData {
   bestScore: Record<string, number>    // "levelId:difficulty|endless" -> best score
   medals: Record<string, string[]>     // level id -> earned medals (veteran, noleak)
   lastHero: string
+  /** best result on the current Daily Hold; the daily never touches campaign progress */
+  dailyBest?: { day: number, wave: number, won: boolean, score: number }
   sfxMuted: boolean
   musicMuted: boolean
 }
 
 const KEY = 'blockhold.save.v1'
 const MAX_LEVELS = 16
+
+function parseDailyBest(v: unknown): SaveData['dailyBest'] {
+  if (!v || typeof v !== 'object') return undefined
+  const d = v as Record<string, unknown>
+  if (typeof d.day !== 'number' || !Number.isFinite(d.day)) return undefined
+  return {
+    day: clampInt(d.day, 0, 999999, 0),
+    wave: clampInt(d.wave, 0, 999, 0),
+    won: !!d.won,
+    score: clampInt(d.score, 0, 99_999_999, 0),
+  }
+}
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
   const n = typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : fallback
@@ -65,6 +79,7 @@ export function parseSave(d: unknown): SaveData | null {
           bestScore,
           medals,
           lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',
+          dailyBest: parseDailyBest(o.dailyBest),
           sfxMuted: !!o.sfxMuted,
           musicMuted: !!o.musicMuted,
         }

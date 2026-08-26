@@ -30,6 +30,7 @@ import { newRunSeed, runStamp, RULESET_VERSION, type RunStamp } from './ruleset.
 import { writeCheckpoint, clearCheckpoint, readCheckpoint, type Checkpoint } from './checkpoint.ts'
 import { attachDebris, shatter, updateDebris, clearDebris, type DeathFlavor } from './debris.ts'
 import { telemetry } from '../core/telemetry.ts'
+import type { DailyResult } from './share.ts'
 
 export type GamePhase = 'idle' | 'playing' | 'victory' | 'defeat'
 export type TargetMode = 'meteor' | 'reinforce' | 'rally' | null
@@ -260,7 +261,7 @@ export class Game implements World {
     const track = this.waveTracks.get(e.waveTag)
     if (!track) return
     track.gone++
-    if (leaked) track.leaked = true
+    if (leaked) { track.leaked = true; this.waveOutcomes[e.waveTag] = 'leaked' }
     const waveDoneSpawning = this.waves.waveIndex > e.waveTag || this.waves.phase !== 'spawning'
     if (waveDoneSpawning && track.gone >= track.spawned) {
       this.waveTracks.delete(e.waveTag)
@@ -275,6 +276,7 @@ export class Game implements World {
         this.floater(end.x, 0.9, end.z, this.defenseStreak >= 2
           ? `Wave held! ${icon('flame')}×${this.defenseStreak} +${bonus}${icon('coin')}`
           : `Wave held! +${bonus}${icon('coin')}`, 'gold')
+        this.waveOutcomes[e.waveTag] = 'held'
         telemetry.track({ type: 'wave_cleared', level: this.level.id, wave: e.waveTag + 1, lives: this.lives, leaked: false })
         if (this.defenseStreak > 0 && this.defenseStreak % 5 === 0) {
           this.hud.showBanner(`${this.defenseStreak} WAVES HELD!`, '')
@@ -296,6 +298,10 @@ export class Game implements World {
    */
   private checkpointT = 0
   private firstBuildAt = -1
+  /** per-wave result, in order, for the shareable daily block */
+  waveOutcomes: ('held' | 'leaked')[] = []
+  isDaily = false
+  dailyDay = 0
   private maybeCheckpoint(): void {
     if (this.phase !== 'playing' || !this.level || !this.waves) return
     if (this.enemies.some(e => e.alive) || this.projectiles.length) return
@@ -429,7 +435,7 @@ export class Game implements World {
     difficulty: Difficulty = 'normal',
     heroId: HeroId = 'aldric',
     mode: 'campaign' | 'endless' = 'campaign',
-    opts: { seed?: number, resume?: Checkpoint } = {},
+    opts: { seed?: number, resume?: Checkpoint, daily?: number } = {},
   ): void {
     this.disposeLevel()
     const resume = opts.resume ?? null
@@ -437,6 +443,8 @@ export class Game implements World {
     // consumer, so the run is only reproducible if this comes first.
     this.runSeed = resume?.seed ?? opts.seed ?? newRunSeed()
     setSimSeed(this.runSeed)
+    this.isDaily = opts.daily !== undefined
+    this.dailyDay = opts.daily ?? 0
     this.isEndless = mode === 'endless'
     this.level = this.isEndless ? { ...level, waves: generateEndlessWaves(level, undefined, this.runSeed) } : level
     level = this.level
@@ -451,6 +459,7 @@ export class Game implements World {
     this.earlyCallSeconds = 0
     this.lastLeak = null
     this.waveTracks.clear()
+    this.waveOutcomes = []
     this.mechanicsSeen.clear()
     this.retiredKillers = []
     const paths = buildPaths(level)
@@ -720,7 +729,16 @@ export class Game implements World {
       this.lastNewBestScore = this.lastScore > this.lastPrevBestScore
       if (this.lastNewBestScore) this.save.bestScore[scoreKey] = this.lastScore
 
-      if (this.isEndless) {
+      if (this.isDaily) {
+        // the daily is its own ladder: it must never move campaign progress,
+        // or a lucky day would unlock maps the player has not earned
+        const prev = this.save.dailyBest?.day === this.dailyDay ? this.save.dailyBest : null
+        const reachedNow = won ? this.waves?.totalWaves ?? reached : reached
+        if (!prev || reachedNow > prev.wave || (reachedNow === prev.wave && this.lastScore > prev.score)) {
+          this.save.dailyBest = { day: this.dailyDay, wave: reachedNow, won, score: this.lastScore }
+        }
+        telemetry.track({ type: 'daily_completed', day: this.dailyDay, wave: reachedNow, won })
+      } else if (this.isEndless) {
         // endless: the wave record is the headline; ties are not new records
         const prevBestWave = this.save.bestEndless[this.level.id] ?? 0
         this.lastNewWaveRecord = reached > prevBestWave
@@ -768,8 +786,17 @@ export class Game implements World {
     topKiller: { name: string, kills: number } | null,
     heroKills: number,
     stamp: RunStamp,
+    daily?: DailyResult,
   } {
     return {
+      daily: this.isDaily ? {
+        day: this.dailyDay,
+        outcomes: this.waveOutcomes,
+        totalWaves: this.waves?.totalWaves ?? 0,
+        wavesReached: this.waves ? this.waves.waveIndex + 1 : 0,
+        lives: this.lives,
+        won: this.phase === 'victory',
+      } : undefined,
       stamp: runStamp(
         this.level?.id ?? '',
         this.difficulty,

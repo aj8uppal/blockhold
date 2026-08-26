@@ -6,6 +6,8 @@ import { writeSave } from '../core/save.ts'
 import type { SaveData } from '../core/save.ts'
 import { icon } from './icons.ts'
 import { readCheckpoint } from '../game/checkpoint.ts'
+import { dailyNumber } from '../game/ruleset.ts'
+import { dailyShareText, challengeUrl, type DailyResult } from '../game/share.ts'
 
 export type ScreenName = 'menu' | 'levels' | 'victory' | 'defeat' | 'none'
 
@@ -35,6 +37,7 @@ export interface BattleStats {
   lastLeak: { name: string, wave: number } | null,
   topKiller: { name: string, kills: number } | null,
   heroKills: number,
+  daily?: DailyResult,
 }
 
 const fmtTime = (sec: number) => `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`
@@ -68,6 +71,7 @@ export class Screens {
   onPlayLevel: (levelId: string, difficulty?: Difficulty, hero?: HeroId, mode?: GameMode) => void = () => {}
   onMenu: () => void = () => {}
   onResume: () => void = () => {}
+  onPlayDaily: () => void = () => {}
 
   constructor(private save: () => SaveData) {
     this.root = document.getElementById('screens')!
@@ -114,6 +118,12 @@ export class Screens {
         `${icon('respawn')} Resume ${lvl?.name ?? 'battle'} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
     }
+    // one battle, the same one for everyone in the world today
+    const day = dailyNumber()
+    const done = save.dailyBest?.day === day
+    const daily = el('button', 'btn ghost', card,
+      `${icon('moon')} Daily Hold #${day}${done ? ` · wave ${save.dailyBest!.wave}` : ''}`) as HTMLButtonElement
+    daily.onclick = () => this.onPlayDaily()
     const how = el('button', 'btn ghost', card, 'How to play') as HTMLButtonElement
     how.onclick = () => this.renderHelp()
     if (needsInstallGuide()) {
@@ -183,6 +193,49 @@ export class Screens {
     })
   }
 
+  /**
+   * The daily's whole job is to become an object somebody can hand to a
+   * friend, so the result is a spoiler-free block they can copy and a link
+   * that drops that friend onto the exact same board.
+   */
+  private renderDailyResult(card: HTMLElement, r: DailyResult, won: boolean): void {
+    el('div', 'end-emoji', card, icon('moon'))
+    el('h2', 'end-title', card, `Daily Hold #${r.day}`)
+    el('div', 'end-sub', card, won
+      ? `Held all ${r.totalWaves} waves — ${r.lives} ${r.lives === 1 ? 'life' : 'lives'} left`
+      : `Wave ${r.wavesReached} of ${r.totalWaves}`)
+
+    const url = challengeUrl(this.dailySeedForShare)
+    const text = dailyShareText(r, url)
+    el('pre', 'daily-blocks', card, text.split('\n').slice(2, 3).join(''))
+
+    const row = el('div', 'end-actions', card)
+    const copy = el('button', 'btn primary', row, 'Copy result') as HTMLButtonElement
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(text)
+        copy.textContent = 'Copied'
+        this.onShared('daily')
+      } catch {
+        // clipboard can be blocked; show the text so it can still be taken
+        const box = el('textarea', 'daily-fallback', card) as HTMLTextAreaElement
+        box.value = text
+        box.readOnly = true
+        box.select()
+        copy.textContent = 'Select and copy'
+      }
+      setTimeout(() => { copy.textContent = 'Copy result' }, 2500)
+    }
+    const again = el('button', 'btn ghost', row, 'Play again') as HTMLButtonElement
+    again.onclick = () => this.onPlayDaily()
+    const menu = el('button', 'btn ghost', row, 'Menu') as HTMLButtonElement
+    menu.onclick = () => { this.show('menu'); this.onMenu() }
+  }
+
+  /** the seed the daily just played, so the share link points at that board */
+  dailySeedForShare = 0
+  onShared: (kind: string) => void = () => {}
+
   private showDifficultyPicker(levelId: string, levelName: string): void {
     const save = this.save()
     let hero: HeroId = (save.lastHero in HERO_DEFS ? save.lastHero : 'aldric') as HeroId
@@ -243,8 +296,10 @@ export class Screens {
     const idx = levels.findIndex(l => l.id === levelId)
     const endless = stats?.endless ?? false
     const hasNext = won && !endless && idx >= 0 && idx < levels.length - 1
+    const daily = stats?.daily
     const wrap = el('div', 'screen end-screen', this.root)
     const card = el('div', `end-card ${won ? 'won' : 'lost'}`, wrap)
+    if (daily) { this.renderDailyResult(card, daily, won); return }
     el('div', 'end-emoji', card, icon(endless ? 'moon' : won ? 'trophy' : 'skull'))
     el('h2', 'end-title', card, endless ? 'The Long Night ends' : won ? 'Victory!' : 'The gate has fallen')
     if (endless && stats) {
