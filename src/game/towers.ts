@@ -10,7 +10,7 @@ import { Enemy, Soldier } from './units.ts'
 import { PlotInfo } from './terrain.ts'
 import { buildModel, getPart, disposeClonedMaterials } from '../voxel/builder.ts'
 import { towerModel, muzzleHeights, rallyFlagModel } from '../voxel/models_towers.ts'
-import { randRange, lerpAngle, clamp } from '../core/utils.ts'
+import { randRange, lerpAngle, clamp, simChance } from '../core/utils.ts'
 
 const boltColors: Record<string, number> = {
   mage1: 0x8f5aff, mage2: 0x7a6aff, mage3: 0x5aa0ff, mage4a: 0xb37aff, mage4b: 0x9fe8ff,
@@ -441,11 +441,11 @@ export class Tower {
     const def = this.def
     let damage = dmg
     let crit = false
-    if (def.special?.kind === 'crit' && Math.random() < def.special.chance) {
+    if (def.special?.kind === 'crit' && simChance(def.special.chance)) {
       damage *= def.special.mult
       crit = true
     }
-    const poison = def.special?.kind === 'poison' && Math.random() < def.special.chance
+    const poison = def.special?.kind === 'poison' && simChance(def.special.chance)
       ? { dps: def.special.dps, duration: def.special.duration }
       : undefined
     world.fireProjectile({ kind: 'arrow', from, target, damage, crit, poison, credit: this, world })
@@ -499,7 +499,7 @@ export class Tower {
           addConvergenceRune(world, target.pos.x, target.pos.z, this)
         }
         // Echo Casting: chance to immediately cast again
-        if (!isEcho && this.perk?.id === 'echo' && Math.random() < 0.18) {
+        if (!isEcho && this.perk?.id === 'echo' && simChance(0.18)) {
           this.fire(target, world, true)
         }
         break

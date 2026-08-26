@@ -24,7 +24,8 @@ import { Projectile, createProjectile, updateBurnZones, clearBurnZones, updateMi
 import { armoryTier } from './armory.ts'
 import type { HUD } from '../ui/hud.ts'
 import { icon } from '../ui/icons.ts'
-import { randRange } from '../core/utils.ts'
+import { randRange, simChance, setSimSeed } from '../core/utils.ts'
+import { newRunSeed, runStamp, type RunStamp } from './ruleset.ts'
 
 export type GamePhase = 'idle' | 'playing' | 'victory' | 'defeat'
 export type TargetMode = 'meteor' | 'reinforce' | 'rally' | null
@@ -59,6 +60,8 @@ export class Game implements World {
   waves: WaveManager | null = null
   gold = 0
   lives = 0
+  /** the seed this run was simulated from; reproduces the battle exactly */
+  runSeed = 0
   shards = 0
   traps: Trap[] = []
   speed: 1 | 2 = 1
@@ -205,7 +208,7 @@ export class Game implements World {
     }
     const surged = opts.surged ?? false
     const eliteChance = this.difficulty === 'veteran' ? 0.12 : this.isEndless ? 0.08 : 0
-    const elite = (opts.eliteRoll ?? false) && !def.boss && Math.random() < eliteChance
+    const elite = (opts.eliteRoll ?? false) && !def.boss && simChance(eliteChance)
     const e = new Enemy(def, this.lanes[laneIndex], laneIndex, dist, {
       hpMult: DIFFICULTIES[this.difficulty].enemyHp * (surged ? 1.3 : 1) * (opts.hpScale ?? this.endlessHpScale()),
       speedMult: surged ? 1.12 : 1,
@@ -309,10 +312,20 @@ export class Game implements World {
     this.engine.pitchGoal = 0.72
   }
 
-  startLevel(level: LevelDef, difficulty: Difficulty = 'normal', heroId: HeroId = 'aldric', mode: 'campaign' | 'endless' = 'campaign'): void {
+  startLevel(
+    level: LevelDef,
+    difficulty: Difficulty = 'normal',
+    heroId: HeroId = 'aldric',
+    mode: 'campaign' | 'endless' = 'campaign',
+    opts: { seed?: number } = {},
+  ): void {
     this.disposeLevel()
+    // Seed before anything draws: endless wave generation itself is a
+    // consumer, so the run is only reproducible if this comes first.
+    this.runSeed = opts.seed ?? newRunSeed()
+    setSimSeed(this.runSeed)
     this.isEndless = mode === 'endless'
-    this.level = this.isEndless ? { ...level, waves: generateEndlessWaves(level) } : level
+    this.level = this.isEndless ? { ...level, waves: generateEndlessWaves(level, undefined, this.runSeed) } : level
     level = this.level
     this.difficulty = difficulty
     this.save.lastHero = heroId
@@ -568,8 +581,15 @@ export class Game implements World {
     lastLeak: { name: string, wave: number } | null,
     topKiller: { name: string, kills: number } | null,
     heroKills: number,
+    stamp: RunStamp,
   } {
     return {
+      stamp: runStamp(
+        this.level?.id ?? '',
+        this.difficulty,
+        this.isEndless ? 'endless' : 'campaign',
+        this.runSeed,
+      ),
       kills: this.killCount,
       gold: this.goldEarned,
       shards: this.shardsEarned,

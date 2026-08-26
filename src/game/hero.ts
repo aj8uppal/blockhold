@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { Soldier } from './units.ts'
 import { World } from './world.ts'
 import { HeroDef, HeroId, SoldierDef } from './types.ts'
-import { lerpAngle, randRange } from '../core/utils.ts'
+import { lerpAngle, randRange, simRandom } from '../core/utils.ts'
 import { icon } from '../ui/icons.ts'
 
 const RESPAWN_TIME = 16
@@ -182,7 +182,7 @@ export class Hero extends Soldier {
         this.abilityCooldown = this.heroDef.ability.cooldown
         const dmg = 26 + this.level * 6
         for (const v of victims) {
-          v.takeDamage(dmg * (0.85 + Math.random() * 0.3), 'true', world, { credit: this })
+          v.takeDamage(dmg * (0.85 + simRandom() * 0.3), 'true', world, { credit: this })
           v.applyStun(0.8, world)
         }
         world.particles.explosion(pos.x, 0.15, pos.z, 0.55)
@@ -254,7 +254,7 @@ export class Hero extends Soldier {
             this.abilityCooldown = this.heroDef.ability.cooldown
             const dmg = 18 + this.level * 5
             for (const v of victims) {
-              v.takeDamage(dmg * (0.85 + Math.random() * 0.3), 'magic', world, { credit: this })
+              v.takeDamage(dmg * (0.85 + simRandom() * 0.3), 'magic', world, { credit: this })
               v.applySlow(0.45, 2.5, world)
             }
             world.particles.magicImpact(pos.x, 0.4, pos.z, 0x9fe8ff)

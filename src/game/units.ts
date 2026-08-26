@@ -5,7 +5,7 @@ import { World, KillCredit } from './world.ts'
 import type { Tower } from './towers.ts'
 import { buildModel, setFlash, getPart, VoxModel } from '../voxel/builder.ts'
 import * as units from '../voxel/models_units.ts'
-import { clamp, lerpAngle, randRange } from '../core/utils.ts'
+import { clamp, lerpAngle, randRange, simRandom } from '../core/utils.ts'
 
 export const enemyModelFactories: Record<string, () => VoxModel> = {
   husk: units.huskModel,
@@ -154,7 +154,7 @@ export class Enemy {
     this.armor = def.armor
     this.dist = startDist
     this.offset = randRange(-0.27, 0.27)
-    this.attackTimer = def.attackInterval * Math.random()
+    this.attackTimer = def.attackInterval * simRandom()
     this.summonTimer = (def.summons?.interval ?? 0) * 0.6
     const factory = enemyModelFactories[def.model]
     this.group = buildModel(factory(), `enemy:${def.model}`, { cloneMaterials: true })

@@ -372,9 +372,15 @@ export function levelById(id: string): LevelDef {
  * escalating. Deterministic per level seed. Enemy HP additionally scales in
  * Game via the wave index; here we just author ever-larger compositions.
  */
-export function generateEndlessWaves(level: LevelDef, count = 999): WaveDef[] {
-  // deterministic PRNG (mulberry32) seeded off the level
-  let s = (level.seed * 7919 + 12345) >>> 0
+/**
+ * The Long Night. `seed` defaults to the level so the shape is stable, but a
+ * run passes its own seed: otherwise every endless attempt on a map replays
+ * the identical 999 waves, which is the opposite of what the mode promises.
+ * Length matches the 200 waves the campaign actually advertises.
+ */
+export function generateEndlessWaves(level: LevelDef, count = 200, seed = level.seed): WaveDef[] {
+  // deterministic PRNG (mulberry32)
+  let s = (seed * 7919 + 12345) >>> 0
   const rand = () => {
     s |= 0; s = (s + 0x6d2b79f5) | 0
     let t = Math.imul(s ^ (s >>> 15), 1 | s)

@@ -3,7 +3,7 @@ import { World, ProjectileSpec, KillCredit, MineSpec } from './world.ts'
 import { Enemy, Soldier } from './units.ts'
 import { buildModel } from '../voxel/builder.ts'
 import * as env from '../voxel/models_env.ts'
-import { randRange } from '../core/utils.ts'
+import { randRange, simChance, simRandom } from '../core/utils.ts'
 
 export interface Projectile {
   mesh: THREE.Object3D
@@ -134,8 +134,8 @@ class BombProjectile extends Ballistic {
     explode(world, at, damage, splash, stunChance, credit)
     if (cluster) {
       for (let i = 0; i < cluster.count; i++) {
-        const angle = Math.random() * Math.PI * 2
-        const r = 0.45 + Math.random() * 0.7
+        const angle = simRandom() * Math.PI * 2
+        const r = 0.45 + simRandom() * 0.7
         const to = at.clone().add(new THREE.Vector3(Math.sin(angle) * r, 0, Math.cos(angle) * r))
         world.fireProjectile({
           kind: 'bomb',
@@ -167,7 +167,7 @@ function explode(world: World, at: THREE.Vector3, damage: number, splash: number
     if (d <= splash + e.radius) {
       const falloff = 1 - 0.5 * (d / (splash + e.radius))
       const dealt = e.takeDamage(damage * falloff, 'physical', world, { credit })
-      if (dealt > 0 && stunChance > 0 && Math.random() < stunChance) e.applyStun(0.5, world)
+      if (dealt > 0 && stunChance > 0 && simChance(stunChance)) e.applyStun(0.5, world)
     }
   }
 }
@@ -227,7 +227,7 @@ class ChainLightning implements Projectile {
       const to = e.pos.clone().setY(e.pos.y + 0.35)
       this.mesh.add(makeLightningMesh(from, to))
       const dealt = e.takeDamage(damage, 'magic', world, { mrPierce: spec.mrPierce, credit: spec.credit })
-      if (dealt > 0 && Math.random() < spec.stunChance) e.applyStun(spec.stunDur, world)
+      if (dealt > 0 && simChance(spec.stunChance)) e.applyStun(spec.stunDur, world)
       world.particles.magicImpact(to.x, to.y, to.z, 0x9fe8ff)
       damage *= spec.falloff
       from = to
