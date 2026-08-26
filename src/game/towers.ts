@@ -21,6 +21,16 @@ import { randRange, lerpAngle, clamp, simChance } from '../core/utils.ts'
  * decision. Reactions pay for mixing families instead, and each one does
  * something nameable rather than nudging a percentage.
  */
+/**
+ * How close two towers must stand to react.
+ *
+ * The old resonance used 2.3, which was shorter than the plot spacing on
+ * Greenhollow and Emberwastes (3.0) - the mechanic was literally unreachable
+ * on the tutorial map and on map three. 3.1 makes it reachable on every map
+ * while staying selective; see tests/towers.test.ts.
+ */
+export const REACTION_RADIUS = 3.1
+
 export type ReactionId = 'enchanted' | 'runic' | 'ranging' | 'shieldwall'
 
 export interface ReactionDef {

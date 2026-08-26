@@ -10,7 +10,7 @@ import { Trap, TrapSpotInfo } from './traps.ts'
 import { Hazard, createHazard } from './hazards.ts'
 import { enemyDef } from './enemyDefs.ts'
 import { towerTrees, SELL_REFUND } from './towerDefs.ts'
-import { reactionFor } from './towers.ts'
+import { reactionFor, REACTION_RADIUS } from './towers.ts'
 import { buildPaths, LanePath } from './path.ts'
 import { disposeClonedMaterials } from '../voxel/builder.ts'
 import { levels, generateEndlessWaves } from './levels.ts'
@@ -1126,7 +1126,7 @@ export class Game implements World {
    */
   recomputeResonance(): void {
     for (const t of this.towers) {
-      const neighbours = this.towers.filter(o => o !== t && o.pos.distanceTo(t.pos) < 2.3)
+      const neighbours = this.towers.filter(o => o !== t && o.pos.distanceTo(t.pos) <= REACTION_RADIUS)
       t.reactions.clear()
       for (const o of neighbours) {
         const r = reactionFor(t.kind, o.kind)

@@ -1,4 +1,6 @@
-import { targetScore, TARGET_POLICY_ORDER, TARGET_POLICY_LABEL, type TargetPolicy } from '../src/game/towers.ts'
+import { targetScore, TARGET_POLICY_ORDER, TARGET_POLICY_LABEL, REACTION_RADIUS, reactionFor, type TargetPolicy } from '../src/game/towers.ts'
+import { levels } from '../src/game/levels.ts'
+import { gridToWorld } from '../src/game/path.ts'
 import { describe, expect, it } from 'vitest'
 import { investedGold, resolveCapstone, SELL_REFUND, towerTrees } from '../src/game/towerDefs.ts'
 import { Tower } from '../src/game/towers.ts'
@@ -117,5 +119,45 @@ describe('targeting policies', () => {
     expect(TARGET_POLICY_ORDER).toEqual(['first', 'last', 'strong', 'weak'])
     expect(new Set(TARGET_POLICY_ORDER).size).toBe(TARGET_POLICY_ORDER.length)
     for (const p of TARGET_POLICY_ORDER) expect(TARGET_POLICY_LABEL[p]).toBeTruthy()
+  })
+})
+
+describe('reaction reach', () => {
+  // The predecessor of this mechanic used a 2.3 radius while Greenhollow and
+  // Emberwastes space their plots 3.0 apart, so adjacency was unreachable on
+  // the tutorial map. A placement mechanic nobody can trigger is dead content.
+  it('is reachable on every map in the campaign', () => {
+    for (const lvl of levels) {
+      const pts = lvl.plots.map(([c, r]) => gridToWorld(c, r, lvl.width, lvl.height))
+      let pairs = 0
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          if (Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]) <= REACTION_RADIUS) pairs++
+        }
+      }
+      expect(pairs, `${lvl.id} has no plots close enough to react`).toBeGreaterThan(0)
+    }
+  })
+
+  it('stays selective rather than linking the whole board', () => {
+    for (const lvl of levels) {
+      const pts = lvl.plots.map(([c, r]) => gridToWorld(c, r, lvl.width, lvl.height))
+      let pairs = 0
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          if (Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]) <= REACTION_RADIUS) pairs++
+        }
+      }
+      const allPairs = (pts.length * (pts.length - 1)) / 2
+      expect(pairs / allPairs, `${lvl.id} links too much of the board`).toBeLessThan(0.35)
+    }
+  })
+
+  it('never pairs a family with itself', () => {
+    expect(reactionFor('arrow', 'arrow')).toBeNull()
+    expect(reactionFor('arrow', 'mage')?.id).toBe('enchanted')
+    expect(reactionFor('mage', 'arrow')?.id).toBe('enchanted')
+    expect(reactionFor('cannon', 'mage')?.id).toBe('runic')
+    expect(reactionFor('arrow', 'cannon')?.id).toBe('ranging')
   })
 })
