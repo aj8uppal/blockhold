@@ -51,6 +51,8 @@ export interface World {
   readonly heroReviveMult: number
   /** fraction of invested gold returned on a sell (Full Salvage raises it to 1) */
   readonly sellRefund: number
+  /** is this point inside a player-dug cutting? */
+  cuttingAt(x: number, z: number): boolean
   shake(strength: number): void
   /** hold the frame on a hit worth feeling */
   impact(weight: 'light' | 'heavy' | 'elite' | 'boss'): void

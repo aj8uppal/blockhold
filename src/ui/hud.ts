@@ -12,6 +12,7 @@ import { towerTrees } from '../game/towerDefs.ts'
 import { TARGET_POLICY_LABEL, REACTIONS } from '../game/towers.ts'
 import { isCoarsePointer } from '../core/utils.ts'
 import { isPortalMode } from '../core/platform.ts'
+import { EARTHWORK_DEFS, type EarthworkSpot } from '../game/earthworks.ts'
 import { icon, BOSS_ART } from './icons.ts'
 
 function chip(label: string, value: string, cls = ''): string {
@@ -483,6 +484,32 @@ export class HUD {
   closeBuildMenu(): void {
     this.clearArmedBuild()
     this.buildMenu.classList.add('hidden')
+  }
+
+  /** one option: this ground can take exactly one kind of work */
+  openEarthworkMenu(spot: EarthworkSpot, x: number, y: number): void {
+    this.armedBuild = null
+    this.buildMenu.innerHTML = ''
+    const def = EARTHWORK_DEFS[spot.kind]
+    const btn = el('button', 'build-option trap-option', this.buildMenu) as HTMLButtonElement
+    btn.dataset.cost = `${def.cost}`
+    btn.innerHTML = `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
+    const showTip = () => {
+      const tip = document.getElementById('build-tip')
+      if (tip) {
+        tip.innerHTML = `<b>${def.name}</b><br>${def.description}`
+        tip.classList.remove('hidden')
+      }
+    }
+    btn.onclick = this.menuGuard(() => this.commitBuild(
+      `earth:${spot.kind}`, btn, showTip, () => this.game.buildEarthwork(),
+    ))
+    btn.onmouseenter = showTip
+    btn.onmouseleave = () => { if (!this.armedBuild) this.hideBuildTooltip() }
+    btn.classList.toggle('poor', this.game.gold < def.cost)
+    const tip = el('div', 'build-tooltip hidden', this.buildMenu)
+    tip.id = 'build-tip'
+    this.placeMenu(x, y)
   }
 
   // ---------------- trap menu & panel ----------------

@@ -11,6 +11,7 @@ import { PlotInfo } from './terrain.ts'
 import { buildModel, getPart, disposeClonedMaterials } from '../voxel/builder.ts'
 import { towerModel, muzzleHeights, rallyFlagModel } from '../voxel/models_towers.ts'
 import { randRange, lerpAngle, clamp, simChance } from '../core/utils.ts'
+import { RAMPART_RANGE_BONUS, RAMPART_DAMAGE_BONUS } from './earthworks.ts'
 
 /**
  * Cross-family reactions replace the old same-family resonance.
@@ -112,6 +113,8 @@ export class Tower {
   soldiers: Soldier[] = []
   rallyPoint = new THREE.Vector3()
   targetPolicy: TargetPolicy = 'first'
+  /** standing beside a rampart: further sight, heavier shots */
+  onHighGround = false
   rallyFlag: THREE.Group | null = null
   /** count of same-family neighbors (0-2), set by Game.recomputeResonance */
   resonance = 0
@@ -149,7 +152,9 @@ export class Tower {
 
   /** effective range including perks */
   get range(): number {
-    return (this.def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0)) * (this.has('ranging') ? 1.12 : 1)
+    return (this.def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0))
+      * (this.has('ranging') ? 1.12 : 1)
+      * (this.onHighGround ? 1 + RAMPART_RANGE_BONUS : 1)
   }
 
   /** retained so capstone specials keep a single damage scalar to multiply by */
@@ -563,6 +568,7 @@ export class Tower {
   private fire(target: Enemy, world: World, isEcho = false): void {
     const def = this.def
     let dmg = randRange(...def.damage!) * world.towerDamageMult(this.kind) * this.resonanceMult
+      * (this.onHighGround ? 1 + RAMPART_DAMAGE_BONUS : 1)
     if (this.perk?.id === 'serrated') dmg *= 1.2
     const from = this.muzzle()
     switch (this.kind) {

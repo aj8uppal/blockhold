@@ -6,6 +6,7 @@ import type { Tower } from './towers.ts'
 import { buildModel, setFlash, getPart, VoxModel } from '../voxel/builder.ts'
 import * as units from '../voxel/models_units.ts'
 import { clamp, lerpAngle, randRange, simRandom } from '../core/utils.ts'
+import { CUTTING_SLOW, CUTTING_VULN } from './earthworks.ts'
 
 export const enemyModelFactories: Record<string, () => VoxModel> = {
   husk: units.huskModel,
@@ -132,6 +133,8 @@ export class Enemy {
   /** what last landed on this unit, so its debris carries that damage type */
   private lastHitType: DamageType = 'physical'
   private lastHitForce = 1
+  /** down inside a player-dug cutting */
+  private inCutting = false
   private hitCount = 0
   /** hexling: the tower this imp is perched on, silencing */
   hexTarget: Tower | null = null
@@ -226,6 +229,7 @@ export class Enemy {
         world.particles.magicImpact(this.pos.x, this.pos.y + 0.45, this.pos.z, 0x8fdfff)
       }
     }
+    if (this.inCutting) mult *= 1 + CUTTING_VULN
     const dealt = Math.max(0, amount * mult)
     this.hp -= dealt
     this.lastHitType = type
@@ -517,7 +521,10 @@ export class Enemy {
         }
       }
       // walk
-      const speed = this.def.speed * this.speedMult * (world.time < this.slowUntil ? this.slowFactor : 1)
+      let speed = this.def.speed * this.speedMult * (world.time < this.slowUntil ? this.slowFactor : 1)
+      // a cutting is a killing ditch: slower going, and no cover down there
+      this.inCutting = !this.def.flying && world.cuttingAt(this.pos.x, this.pos.z)
+      if (this.inCutting) speed *= CUTTING_SLOW
       this.dist += speed * dt
       if (this.dist >= this.lane.length) {
         this.state = 'gone'

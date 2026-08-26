@@ -7,6 +7,7 @@ import {
   OVERCHARGE_SHARD_COST, ASCEND_SHARD_COST, ASCEND_GOLD_COST, PERKS,
 } from './types.ts'
 import { Trap, TrapSpotInfo } from './traps.ts'
+import { Earthwork, EARTHWORK_DEFS, RAMPART_REACH, type EarthworkSpot } from './earthworks.ts'
 import { Hazard, createHazard } from './hazards.ts'
 import { enemyDef } from './enemyDefs.ts'
 import { towerTrees, SELL_REFUND } from './towerDefs.ts'
@@ -70,6 +71,7 @@ export class Game implements World {
   runSeed = 0
   shards = 0
   traps: Trap[] = []
+  earthworks: Earthwork[] = []
   speed: 1 | 2 = 1
   paused = false
   isEndless = false
@@ -90,6 +92,7 @@ export class Game implements World {
   selectedTower: Tower | null = null
   selectedPlot: PlotInfo | null = null
   selectedTrapSpot: TrapSpotInfo | null = null
+  selectedEarthSpot: EarthworkSpot | null = null
   hero: Hero | null = null
   heroSelected = false
   targetMode: TargetMode = null
@@ -695,6 +698,7 @@ export class Game implements World {
     for (const t of this.towers) { t.dismantle(this, true); this.dynamic.remove(t.group) }
     for (const tr of this.traps) { this.dynamic.remove(tr.group); tr.dispose() }
     this.traps = []
+    this.earthworks = []
     this.particles.clear()
     this.enemies = []
     this.soldiers = []
@@ -970,6 +974,8 @@ export class Game implements World {
     if (plot) { this.selectPlot(plot, sx, sy); return }
     const trapSpot = this.pickTrapSpot(sx, sy)
     if (trapSpot) { this.selectTrapSpot(trapSpot, sx, sy); return }
+    const earthSpot = this.pickEarthworkSpot(sx, sy)
+    if (earthSpot) { this.selectEarthworkSpot(earthSpot, sx, sy); return }
     const trap = this.pickTrap(sx, sy)
     if (trap) {
       this.clearSelection()
@@ -1017,7 +1023,7 @@ export class Game implements World {
     const plot = this.pickPlot(sx, sy)
     this.hoverPlot = plot
     if (plot) { this.hud.hideEnemyTip(); return 'pointer' }
-    if (this.pickTrapSpot(sx, sy) || this.pickTrap(sx, sy)) { this.hud.hideEnemyTip(); return 'pointer' }
+    if (this.pickTrapSpot(sx, sy) || this.pickTrap(sx, sy) || this.pickEarthworkSpot(sx, sy)) { this.hud.hideEnemyTip(); return 'pointer' }
     const enemy = this.pickEnemy(sx, sy)
     if (enemy) {
       this.hud.showEnemyTip(enemy, sx, sy)
@@ -1129,6 +1135,7 @@ export class Game implements World {
     this.selectedTower = null
     this.selectedPlot = null
     this.selectedTrapSpot = null
+    this.selectedEarthSpot = null
     this.heroSelected = false
     if (this.targetMode === 'rally') {
       // rally mode has no owner once its tower is deselected
@@ -1169,6 +1176,7 @@ export class Game implements World {
     this.towers.push(tower)
     this.dynamic.add(tower.group)
     this.recomputeResonance()
+    this.recomputeHighGround()
     telemetry.track({ type: 'tower_built', kind, level: this.level?.id ?? '', wave: (this.waves?.waveIndex ?? -1) + 1 })
     if (this.firstBuildAt < 0) {
       this.firstBuildAt = this.time
@@ -1200,6 +1208,63 @@ export class Game implements World {
     this.selectRing.visible = true
     this.selectRing.position.set(spot.pos.x, 0.1, spot.pos.z)
     this.sfx('click')
+  }
+
+  pickEarthworkSpot(sx: number, sy: number): EarthworkSpot | null {
+    if (!this.terrain) return null
+    const g = this.groundPoint(sx, sy)
+    if (!g) return null
+    for (const e of this.terrain.earthworkSpots) {
+      if (!e.occupied && Math.hypot(g.x - e.pos.x, g.z - e.pos.z) < 0.52) return e
+    }
+    return null
+  }
+
+  selectEarthworkSpot(spot: EarthworkSpot, sx: number, sy: number): void {
+    this.clearSelection()
+    this.selectedEarthSpot = spot
+    const screen = this.projectToScreen(spot.pos.x, spot.pos.y + 0.15, spot.pos.z)
+    this.hud.openEarthworkMenu(spot, screen?.x ?? sx, screen?.y ?? sy)
+    this.selectRing.visible = true
+    this.selectRing.position.set(spot.pos.x, 0.1, spot.pos.z)
+    this.sfx('click')
+  }
+
+  buildEarthwork(): void {
+    if (this.paused) return
+    const spot = this.selectedEarthSpot
+    if (!spot || spot.occupied) return
+    const def = EARTHWORK_DEFS[spot.kind]
+    if (this.gold < def.cost) { this.sfx('error'); this.hud.flashGold(); return }
+    this.gold -= def.cost
+    spot.occupied = true
+    spot.mesh.visible = false
+    const work = new Earthwork(spot.kind, spot)
+    this.earthworks.push(work)
+    this.dynamic.add(work.group)
+    this.particles.buildDust(spot.pos.x, spot.pos.y + 0.1, spot.pos.z)
+    this.sfx('build')
+    this.engine.addShake(0.06)
+    this.recomputeHighGround()
+    this.clearSelection()
+  }
+
+  /** which towers are standing next to raised earth */
+  recomputeHighGround(): void {
+    for (const t of this.towers) {
+      t.onHighGround = this.earthworks.some(
+        w => w.kind === 'rampart' && w.group.position.distanceTo(t.pos) <= RAMPART_REACH,
+      )
+    }
+  }
+
+  /** a cutting slows and exposes whatever is down in it */
+  cuttingAt(x: number, z: number): boolean {
+    for (const w of this.earthworks) {
+      if (w.kind !== 'cutting') continue
+      if (Math.hypot(w.group.position.x - x, w.group.position.z - z) < 0.55) return true
+    }
+    return false
   }
 
   buildTrap(kind: TrapKind): void {
