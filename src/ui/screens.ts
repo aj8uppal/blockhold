@@ -346,7 +346,31 @@ export class Screens {
     retry.onclick = () => this.onPlayLevel(levelId, undefined, undefined, endless ? 'endless' : 'campaign')
     const menu = el('button', 'btn ghost', row, 'Level select') as HTMLButtonElement
     menu.onclick = () => { this.onMenu(); this.show('levels') }
+
+    // a result card is a claim; a clip is evidence
+    if (this.canRecordTape()) {
+      const tape = el('button', 'btn ghost', row, `${icon('share')} Siege Tape`) as HTMLButtonElement
+      tape.title = 'Record your defense assembling itself, as a video you can share'
+      tape.onclick = async () => {
+        tape.disabled = true
+        tape.textContent = 'Recording…'
+        try {
+          const ok = await this.onRecordTape()
+          tape.textContent = ok ? 'Saved' : 'Nothing to record'
+        } catch {
+          tape.textContent = 'Recording failed'
+        }
+        setTimeout(() => {
+          tape.disabled = false
+          tape.innerHTML = `${icon('share')} Siege Tape`
+        }, 2600)
+      }
+    }
   }
+
+  /** wired by main so screens never import the capture layer directly */
+  canRecordTape: () => boolean = () => false
+  onRecordTape: () => Promise<boolean> = async () => false
 
   private renderArmory(): void {
     const save = this.save()

@@ -30,6 +30,8 @@ import { icon } from '../ui/icons.ts'
 import { randRange, simChance, setSimSeed } from '../core/utils.ts'
 import { newRunSeed, runStamp, RULESET_VERSION, type RunStamp } from './ruleset.ts'
 import { writeCheckpoint, clearCheckpoint, readCheckpoint, type Checkpoint } from './checkpoint.ts'
+import { ReplayLog } from './replay.ts'
+import { canRecordTape, recordTape } from '../core/capture.ts'
 import { attachDebris, shatter, updateDebris, clearDebris, type DeathFlavor } from './debris.ts'
 import { telemetry } from '../core/telemetry.ts'
 import type { DailyResult } from './share.ts'
@@ -72,6 +74,7 @@ export class Game implements World {
   shards = 0
   traps: Trap[] = []
   earthworks: Earthwork[] = []
+  replay = new ReplayLog()
   speed: 1 | 2 = 1
   paused = false
   isEndless = false
@@ -385,6 +388,59 @@ export class Game implements World {
 
   shake(strength: number): void { this.engine.addShake(strength) }
 
+  /**
+   * Record a Siege Tape: the player's own defense assembling itself, every
+   * tower reappearing in the order it went up, over a slow orbit.
+   *
+   * It replays the build history rather than the battle, so it needs no
+   * simulation rewind - and the board is already standing, so the towers are
+   * simply hidden and revealed on their original cue.
+   */
+  async recordSiegeTape(): Promise<Blob | null> {
+    if (!canRecordTape() || !this.level) return null
+    const builds = this.replay.finalBuilds()
+    if (!builds.length) return null
+
+    const byPlot = new Map(this.towers.map(t => [t.plot.index, t]))
+    const ordered = builds.map(b => byPlot.get(b.plot)).filter((t): t is Tower => !!t)
+    if (!ordered.length) return null
+
+    const wasChrome = this.hud.chromeVisible
+    this.hud.setChrome(false)
+    const paused = this.paused
+    this.paused = true
+    for (const t of ordered) t.group.visible = false
+
+    const startYaw = this.engine.yaw
+    const startDist = this.engine.dist
+    const startPitch = this.engine.pitch
+    this.engine.camTargetGoal.set(0, 0, 0)
+    this.engine.camTarget.set(0, 0, 0)
+
+    try {
+      return await recordTape(this.engine.canvas, {
+        seconds: 9,
+        onFrame: (k) => {
+          // hold the finished board for the last fifth of the tape
+          const build = Math.min(1, k / 0.8)
+          const shown = Math.round(build * ordered.length)
+          for (let i = 0; i < ordered.length; i++) ordered[i].group.visible = i < shown
+          this.engine.yaw = this.engine.yawGoal = startYaw + k * Math.PI * 0.55
+          this.engine.pitch = this.engine.pitchGoal = 0.78 - k * 0.12
+          this.engine.dist = this.engine.distGoal = startDist * (1.06 - k * 0.16)
+          this.engine.render()
+        },
+      })
+    } finally {
+      for (const t of ordered) t.group.visible = true
+      this.engine.yaw = this.engine.yawGoal = startYaw
+      this.engine.pitch = this.engine.pitchGoal = startPitch
+      this.engine.dist = this.engine.distGoal = startDist
+      this.paused = paused
+      this.hud.setChrome(wasChrome)
+    }
+  }
+
   /** spend the hero's signature; a press with nothing in reach costs nothing */
   castHeroSignature(): void {
     if (this.paused || this.phase !== 'playing') return
@@ -502,6 +558,7 @@ export class Game implements World {
     this.lastLeak = null
     this.waveTracks.clear()
     this.waveOutcomes = []
+    this.replay.reset()
     this.mechanicsSeen.clear()
     this.retiredKillers = []
     const paths = buildPaths(level)
@@ -1202,6 +1259,7 @@ export class Game implements World {
     this.dynamic.add(tower.group)
     this.recomputeResonance()
     this.recomputeHighGround()
+    this.replay.record({ t: this.time, kind: 'build', tower: kind, plot: plot.index })
     telemetry.track({ type: 'tower_built', kind, level: this.level?.id ?? '', wave: (this.waves?.waveIndex ?? -1) + 1 })
     if (this.firstBuildAt < 0) {
       this.firstBuildAt = this.time
@@ -1416,6 +1474,7 @@ export class Game implements World {
     if (this.gold < opt.cost) { this.sfx('error'); this.hud.flashGold(); return }
     this.gold -= opt.cost
     tower.upgrade(tower.level === 3 ? optionIndex : 0, this)
+    this.replay.record({ t: this.time, kind: 'upgrade', plot: tower.plot.index, level: tower.level, branch: tower.branch })
     this.selectTower(tower)
   }
 
@@ -1425,6 +1484,7 @@ export class Game implements World {
     this.addGold(tower.sellValue, tower.pos.x, tower.pos.y + 0.6, tower.pos.z)
     this.goldEarned -= tower.sellValue  // refunds are not earnings
     tower.plot.occupied = false
+    this.replay.record({ t: this.time, kind: 'sell', plot: tower.plot.index })
     clearOwnedEffects(this, tower)
     tower.dismantle(this)
     this.dynamic.remove(tower.group)

@@ -876,8 +876,12 @@ export class HUD {
 
   /** show/hide the battle chrome (topbar, abilities, wave button) */
   setChrome(visible: boolean): void {
+    this.chromeVisible = visible
     this.root.classList.toggle('chrome-hidden', !visible)
   }
+
+  /** so a Siege Tape can hide the interface and put it back exactly as it was */
+  chromeVisible = true
 
   /** hide everything level-specific (used when returning to menu) */
   reset(): void {

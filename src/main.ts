@@ -5,6 +5,7 @@ import { acquisitionSource, isEmbedded } from './core/platform.ts'
 import { dailySeed, dailyNumber } from './game/ruleset.ts'
 import { dailyLevel } from './game/levels.ts'
 import { readChallengeSeed } from './game/share.ts'
+import { canRecordTape, downloadTape, tapeFileExtension } from './core/capture.ts'
 import { Game } from './game/game.ts'
 import { HUD } from './ui/hud.ts'
 import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
@@ -80,6 +81,16 @@ screens.onPlayDaily = () => {
     { seed, daily: dailyNumber() })
 }
 screens.onShared = (kind) => telemetry.track({ type: 'share_copied', kind })
+
+screens.canRecordTape = () => canRecordTape()
+screens.onRecordTape = async () => {
+  const blob = await game.recordSiegeTape()
+  if (!blob) return false
+  const stamp = game.level?.id ?? 'blockhold'
+  downloadTape(blob, `blockhold-${stamp}.${tapeFileExtension(blob.type)}`)
+  telemetry.track({ type: 'share_copied', kind: 'siege_tape' })
+  return true
+}
 screens.onResume = () => {
   const cp = readCheckpoint()
   if (!cp) return
