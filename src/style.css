@@ -909,3 +909,6 @@ button:focus-visible {
   resize: none;
 }
 .end-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
+
+/* settings live behind pause now, not in the combat bar */
+.pause-settings { display: flex; gap: 10px; justify-content: center; margin: 4px 0 2px; }

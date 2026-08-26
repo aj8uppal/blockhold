@@ -371,7 +371,8 @@ export class Game implements World {
   shatterUnit(group: THREE.Group, opts: { force?: number, flavor?: DeathFlavor, scale?: number }): void {
     // deliberately Math.random, not the sim stream: debris is presentation, and
     // a quality tier that drew fewer chunks would otherwise desync the run
-    shatter(group, opts)
+    // a player who asked for less movement gets a settle, not a shower
+    shatter(group, this.engine.reducedMotion ? { ...opts, force: (opts.force ?? 1) * 0.35 } : opts)
   }
 
   towerDamageMult(_kind: string): number {

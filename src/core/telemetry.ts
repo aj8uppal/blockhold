@@ -13,7 +13,7 @@
  */
 
 export type TelemetryEvent =
-  | { type: 'session_start', firstRun: boolean }
+  | { type: 'session_start', firstRun: boolean, source: string, embedded: boolean }
   | { type: 'battle_start', level: string, difficulty: string, hero: string, mode: string, seed: number, resumed: boolean }
   | { type: 'wave_cleared', level: string, wave: number, lives: number, leaked: boolean }
   | { type: 'battle_end', level: string, difficulty: string, won: boolean, wave: number, totalWaves: number, lives: number, score: number, seconds: number }

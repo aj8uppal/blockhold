@@ -1,6 +1,7 @@
 import { requestDurableStorage } from './core/save.ts'
 import { readCheckpoint } from './game/checkpoint.ts'
 import { telemetry } from './core/telemetry.ts'
+import { acquisitionSource, isEmbedded } from './core/platform.ts'
 import { dailySeed, dailyNumber } from './game/ruleset.ts'
 import { dailyLevel } from './game/levels.ts'
 import { readChallengeSeed } from './game/share.ts'
@@ -261,7 +262,7 @@ document.addEventListener('visibilitychange', () => {
 // best-effort storage really is evicted; ask to keep the campaign
 void requestDurableStorage()
 
-telemetry.track({ type: 'session_start', firstRun: !localStorage.getItem('blockhold.save.v1') })
+telemetry.track({ type: 'session_start', firstRun: !localStorage.getItem('blockhold.save.v1'), source: acquisitionSource(), embedded: isEmbedded() })
 window.addEventListener('error', (e) => telemetry.track({ type: 'error', message: String(e.message).slice(0, 200) }))
 window.addEventListener('pagehide', () => telemetry.flush())
 

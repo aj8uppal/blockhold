@@ -11,6 +11,7 @@ import {
 import { towerTrees } from '../game/towerDefs.ts'
 import { TARGET_POLICY_LABEL, REACTIONS } from '../game/towers.ts'
 import { isCoarsePointer } from '../core/utils.ts'
+import { isPortalMode } from '../core/platform.ts'
 import { icon, BOSS_ART } from './icons.ts'
 
 function chip(label: string, value: string, cls = ''): string {
@@ -113,33 +114,15 @@ export class HUD {
     const right = el('div', 'topbar-group', bar)
     this.speedBtn = el('button', 'icon-btn', right, '1×') as HTMLButtonElement
     this.speedBtn.title = 'Game speed (F)'
+    this.speedBtn.setAttribute('aria-label', 'Game speed')
     this.speedBtn.onclick = () => this.game.toggleSpeed()
     this.pauseBtn = el('button', 'icon-btn', right, icon('pause', 'plain')) as HTMLButtonElement
     this.pauseBtn.title = 'Pause (P)'
+    this.pauseBtn.setAttribute('aria-label', 'Pause')
     this.pauseBtn.onclick = () => this.game.togglePause()
-    const sfxIcon = () => icon(this.game.save.sfxMuted ? 'soundOff' : 'soundOn', 'plain')
-    this.sfxBtn = el('button', 'icon-btn', right, sfxIcon()) as HTMLButtonElement
-    this.sfxBtn.title = 'Sound effects'
-    this.sfxBtn.onclick = () => { this.game.toggleSfx(); this.sfxBtn.innerHTML = sfxIcon() }
-    this.musicBtn = el('button', 'icon-btn', right, icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')) as HTMLButtonElement
-    this.musicBtn.title = 'Music'
-    this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
-    this.musicBtn.onclick = () => {
-      this.game.toggleMusic()
-      this.musicBtn.innerHTML = icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')
-      this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
-    }
-    const doc = document as Document & { webkitFullscreenEnabled?: boolean }
-    if (doc.fullscreenEnabled || doc.webkitFullscreenEnabled) {
-      const fs = el('button', 'icon-btn', right, icon('fullscreen', 'plain')) as HTMLButtonElement
-      fs.title = 'Fullscreen'
-      fs.onclick = () => this.onFullscreen()
-      document.addEventListener('fullscreenchange', () => {
-        fs.classList.toggle('fast', !!document.fullscreenElement)
-      })
-    }
     const home = el('button', 'icon-btn', right, icon('castle', 'plain')) as HTMLButtonElement
     home.title = 'Back to castle (menu)'
+    home.setAttribute('aria-label', 'Back to the menu')
     home.onclick = () => this.onHome()
   }
 
@@ -177,11 +160,13 @@ export class HUD {
       `<span class="ability-icon"><img class="hero-face" src="art/hero-aldric.webp" alt=""></span><span class="cd-sweep"></span>` +
       '<span class="hero-level">1</span><span class="hero-hp"><span class="hero-hp-fill"></span></span>'
     this.heroBtn.title = 'Sir Aldric — select the hero, click the ground to move him. Hotkey H.'
+    this.heroBtn.setAttribute('aria-label', 'Select your hero')
     this.heroBtn.onclick = () => this.game.selectHero(true)
     const mk = (key: 'meteor' | 'reinforce', ico: string, name: string, hotkey: string, desc: string) => {
       const btn = el('button', 'ability', bar) as HTMLButtonElement
       btn.innerHTML = `<span class="ability-icon">${icon(ico)}</span><span class="cd-sweep"></span><span class="hotkey">${hotkey}</span>`
       btn.title = `${name} — ${desc}`
+      btn.setAttribute('aria-label', name)
       btn.onclick = () => this.game.setTargetMode(this.game.targetMode === key ? null : key)
       this.abilityBtns[key] = btn
     }
@@ -191,6 +176,7 @@ export class HUD {
     this.signatureBtn = el('button', 'ability', bar) as HTMLButtonElement
     this.signatureBtn.innerHTML =
       `<span class="ability-icon">${icon('quake')}</span><span class="cd-sweep"></span><span class="hotkey">3</span>`
+    this.signatureBtn.setAttribute('aria-label', 'Hero signature ability')
     this.signatureBtn.onclick = () => this.game.castHeroSignature()
   }
 
@@ -201,12 +187,43 @@ export class HUD {
     slam: 'quake', volley: 'bow', nova: 'lightning',
   }
 
+  /**
+   * Sound, music, fullscreen and home used to sit in the combat bar, so four
+   * of its six buttons were configuration competing with tactical information
+   * on the smallest screens the game supports. They live behind pause now,
+   * which is also what portals ask for: CrazyGames provides its own
+   * fullscreen control and asks games not to ship one.
+   */
   private buildPauseOverlay(): void {
     this.pauseOverlay = el('div', 'pause-overlay hidden', this.root)
     const card = el('div', 'pause-card', this.pauseOverlay)
     el('h2', '', card, 'Paused')
     const resume = el('button', 'btn primary', card, 'Resume') as HTMLButtonElement
     resume.onclick = () => this.game.togglePause()
+
+    const settings = el('div', 'pause-settings', card)
+    const sfxIcon = () => icon(this.game.save.sfxMuted ? 'soundOff' : 'soundOn', 'plain')
+    this.sfxBtn = el('button', 'icon-btn', settings, sfxIcon()) as HTMLButtonElement
+    this.sfxBtn.title = 'Sound effects'
+    this.sfxBtn.setAttribute('aria-label', 'Toggle sound effects')
+    this.sfxBtn.onclick = () => { this.game.toggleSfx(); this.sfxBtn.innerHTML = sfxIcon() }
+    this.musicBtn = el('button', 'icon-btn', settings, icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')) as HTMLButtonElement
+    this.musicBtn.title = 'Music'
+    this.musicBtn.setAttribute('aria-label', 'Toggle music')
+    this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
+    this.musicBtn.onclick = () => {
+      this.game.toggleMusic()
+      this.musicBtn.innerHTML = icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')
+      this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
+    }
+    const doc = document as Document & { webkitFullscreenEnabled?: boolean }
+    if ((doc.fullscreenEnabled || doc.webkitFullscreenEnabled) && !isPortalMode()) {
+      const fs = el('button', 'icon-btn', settings, icon('fullscreen', 'plain')) as HTMLButtonElement
+      fs.title = 'Fullscreen'
+      fs.setAttribute('aria-label', 'Toggle fullscreen')
+      fs.onclick = () => this.onFullscreen()
+    }
+
     const quit = el('button', 'btn', card, 'Abandon mission') as HTMLButtonElement
     quit.onclick = () => { this.game.togglePause(); this.onHome() }
   }

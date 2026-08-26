@@ -9,7 +9,7 @@ beforeEach(() => {
 
 describe('telemetry', () => {
   it('buffers events until a sink is installed', () => {
-    telemetry.track({ type: 'session_start', firstRun: true })
+    telemetry.track({ type: 'session_start', firstRun: true, source: 'direct', embedded: false })
     expect(telemetry.peek()).toHaveLength(1)
 
     let got: TelemetryRecord[] = []
@@ -28,7 +28,7 @@ describe('telemetry', () => {
 
   it('drops everything when the player opts out', () => {
     telemetry.setEnabled(false)
-    telemetry.track({ type: 'session_start', firstRun: false })
+    telemetry.track({ type: 'session_start', firstRun: false, source: 'direct', embedded: false })
     expect(telemetry.peek()).toHaveLength(0)
     expect(telemetry.isEnabled).toBe(false)
   })

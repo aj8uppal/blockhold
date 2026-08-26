@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { prefersReducedMotion } from './platform.ts'
 import { clamp, lerp } from './utils.ts'
 import { ThemeColors } from '../game/terrain.ts'
 
@@ -25,6 +26,7 @@ export class Engine {
   dist = 13
   distGoal = 13
   bounds = { x: 12, z: 8 }
+  readonly reducedMotion = prefersReducedMotion()
   private shakeAmp = 0
   private shakeT = 0
   /**
@@ -355,6 +357,9 @@ export class Engine {
   }
 
   addShake(strength: number): void {
+    // CSS reduced-motion never reached the camera or the effects; a player who
+    // asked their system for less movement was still getting shaken
+    if (this.reducedMotion) return
     this.shakeAmp = Math.min(0.5, this.shakeAmp + strength)
   }
 
