@@ -29,6 +29,7 @@ import { randRange, simChance, setSimSeed } from '../core/utils.ts'
 import { newRunSeed, runStamp, RULESET_VERSION, type RunStamp } from './ruleset.ts'
 import { writeCheckpoint, clearCheckpoint, readCheckpoint, type Checkpoint } from './checkpoint.ts'
 import { attachDebris, shatter, updateDebris, clearDebris, type DeathFlavor } from './debris.ts'
+import { telemetry } from '../core/telemetry.ts'
 
 export type GamePhase = 'idle' | 'playing' | 'victory' | 'defeat'
 export type TargetMode = 'meteor' | 'reinforce' | 'rally' | null
@@ -274,6 +275,7 @@ export class Game implements World {
         this.floater(end.x, 0.9, end.z, this.defenseStreak >= 2
           ? `Wave held! ${icon('flame')}×${this.defenseStreak} +${bonus}${icon('coin')}`
           : `Wave held! +${bonus}${icon('coin')}`, 'gold')
+        telemetry.track({ type: 'wave_cleared', level: this.level.id, wave: e.waveTag + 1, lives: this.lives, leaked: false })
         if (this.defenseStreak > 0 && this.defenseStreak % 5 === 0) {
           this.hud.showBanner(`${this.defenseStreak} WAVES HELD!`, '')
         }
@@ -293,6 +295,7 @@ export class Game implements World {
    * a twenty-minute run to a closed tab.
    */
   private checkpointT = 0
+  private firstBuildAt = -1
   private maybeCheckpoint(): void {
     if (this.phase !== 'playing' || !this.level || !this.waves) return
     if (this.enemies.some(e => e.alive) || this.projectiles.length) return
@@ -507,6 +510,13 @@ export class Game implements World {
     audio.init()
     audio.resume()
     audio.startMusic()
+    telemetry.track({
+      type: 'battle_start',
+      level: level.id, difficulty, hero: heroId,
+      mode: this.isEndless ? 'endless' : 'campaign',
+      seed: this.runSeed, resumed: !!resume,
+    })
+    this.firstBuildAt = -1
     if (resume) this.applyCheckpoint(resume)
     else if (level.intro) this.hud.showToast(level.intro, 5)
   }
@@ -727,8 +737,19 @@ export class Game implements World {
         if (this.lives === maxLives) medals.add('noleak')
         this.save.medals[this.level.id] = [...medals]
       }
-      writeSave(this.save)
+      if (!writeSave(this.save)) {
+        telemetry.track({ type: 'save_write_failed' })
+        this.hud.showToast('Could not save progress - your browser is blocking storage', 6)
+      }
     }
+    telemetry.track({
+      type: 'battle_end',
+      level: this.level?.id ?? '', difficulty: this.difficulty, won,
+      wave: (this.waves?.waveIndex ?? 0) + 1,
+      totalWaves: this.waves?.totalWaves ?? 0,
+      lives: this.lives, score: this.lastScore, seconds: Math.round(this.time),
+    })
+    telemetry.flush()
     this.onPhaseChange(this.phase, stars)
   }
 
@@ -1101,6 +1122,11 @@ export class Game implements World {
     this.towers.push(tower)
     this.dynamic.add(tower.group)
     this.recomputeResonance()
+    telemetry.track({ type: 'tower_built', kind, level: this.level?.id ?? '', wave: (this.waves?.waveIndex ?? -1) + 1 })
+    if (this.firstBuildAt < 0) {
+      this.firstBuildAt = this.time
+      telemetry.track({ type: 'first_build_delay', seconds: Math.round(this.time) })
+    }
     this.particles.buildDust(plot.pos.x, plot.pos.y + 0.1, plot.pos.z)
     this.sfx('build')
     this.clearSelection()

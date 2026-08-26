@@ -1,5 +1,6 @@
 import { requestDurableStorage } from './core/save.ts'
 import { readCheckpoint } from './game/checkpoint.ts'
+import { telemetry } from './core/telemetry.ts'
 import { Game } from './game/game.ts'
 import { HUD } from './ui/hud.ts'
 import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
@@ -76,6 +77,9 @@ screens.onMenu = () => {
   hud.setChrome(false)
 }
 hud.onHome = () => {
+  if (game.phase === 'playing') {
+    telemetry.track({ type: 'quit_to_menu', level: game.level?.id ?? '', wave: (game.waves?.waveIndex ?? 0) + 1 })
+  }
   game.showMenuBackdrop()
   hud.reset()
   hud.setChrome(false)
@@ -235,6 +239,10 @@ document.addEventListener('visibilitychange', () => {
 
 // best-effort storage really is evicted; ask to keep the campaign
 void requestDurableStorage()
+
+telemetry.track({ type: 'session_start', firstRun: !localStorage.getItem('blockhold.save.v1') })
+window.addEventListener('error', (e) => telemetry.track({ type: 'error', message: String(e.message).slice(0, 200) }))
+window.addEventListener('pagehide', () => telemetry.flush())
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return
