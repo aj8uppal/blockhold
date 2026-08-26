@@ -60,7 +60,7 @@ export interface World {
 
 export type ProjectileSpec =
   | { kind: 'arrow', from: THREE.Vector3, target: Enemy, damage: number, crit: boolean, poison?: { dps: number, duration: number }, armorPierce?: number, credit?: KillCredit, world: World }
-  | { kind: 'bolt', from: THREE.Vector3, target: Enemy, damage: number, color: number, armorShred?: number, mrPierce?: number, credit?: KillCredit, world: World }
+  | { kind: 'bolt', from: THREE.Vector3, target: Enemy, damage: number, color: number, armorShred?: number, resistShred?: number, mrPierce?: number, credit?: KillCredit, world: World }
   | { kind: 'bomb', from: THREE.Vector3, at: THREE.Vector3, damage: number, splash: number, cluster?: { count: number, damage: [number, number], radius: number }, burn?: { dps: number, duration: number, radius: number }, mine?: MineSpec, stunChance?: number, slow?: boolean, credit?: KillCredit, world: World }
   | { kind: 'chain', from: THREE.Vector3, first: Enemy, damage: number, targets: number, falloff: number, stunChance: number, stunDur: number, mrPierce?: number, credit?: KillCredit, world: World }
   | { kind: 'warlockBolt', from: THREE.Vector3, target: Soldier, damage: number, world: World }

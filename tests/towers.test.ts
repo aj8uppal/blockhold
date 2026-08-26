@@ -25,39 +25,54 @@ describe('tower economy', () => {
           baseInvestment + tree.branches[branch].cost,
         )
         expect(investedGold(kind, 5, branch), `${kind} capstone via branch ${branch}`).toBe(
-          baseInvestment + tree.branches[branch].cost + tree.capstone.cost,
+          baseInvestment + tree.branches[branch].cost + tree.capstones[branch].cost,
         )
       }
     }
   })
 
-  it('resolves the capstone def per branch, keeping the branch identity', () => {
+  /**
+   * Each tier-4 branch has to lead somewhere genuinely different. The tree
+   * used to end in one shared crown with the model and special swapped, so
+   * both halves converged and the tier-4 choice stopped mattering at the top.
+   */
+  it('ends each branch in its own distinct capstone', () => {
     for (const kind of towerKinds) {
       const tree = towerTrees[kind]
-      for (const branch of [0, 1] as const) {
-        const def = resolveCapstone(kind, branch)
-        expect(def.name).toBe(tree.capstone.name)
-        expect(def.model, `${kind} branch ${branch} model`).toBe(tree.capstone.models[branch])
-        if (tree.capstone.specials) {
-          expect(def.special, `${kind} branch ${branch} special`).toEqual(tree.capstone.specials[branch])
-        }
-        if (tree.capstone.soldiers) {
-          expect(def.soldier, `${kind} branch ${branch} soldier`).toEqual(tree.capstone.soldiers[branch])
-          expect(def.soldierCount).toBe(tree.capstone.soldierCount)
-        }
-        // a capstone must never be a stat downgrade over its branch
-        const branchDef = tree.branches[branch]
-        if (def.damage && branchDef.damage && def.attackInterval && branchDef.attackInterval) {
-          const dps = (d: [number, number], t: number) => (d[0] + d[1]) / 2 / t
-          expect(dps(def.damage, def.attackInterval), `${kind} branch ${branch} dps`)
-            .toBeGreaterThanOrEqual(dps(branchDef.damage, branchDef.attackInterval))
-        }
-        if (def.soldier && branchDef.soldier) {
-          expect(def.soldier.hp).toBeGreaterThanOrEqual(branchDef.soldier.hp)
-        }
-      }
+      const [a, b] = tree.capstones
+      expect(resolveCapstone(kind, 0)).toBe(a)
+      expect(resolveCapstone(kind, 1)).toBe(b)
+      expect(a.name, `${kind} capstone names`).not.toBe(b.name)
+      expect(a.model, `${kind} capstone models`).not.toBe(b.model)
+      expect(a.signature, `${kind} capstone signatures`).not.toBe(b.signature)
+      expect(a.signature).toBeTruthy()
+      expect(b.signature).toBeTruthy()
+      expect(a.description).not.toBe(b.description)
     }
   })
+
+  it('gives every capstone in the game a signature nothing else has', () => {
+    const seen = new Set<string>()
+    for (const tree of Object.values(towerTrees)) {
+      for (const cap of tree.capstones) {
+        expect(seen.has(cap.signature!), `duplicate signature ${cap.signature}`).toBe(false)
+        seen.add(cap.signature!)
+      }
+    }
+    expect(seen.size).toBe(8)
+  })
+
+  it('lets exactly one barracks capstone answer flyers', () => {
+    const air = towerTrees.barracks.capstones.filter(c => c.flying)
+    expect(air).toHaveLength(1)
+    expect(air[0].airOnly).toBe(true)
+    expect(air[0].damage).toBeTruthy()
+    // and no lower barracks tier can touch air
+    for (const def of [...towerTrees.barracks.levels, ...towerTrees.barracks.branches]) {
+      expect(def.flying, `${def.name} should not hit air`).toBeFalsy()
+    }
+  })
+
 
   it('rounds each tower sell refund from its total investment', () => {
     for (const kind of towerKinds) {
@@ -80,7 +95,7 @@ describe('tower economy', () => {
   it('defines a muzzle height for every tower model', () => {
     for (const tree of Object.values(towerTrees)) {
       const models = [...tree.levels, ...tree.branches].map(def => def.model)
-      models.push(...tree.capstone.models)
+      models.push(...tree.capstones.map(c => c.model))
       for (const model of models) {
         expect(model in muzzleHeights, model).toBe(true)
         expect(Number.isFinite(muzzleHeights[model]), model).toBe(true)

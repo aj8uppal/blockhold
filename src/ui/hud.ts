@@ -571,7 +571,7 @@ export class HUD {
       const tree = towerTrees[tower.kind]
       const steps: string[] = tree.levels.slice(0, Math.min(tower.level, 3)).map(l => l.name)
       if (tower.level >= 4 && tower.branch !== null) steps.push(`★ ${tree.branches[tower.branch].name}`)
-      if (tower.level >= 5) steps.push(`✦ ${tree.capstone.name}`)
+      if (tower.level >= 5 && tower.branch !== null) steps.push(`✦ ${tree.capstones[tower.branch].name}`)
       if (tower.perk) steps.push(`${icon(tower.perk.icon)} ${tower.perk.name}`)
       el('div', 'tp-lineage', p, steps.join(' <span class="dim">→</span> '))
     }

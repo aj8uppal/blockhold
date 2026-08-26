@@ -105,6 +105,8 @@ export class Tower {
   private signatureCount = 0
   /** capstone: Last Muster cooldown gate */
   private musterReadyAt = 0
+  /** Emberthrone's second shell, queued during the first */
+  private pendingTwin: THREE.Vector3 | null = null
   cooldown = 0
   target: Enemy | null = null
   soldiers: Soldier[] = []
@@ -399,6 +401,7 @@ export class Tower {
     for (const e of world.enemies) {
       if (!e.targetable) continue
       if (e.def.flying && !this.def.flying) continue
+      if (this.def.airOnly && !e.def.flying) continue
       const d = Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z)
       if (d > this.range + e.radius) continue
       const score = targetScore(this.targetPolicy, e)
@@ -449,7 +452,9 @@ export class Tower {
 
     if (this.isBarracks) {
       this.updateBarracks(dt, world)
-      return
+      // Stormhowl Warcamp keeps going: its soldiers hold the road while the
+      // camp itself throws. Every other barracks stops here.
+      if (!this.def.damage) return
     }
 
     // hexed: the perched imp silences the tower until dislodged
@@ -520,14 +525,33 @@ export class Tower {
     }
   }
 
+  /** the foe standing directly behind a target, for Kingsreach's pass-through */
+  private behind(target: Enemy, world: World): Enemy | null {
+    let best: Enemy | null = null
+    let bestGap = Infinity
+    for (const e of world.enemies) {
+      if (e === target || !e.targetable) continue
+      if (e.laneIndex !== target.laneIndex) continue
+      const gap = e.dist - target.dist          // further from the gate = behind
+      if (gap <= 0 || gap > 1.6) continue
+      if (gap < bestGap) { bestGap = gap; best = e }
+    }
+    return best
+  }
+
   /** one arrow with this tree's crit/poison rolls applied per-arrow */
-  private fireArrowAt(target: Enemy, dmg: number, from: THREE.Vector3, world: World): void {
+  private fireArrowAt(target: Enemy, dmg: number, from: THREE.Vector3, world: World, allowPierce = true): void {
     const def = this.def
     let damage = dmg
     let crit = false
     if (def.special?.kind === 'crit' && simChance(def.special.chance)) {
       damage *= def.special.mult
       crit = true
+    }
+    // Kingsreach: a critical arrow does not stop at the first body
+    if (crit && allowPierce && def.signature === 'passThrough') {
+      const next = this.behind(target, world)
+      if (next) this.fireArrowAt(next, dmg, from, world, false)
     }
     const poison = def.special?.kind === 'poison' && simChance(def.special.chance)
       ? { dps: def.special.dps, duration: def.special.duration }
@@ -542,11 +566,21 @@ export class Tower {
     if (this.perk?.id === 'serrated') dmg *= 1.2
     const from = this.muzzle()
     switch (this.kind) {
+      case 'barracks': {
+        // Stormhowl Warcamp: the only barracks that answers the sky
+        world.fireProjectile({
+          kind: 'arrow', from, target, damage: dmg, crit: false, credit: this, world,
+          armorPierce: this.has('enchanted') ? 0.3 : undefined,
+        })
+        world.sfx('arrow', 0.8)
+        world.particles.hitSpark(from.x, from.y, from.z, 0xd8452f)
+        break
+      }
       case 'arrow': {
         this.fireArrowAt(target, dmg, from, world)
         world.sfx('arrow', 0.7)
         // Crown Volley: every fifth attack showers up to 5 more foes at 65%
-        if (this.level === 5 && ++this.signatureCount >= 5) {
+        if (def.signature === 'crownVolley' && ++this.signatureCount >= 5) {
           this.signatureCount = 0
           const extras: Enemy[] = []
           for (const e of world.enemies) {
@@ -574,12 +608,20 @@ export class Tower {
           })
         } else {
           const shred = def.special?.kind === 'armorShred' ? def.special.amount : undefined
-          world.fireProjectile({ kind: 'bolt', from, target, damage: dmg, color: boltColors[def.model] ?? 0x8f5aff, armorShred: shred, mrPierce, credit: this, world })
+          // The Unmaking: what it hits stops resisting anything, and a target
+          // already stripped bare takes the full weight of it
+          let boltDamage = dmg
+          let resistShred: number | undefined
+          if (def.signature === 'unmaking') {
+            resistShred = shred
+            if (target.armor <= 0.001 && target.magicResistNow <= 0.001) boltDamage *= 1.3
+          }
+          world.fireProjectile({ kind: 'bolt', from, target, damage: boltDamage, color: boltColors[def.model] ?? 0x8f5aff, armorShred: shred, resistShred, mrPierce, credit: this, world })
           world.sfx('magic', 0.7)
         }
         world.particles.magicImpact(from.x, from.y, from.z, boltColors[def.model] ?? 0x8f5aff)
         // Convergence Rune: every fifth cast anchors a pulsing rune (echoes don't count)
-        if (this.level === 5 && !isEcho && ++this.signatureCount >= 5) {
+        if (def.signature === 'convergenceRune' && !isEcho && ++this.signatureCount >= 5) {
           this.signatureCount = 0
           addConvergenceRune(world, target.pos.x, target.pos.z, this)
         }
@@ -597,6 +639,15 @@ export class Tower {
           target.offset,
         )
         const at = new THREE.Vector3(predicted.x, 0.02, predicted.z)
+        // Emberthrone: a second shell lands a stride further down the lane, so
+        // the pair leaves one long burning scar instead of a single crater
+        if (def.signature === 'twinShells') {
+          const second = target.lane.sample(
+            Math.max(0, Math.min(target.lane.length - 0.01, target.dist - 0.9)),
+            target.offset,
+          )
+          this.pendingTwin = new THREE.Vector3(second.x, 0.02, second.z)
+        }
         const cluster = def.special?.kind === 'cluster' ? def.special : undefined
         const burn = def.special?.kind === 'burnGround' ? def.special : undefined
         const splashMult = world.splashMult() * (this.perk?.id === 'napalm' ? 1.3 : 1)
@@ -605,7 +656,7 @@ export class Tower {
           cluster: cluster ? { count: cluster.count, damage: cluster.damage, radius: cluster.radius * splashMult } : undefined,
           burn: burn ? { dps: burn.dps, duration: burn.duration, radius: burn.radius * splashMult } : undefined,
           // Faultline Arsenal: every shell buries a seismic charge in the crater
-          mine: this.level === 5 ? {
+          mine: def.signature === 'seismicCharge' ? {
             damage: [52 * this.resonanceMult, 78 * this.resonanceMult], radius: 0.95 * splashMult, trigger: 0.65,
             armTime: 1, life: 10, maxActive: 3,
             stunChance: this.perk?.id === 'tremor' ? 0.3 : 0,
@@ -615,6 +666,17 @@ export class Tower {
           credit: this,
           world,
         })
+        if (this.pendingTwin) {
+          const twinAt = this.pendingTwin
+          this.pendingTwin = null
+          world.fireProjectile({
+            kind: 'bomb', from, at: twinAt, damage: dmg, splash: def.splash! * splashMult, slow: this.has('runic'),
+            burn: burn ? { dps: burn.dps, duration: burn.duration, radius: burn.radius * splashMult } : undefined,
+            stunChance: this.perk?.id === 'tremor' ? 0.3 : undefined,
+            credit: this,
+            world,
+          })
+        }
         world.sfx('cannon', 0.85)
         world.particles.explosion(from.x + Math.sin(this.turretYaw) * 0.3, from.y + 0.12, from.z + Math.cos(this.turretYaw) * 0.3, 0.35)
         break
@@ -628,7 +690,7 @@ export class Tower {
         // Last Muster: a fallen veteran rallies two short-lived retainers
         if (!s.musterConsumed) {
           s.musterConsumed = true
-          if (this.level === 5 && world.time >= this.musterReadyAt) {
+          if (this.def.signature === 'lastMuster' && world.time >= this.musterReadyAt) {
             this.musterReadyAt = world.time + MUSTER_COOLDOWN
             this.lastMuster(world)
           }

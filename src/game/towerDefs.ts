@@ -34,15 +34,22 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
         description: 'A hail of envenomed arrows. 30% chance to poison (12/s for 3s, ignores armor).',
       },
     ],
-    capstone: {
-      name: 'Crownwing Aerie', cost: 760, models: ['arrow5a', 'arrow5b'], range: 5.4,
-      damage: [32, 50], damageType: 'physical', attackInterval: 0.68, flying: true,
-      specials: [
-        { kind: 'crit', chance: 0.2, mult: 2.5 },
-        { kind: 'poison', chance: 0.3, dps: 12, duration: 3 },
-      ],
-      description: 'The royal aerie. Every fifth attack unleashes a Crown Volley: arrows for up to 5 more foes at 75% damage, each keeping its crit or venom.',
-    },
+    capstones: [
+      {
+        name: 'Kingsreach', cost: 760, model: 'arrow5a', range: 7.2,
+        damage: [78, 128], damageType: 'physical', attackInterval: 1.3, flying: true,
+        special: { kind: 'crit', chance: 0.28, mult: 3 },
+        signature: 'passThrough',
+        description: 'Half the map is in range. 28% to crit for 3x, and a critical arrow punches clean through to strike the foe behind it for full damage.',
+      },
+      {
+        name: 'Crownwing Aerie', cost: 760, model: 'arrow5b', range: 4.3,
+        damage: [26, 42], damageType: 'physical', attackInterval: 0.3, flying: true,
+        special: { kind: 'poison', chance: 0.35, dps: 16, duration: 3 },
+        signature: 'crownVolley',
+        description: 'The royal aerie. Every fifth attack unleashes a Crown Volley: arrows for up to 5 more foes at 75% damage, each carrying the venom.',
+      },
+    ],
   },
   mage: {
     kind: 'mage',
@@ -77,15 +84,22 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
         description: 'Lightning arcs to 4 enemies, 15% chance to stun each.',
       },
     ],
-    capstone: {
-      name: 'Convergence Monolith', cost: 880, models: ['mage5a', 'mage5b'], range: 4.1,
-      damage: [105, 165], damageType: 'magic', attackInterval: 1.7, flying: true,
-      specials: [
-        { kind: 'armorShred', amount: 0.06 },
-        { kind: 'chain', targets: 4, falloff: 0.75, stunChance: 0.12, stunDur: 0.7 },
-      ],
-      description: 'Every fifth cast anchors a Convergence Rune under its target: 4 lightning pulses over 3s, each arcing between nearby foes.',
-    },
+    capstones: [
+      {
+        name: 'The Unmaking', cost: 880, model: 'mage5a', range: 4.0,
+        damage: [140, 225], damageType: 'magic', attackInterval: 1.9, flying: true,
+        special: { kind: 'armorShred', amount: 0.1 },
+        signature: 'unmaking',
+        description: 'It undoes what protects a thing. Every hit strips 10% armor and 10% magic resistance permanently, and strikes anything already stripped bare for 30% more.',
+      },
+      {
+        name: 'Convergence Monolith', cost: 880, model: 'mage5b', range: 4.1,
+        damage: [95, 150], damageType: 'magic', attackInterval: 1.6, flying: true,
+        special: { kind: 'chain', targets: 5, falloff: 0.78, stunChance: 0.15, stunDur: 0.8 },
+        signature: 'convergenceRune',
+        description: 'Lightning arcs to five. Every fifth cast anchors a Convergence Rune under its target: 4 pulses over 3s, each arcing between nearby foes.',
+      },
+    ],
   },
   cannon: {
     kind: 'cannon',
@@ -120,15 +134,22 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
         description: 'The shell bursts into 4 bomblets that scatter over the lane.',
       },
     ],
-    capstone: {
-      name: 'Faultline Arsenal', cost: 840, models: ['cannon5a', 'cannon5b'], range: 4.6,
-      damage: [68, 108], damageType: 'physical', attackInterval: 2.55, splash: 1.35,
-      specials: [
-        { kind: 'burnGround', dps: 16, duration: 3, radius: 0.9 },
-        { kind: 'cluster', count: 4, damage: [12, 20], radius: 0.6 },
-      ],
-      description: 'Every shell buries a Seismic Charge in the crater (max 3) that arms in 1s and detonates under the next foe to cross it.',
-    },
+    capstones: [
+      {
+        name: 'Emberthrone', cost: 840, model: 'cannon5a', range: 5.4,
+        damage: [72, 120], damageType: 'physical', attackInterval: 2.9, splash: 1.6,
+        special: { kind: 'burnGround', dps: 24, duration: 4, radius: 1.15 },
+        signature: 'twinShells',
+        description: 'The throne fires twice. Two shells arc out together and land apart, each leaving a wide burning scar (24/s, ignores armor).',
+      },
+      {
+        name: 'Faultline Arsenal', cost: 840, model: 'cannon5b', range: 4.0,
+        damage: [58, 94], damageType: 'physical', attackInterval: 2.2, splash: 0.95,
+        special: { kind: 'cluster', count: 5, damage: [14, 24], radius: 0.7 },
+        signature: 'seismicCharge',
+        description: 'Five bomblets scatter across the lane, and every shell buries a Seismic Charge in the crater (max 3) that arms in 1s and detonates under the next foe to cross it.',
+      },
+    ],
   },
   barracks: {
     kind: 'barracks',
@@ -171,31 +192,35 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
         description: 'Frenzied axes, frightening damage, and blood-fueled healing.',
       },
     ],
-    capstone: {
-      name: 'Oathgate Citadel', cost: 800, models: ['barracks5a', 'barracks5b'], range: 2.8,
-      soldierCount: 4, respawnTime: 10, respawnTimes: [10, 8],
-      soldiers: [
-        {
-          name: 'Oath Paladin', hp: 420, damage: [17, 27], attackInterval: 0.9, armor: 0.5, regen: 4,
-          healPulse: { amount: 30, interval: 5, radius: 1.2 }, model: 'paladin',
+    capstones: [
+      {
+        name: 'Oathgate Citadel', cost: 800, model: 'barracks5a', range: 2.8,
+        soldierCount: 4, respawnTime: 10,
+        soldier: {
+          name: 'Oath Paladin', hp: 440, damage: [17, 27], attackInterval: 0.9, armor: 0.55, regen: 5,
+          healPulse: { amount: 34, interval: 5, radius: 1.3 }, model: 'paladin',
         },
-        {
-          name: 'Oath Berserker', hp: 300, damage: [22, 35], attackInterval: 0.65, armor: 0, lifesteal: 0.3, model: 'berserker',
+        signature: 'lastMuster',
+        description: 'A fourth sworn paladin joins the watch. When one falls, the Last Muster answers: two Retainers rush from the gate to hold the line.',
+      },
+      {
+        name: 'Stormhowl Warcamp', cost: 800, model: 'barracks5b', range: 3.4,
+        soldierCount: 4, respawnTime: 8,
+        soldier: {
+          name: 'Stormhowl', hp: 310, damage: [24, 38], attackInterval: 0.6, armor: 0, lifesteal: 0.35, model: 'berserker',
         },
-      ],
-      description: 'A fourth veteran joins the watch, sworn and hardened. When one falls, the Last Muster answers: two Retainers rush from the gate to hold the line.',
-    },
+        // the only barracks that can touch a flyer: the camp itself throws
+        damage: [46, 74], damageType: 'physical', attackInterval: 0.9, flying: true, airOnly: true,
+        signature: 'skyAxes',
+        description: 'Four howling berserkers hold the road while the camp itself hurls axes at anything airborne — the only barracks in Blockhold that can touch a flyer.',
+      },
+    ],
   },
 }
 
-/** the tier-5 def a tower of (kind, branch) actually gets — branch identity kept */
+/** the tier-5 tower a given tier-4 branch leads to */
 export function resolveCapstone(kind: TowerKind, branch: 0 | 1): TowerLevelDef {
-  const tree = towerTrees[kind]
-  const { models, specials, soldiers, respawnTimes, ...rest } = tree.capstone
-  const def: TowerLevelDef = { ...rest, model: models[branch], special: specials?.[branch] }
-  if (soldiers) def.soldier = soldiers[branch]
-  if (respawnTimes) def.respawnTime = respawnTimes[branch]
-  return def
+  return towerTrees[kind].capstones[branch]
 }
 
 /** Total invested gold for a tower at (level, branch) — used for sell refund. */
@@ -204,7 +229,7 @@ export function investedGold(kind: TowerKind, level: number, branch: 0 | 1 | nul
   let sum = 0
   for (let i = 0; i < Math.min(level, 3); i++) sum += tree.levels[i].cost
   if (level >= 4 && branch !== null) sum += tree.branches[branch].cost
-  if (level >= 5) sum += tree.capstone.cost
+  if (level >= 5 && branch !== null) sum += tree.capstones[branch].cost
   return sum
 }
 

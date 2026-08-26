@@ -108,6 +108,8 @@ export class Enemy {
   hp: number
   maxHp: number
   armor: number
+  /** magic resistance can be stripped, so it cannot live on the shared def */
+  magicResistNow: number
   dist: number
   offset: number
   state: EnemyState = 'walking'
@@ -156,6 +158,7 @@ export class Enemy {
     const hpMult = (opts.hpMult ?? 1) * (this.elite ? 1.9 : 1)
     this.hp = this.maxHp = Math.round(def.hp * hpMult)
     this.armor = def.armor
+    this.magicResistNow = def.magicResist
     this.dist = startDist
     this.offset = randRange(-0.27, 0.27)
     this.attackTimer = def.attackInterval * simRandom()
@@ -215,7 +218,7 @@ export class Enemy {
     if (!this.alive || this.phased) return 0
     let mult = 1
     if (type === 'physical') mult = 1 - this.armor * (1 - (opts.armorPierce ?? 0))
-    else if (type === 'magic') mult = 1 - this.def.magicResist * (1 - (opts.mrPierce ?? 0))
+    else if (type === 'magic') mult = 1 - this.magicResistNow * (1 - (opts.mrPierce ?? 0))
     // a wardbearer's banner half-shields the horde ahead of it
     if (world.time < this.wardedUntil) {
       mult *= 0.5
@@ -265,6 +268,11 @@ export class Enemy {
 
   shredArmor(amount: number): void {
     this.armor = Math.max(0, this.armor - amount)
+  }
+
+  /** The Unmaking strips resistance as well as plate */
+  shredResist(amount: number): void {
+    this.magicResistNow = Math.max(0, this.magicResistNow - amount)
   }
 
   heal(amount: number): void {

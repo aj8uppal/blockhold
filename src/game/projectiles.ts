@@ -99,6 +99,7 @@ class BoltProjectile implements Projectile {
         const dealt = target.takeDamage(this.spec.damage, 'magic', world, { mrPierce: this.spec.mrPierce, credit: this.spec.credit })
         if (dealt > 0) {
           if (this.spec.armorShred) target.shredArmor(this.spec.armorShred)
+          if (this.spec.resistShred) target.shredResist(this.spec.resistShred)
           world.particles.magicImpact(to.x, to.y, to.z, this.spec.color)
           world.sfx('hit', 0.4)
         }
