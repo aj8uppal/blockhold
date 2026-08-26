@@ -73,6 +73,8 @@ export class Screens {
   onMenu: () => void = () => {}
   onResume: () => void = () => {}
   onPlayDaily: () => void = () => {}
+  onPlayWatches: () => void = () => {}
+  onNextWatch: () => void = () => {}
 
   constructor(private save: () => SaveData) {
     this.root = document.getElementById('screens')!
@@ -125,6 +127,9 @@ export class Screens {
     const daily = el('button', 'btn ghost', card,
       `${icon('moon')} Daily Hold #${day}${done ? ` · wave ${save.dailyBest!.wave}` : ''}`) as HTMLButtonElement
     daily.onclick = () => this.onPlayDaily()
+    const watches = el('button', 'btn ghost', card, `${icon('respawn')} The Three Watches`) as HTMLButtonElement
+    watches.title = 'One siege, fought three times. Each watch your earlier defense returns to fight beside you.'
+    watches.onclick = () => this.onPlayWatches()
     const how = el('button', 'btn ghost', card, 'How to play') as HTMLButtonElement
     how.onclick = () => this.renderHelp()
     if (needsInstallGuide()) {
@@ -344,6 +349,11 @@ export class Screens {
     }
     const retry = el('button', `btn ${won && !endless ? '' : 'primary'}`, row, endless ? 'Descend again' : won ? 'Replay' : 'Try again') as HTMLButtonElement
     retry.onclick = () => this.onPlayLevel(levelId, undefined, undefined, endless ? 'endless' : 'campaign')
+    if (this.watchesRemaining > 0) {
+      const nextWatch = el('button', 'btn primary', row,
+        `Stand the next watch (${4 - this.watchesRemaining} of 3)`) as HTMLButtonElement
+      nextWatch.onclick = () => this.onNextWatch()
+    }
     const menu = el('button', 'btn ghost', row, 'Level select') as HTMLButtonElement
     menu.onclick = () => { this.onMenu(); this.show('levels') }
 
@@ -367,6 +377,9 @@ export class Screens {
       }
     }
   }
+
+  /** how many watches are still to come; 0 outside the mode */
+  watchesRemaining = 0
 
   /** wired by main so screens never import the capture layer directly */
   canRecordTape: () => boolean = () => false

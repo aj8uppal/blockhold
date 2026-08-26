@@ -75,6 +75,15 @@ export class Game implements World {
   traps: Trap[] = []
   earthworks: Earthwork[] = []
   replay = new ReplayLog()
+  /**
+   * The Three Watches: one short siege, fought three times over. Each watch
+   * your previous defense returns as translucent echoes that still fight, so
+   * by the third you are standing behind two earlier versions of your own
+   * plan. Replay becomes a single-player mechanic rather than a spectator one.
+   */
+  isWatches = false
+  watchIndex = 0
+  private ghostLayers: { plot: number, kind: TowerKind, level: number, branch: 0 | 1 | null }[][] = []
   speed: 1 | 2 = 1
   paused = false
   isEndless = false
@@ -533,7 +542,7 @@ export class Game implements World {
     difficulty: Difficulty = 'normal',
     heroId: HeroId = 'aldric',
     mode: 'campaign' | 'endless' = 'campaign',
-    opts: { seed?: number, resume?: Checkpoint, daily?: number } = {},
+    opts: { seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean } = {},
   ): void {
     this.disposeLevel()
     const resume = opts.resume ?? null
@@ -541,6 +550,7 @@ export class Game implements World {
     // consumer, so the run is only reproducible if this comes first.
     this.runSeed = resume?.seed ?? opts.seed ?? newRunSeed()
     setSimSeed(this.runSeed)
+    this.isWatches = opts.watches ?? this.isWatches
     this.isDaily = opts.daily !== undefined
     this.dailyDay = opts.daily ?? 0
     this.isEndless = mode === 'endless'
@@ -625,8 +635,48 @@ export class Game implements World {
       seed: this.runSeed, resumed: !!resume,
     })
     this.firstBuildAt = -1
+    if (this.isWatches) this.raiseGhosts()
     if (resume) this.applyCheckpoint(resume)
     else if (level.intro) this.hud.showToast(level.intro, 5)
+  }
+
+  /** stand up every previous watch's defense as echoes */
+  private raiseGhosts(): void {
+    if (!this.terrain) return
+    for (const layer of this.ghostLayers) {
+      for (const snap of layer) {
+        const plot = this.terrain.plots[snap.plot]
+        if (!plot || plot.occupied) continue   // a live tower always wins the plot
+        plot.occupied = true
+        const t = new Tower(snap.kind, plot, this)
+        t.isGhost = true
+        for (let lvl = 1; lvl < snap.level; lvl++) t.upgrade(lvl === 3 ? (snap.branch ?? 0) : 0, this)
+        this.towers.push(t)
+        this.dynamic.add(t.group)
+      }
+    }
+    if (this.ghostLayers.length) {
+      this.hud.showBanner(`WATCH ${this.watchIndex + 1} OF 3`, '')
+      this.hud.showToast(
+        `${this.ghostLayers.length} earlier watch${this.ghostLayers.length === 1 ? '' : 'es'} stand with you, faint but fighting`, 4)
+    }
+  }
+
+  /** keep this watch's defense, and set up the next one */
+  advanceWatch(): boolean {
+    if (!this.isWatches || this.watchIndex >= 2) return false
+    this.ghostLayers.push(
+      this.towers
+        .filter(t => !t.isGhost)
+        .map(t => ({ plot: t.plot.index, kind: t.kind, level: t.level, branch: t.branch })),
+    )
+    this.watchIndex++
+    return true
+  }
+
+  resetWatches(): void {
+    this.watchIndex = 0
+    this.ghostLayers = []
   }
 
   /** rebuild the board a checkpoint describes */
@@ -835,7 +885,9 @@ export class Game implements World {
       this.lastNewBestScore = this.lastScore > this.lastPrevBestScore
       if (this.lastNewBestScore) this.save.bestScore[scoreKey] = this.lastScore
 
-      if (this.isDaily) {
+      if (this.isWatches) {
+        // the watches are their own thing; they must not move the campaign
+      } else if (this.isDaily) {
         // the daily is its own ladder: it must never move campaign progress,
         // or a lucky day would unlock maps the player has not earned
         const prev = this.save.dailyBest?.day === this.dailyDay ? this.save.dailyBest : null
@@ -1012,11 +1064,14 @@ export class Game implements World {
 
   pickTower(sx: number, sy: number): Tower | null {
     this.rayFromScreen(sx, sy)
-    const hits = this.raycaster.intersectObjects(this.towers.map(t => t.group), true)
+    // echoes of an earlier watch are memories: they fight, but they cannot be
+    // selected, upgraded or sold
+    const live = this.towers.filter(t => !t.isGhost)
+    const hits = this.raycaster.intersectObjects(live.map(t => t.group), true)
     if (hits.length === 0) return null
     let obj: THREE.Object3D | null = hits[0].object
     while (obj) {
-      const found = this.towers.find(t => t.group === obj)
+      const found = live.find(t => t.group === obj)
       if (found) return found
       obj = obj.parent
     }

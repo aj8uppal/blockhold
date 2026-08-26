@@ -2,7 +2,7 @@ import { requestDurableStorage } from './core/save.ts'
 import { readCheckpoint } from './game/checkpoint.ts'
 import { telemetry } from './core/telemetry.ts'
 import { acquisitionSource, isEmbedded } from './core/platform.ts'
-import { dailySeed, dailyNumber } from './game/ruleset.ts'
+import { dailySeed, dailyNumber, newRunSeed } from './game/ruleset.ts'
 import { dailyLevel } from './game/levels.ts'
 import { readChallengeSeed } from './game/share.ts'
 import { canRecordTape, downloadTape, tapeFileExtension } from './core/capture.ts'
@@ -91,6 +91,27 @@ screens.onRecordTape = async () => {
   telemetry.track({ type: 'share_copied', kind: 'siege_tape' })
   return true
 }
+screens.onPlayWatches = () => {
+  const seed = newRunSeed()
+  game.resetWatches()
+  hud.reset()
+  hud.setChrome(true)
+  screens.show('none')
+  screens.watchesRemaining = 2
+  game.startLevel(dailyLevel(seed), 'normal', (game.save.lastHero as never) ?? 'aldric', 'campaign',
+    { seed, watches: true })
+  watchSeed = seed
+}
+let watchSeed = 0
+screens.onNextWatch = () => {
+  if (!game.advanceWatch()) return
+  hud.reset()
+  hud.setChrome(true)
+  screens.show('none')
+  screens.watchesRemaining = 2 - game.watchIndex
+  game.startLevel(dailyLevel(watchSeed), 'normal', (game.save.lastHero as never) ?? 'aldric', 'campaign',
+    { seed: watchSeed, watches: true })
+}
 screens.onResume = () => {
   const cp = readCheckpoint()
   if (!cp) return
@@ -100,6 +121,8 @@ screens.onResume = () => {
   game.startLevel(levelById(cp.levelId), cp.difficulty, cp.heroId, cp.endless ? 'endless' : 'campaign', { resume: cp })
 }
 screens.onMenu = () => {
+  screens.watchesRemaining = 0
+  game.resetWatches()
   game.showMenuBackdrop()
   hud.reset()
   hud.setChrome(false)

@@ -63,6 +63,27 @@ export function reactionFor(a: TowerKind, b: TowerKind): ReactionDef | null {
   return null
 }
 
+/** how hard an echo of a past watch hits, relative to a live tower */
+export const GHOST_POWER = 0.55
+
+/** wash a model out so it reads as a memory rather than a tower */
+export function applyGhostLook(model: THREE.Object3D): void {
+  model.traverse(o => {
+    if (!(o instanceof THREE.Mesh)) return
+    const mats = Array.isArray(o.material) ? o.material : [o.material]
+    for (const m of mats) {
+      if (m.userData.shared) continue
+      m.transparent = true
+      m.opacity = 0.42
+      m.depthWrite = false
+      if (m instanceof THREE.MeshStandardMaterial) {
+        m.emissive.setHex(0x6fb8ff)
+        m.emissiveIntensity = 0.25
+      }
+    }
+  })
+}
+
 export type TargetPolicy = 'first' | 'last' | 'strong' | 'weak'
 export const TARGET_POLICY_LABEL: Record<TargetPolicy, string> = {
   first: 'First', last: 'Last', strong: 'Strongest', weak: 'Weakest',
@@ -115,6 +136,8 @@ export class Tower {
   targetPolicy: TargetPolicy = 'first'
   /** standing beside a rampart: further sight, heavier shots */
   onHighGround = false
+  /** an echo of a previous watch: it fights, but faintly, and cannot be touched */
+  isGhost = false
   rallyFlag: THREE.Group | null = null
   /** count of same-family neighbors (0-2), set by Game.recomputeResonance */
   resonance = 0
@@ -219,7 +242,10 @@ export class Tower {
   private applyLevel(def: TowerLevelDef, world: World, initial = false): void {
     if (this.model) this.group.remove(this.model)
     this.def = def
-    this.model = buildModel(towerModel(def.model), `tower:${def.model}`)
+    // ghosts need their own materials so they can be made translucent without
+    // dimming every tower sharing the cached ones
+    this.model = buildModel(towerModel(def.model), `tower:${def.model}`, { cloneMaterials: this.isGhost })
+    if (this.isGhost) applyGhostLook(this.model)
     this.group.add(this.model)
     this.sizeMult = TIER_SCALE[this.level - 1]
     this.buildT = 0
@@ -569,6 +595,7 @@ export class Tower {
     const def = this.def
     let dmg = randRange(...def.damage!) * world.towerDamageMult(this.kind) * this.resonanceMult
       * (this.onHighGround ? 1 + RAMPART_DAMAGE_BONUS : 1)
+      * (this.isGhost ? GHOST_POWER : 1)
     if (this.perk?.id === 'serrated') dmg *= 1.2
     const from = this.muzzle()
     switch (this.kind) {
