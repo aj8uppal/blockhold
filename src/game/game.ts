@@ -346,6 +346,30 @@ export class Game implements World {
     })
   }
 
+  /**
+   * Tell the score what the battle feels like. Pressure is how much is on the
+   * road weighted by how close it has got to the gate, so the arrangement
+   * tightens as a wave closes rather than merely as it spawns.
+   */
+  private updateMusicState(): void {
+    let pressure = 0
+    let boss = false
+    for (const e of this.enemies) {
+      if (!e.alive) continue
+      const progress = 1 - Math.max(0, e.remaining) / Math.max(1, e.lane.length)
+      pressure += 0.06 + progress * 0.12
+      if (e.def.boss) boss = true
+    }
+    const maxLives = DIFFICULTIES[this.difficulty].lives
+    audio.setMusicState({
+      pressure: Math.min(1, pressure),
+      surge: this.surgeActive,
+      boss,
+      livesRatio: maxLives > 0 ? this.lives / maxLives : 1,
+      phase: this.phase,
+    })
+  }
+
   get surgeActive(): boolean {
     if (!this.waves || !this.level) return false
     const wave = this.level.waves[this.waves.waveIndex]
@@ -673,6 +697,7 @@ export class Game implements World {
 
   disposeLevel(): void {
     audio.stopMusic()
+    audio.setMusicState({ pressure: 0, surge: false, boss: false, livesRatio: 1, phase: 'idle' })
     this.hazard?.dispose(this)
     this.hazard = null
     this.removeLanePreview()
@@ -1530,7 +1555,11 @@ export class Game implements World {
     // look for a quiet board roughly once a second
     if (this.phase === 'playing' && !this.paused) {
       this.checkpointT += dtRaw
-      if (this.checkpointT >= 1) { this.checkpointT = 0; this.maybeCheckpoint() }
+      if (this.checkpointT >= 1) {
+        this.checkpointT = 0
+        this.maybeCheckpoint()
+        this.updateMusicState()
+      }
     }
 
     // Veiltide lighting: ease toward violet while a surge is on the field

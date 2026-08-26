@@ -62,13 +62,37 @@ export class AudioSystem {
     try { this.synth(name, volume) } catch { /* audio must never crash the game */ }
   }
 
+  /**
+   * What the score should be reacting to. Updated cheaply from the game each
+   * second; changes are only committed on a bar boundary so the music never
+   * lurches mid-phrase.
+   */
+  setMusicState(st: Partial<MusicState>): void {
+    Object.assign(this.musicState, st)
+  }
+
+  private musicState: MusicState = { pressure: 0, surge: false, boss: false, livesRatio: 1, phase: 'idle' }
+
   startMusic(): void {
     this.musicPlaying = true
     this.applyMusicGain()
     if (!this.ctx || this.musicTimer !== null) return
-    const loop = () => { this.playMusicBar(); this.musicTimer = window.setTimeout(loop, 4800) }
-    loop()
+    // Bars were driven by setTimeout, which drifts and can be throttled by a
+    // background tab. They are scheduled against the audio clock now, one bar
+    // ahead, so the pulse stays locked to the music rather than the event loop.
+    this.nextBarAt = this.ctx.currentTime + 0.05
+    const pump = () => {
+      if (!this.ctx || !this.musicPlaying) return
+      while (this.nextBarAt < this.ctx.currentTime + BAR_LOOKAHEAD) {
+        this.playMusicBar(this.nextBarAt)
+        this.nextBarAt += BAR_SECONDS
+      }
+      this.musicTimer = window.setTimeout(pump, 240)
+    }
+    pump()
   }
+
+  private nextBarAt = 0
 
   stopMusic(): void {
     this.musicPlaying = false
@@ -172,13 +196,20 @@ export class AudioSystem {
         this.tone(440, 0.2, { type: 'square', vol: 0.14 * v, delay: 0.13, slide: -180 })
         break
       case 'horn':
+        // the wave horn quotes the motif, so the theme is stated dozens of
+        // times a battle without ever being the melody
         this.tone(196, 0.5, { type: 'sawtooth', vol: 0.12 * v, attack: 0.08 })
         this.tone(294, 0.5, { type: 'sawtooth', vol: 0.1 * v, attack: 0.08, delay: 0.05 })
-        this.tone(392, 0.7, { type: 'sawtooth', vol: 0.1 * v, attack: 0.1, delay: 0.35 })
+        MOTIF.forEach((step, i) =>
+          this.tone(392 * SEMITONE ** step, 0.34, {
+            type: 'sawtooth', vol: 0.085 * v, attack: 0.02, delay: 0.3 + i * 0.15,
+          }))
         break
       case 'victory':
-        [523, 659, 784, 1047].forEach((f, i) =>
-          this.tone(f, 0.35, { type: 'triangle', vol: 0.14 * v, delay: i * 0.16 }))
+        // the motif again, opened out and in the major
+        MOTIF.forEach((step, i) =>
+          this.tone(523 * SEMITONE ** step, 0.4, { type: 'triangle', vol: 0.14 * v, delay: i * 0.16 }))
+        this.tone(1047, 0.7, { type: 'triangle', vol: 0.11 * v, delay: 0.66 })
         break
       case 'defeat':
         [330, 262, 220, 165].forEach((f, i) =>
@@ -210,30 +241,123 @@ export class AudioSystem {
     }
   }
 
-  // Slow ambient pad, pentatonic wanderer on top. Deliberately sparse.
+  /**
+   * The score.
+   *
+   * It used to be one 4.8s loop of four chords with one to three randomly
+   * chosen pentatonic notes on top, and a 40% chance of skipping each. That
+   * is unauthored rather than adaptive: no phrase, no motif, nothing to
+   * remember, and nothing in the game ever reached it.
+   *
+   * Synthesis was never the weakness. There is a fixed four-note Blockhold
+   * motif now, and the arrangement around it answers the battle: a pulse once
+   * enemies are on the road, percussion and bass as they close on the gate,
+   * Veil detuning during a surge, and a boss ostinato that takes the whole
+   * harmony down a tone.
+   */
   private musicStep = 0
-  private playMusicBar(): void {
-    if (!this.ctx || !this.musicGain || this.musicMuted || !this.musicPlaying) { return }
+
+  private playMusicBar(at: number): void {
+    if (!this.ctx || !this.musicGain || this.musicMuted || !this.musicPlaying) return
+    const st = this.musicState
+    const bar = this.musicStep++
+    const g = this.musicGain
+    const now = this.ctx.currentTime
+    const when = (offset = 0) => at - now + offset
+
+    // a boss drags the whole key down a tone; a surge sharpens it
+    const key = st.boss ? 0.891 : 1
+    const detune = st.surge ? 1.012 : 1
+
     const chords = [
-      [110, 164.8, 220, 261.6], // Am add9-ish
+      [110, 164.8, 220, 261.6],  // Am add9
       [87.3, 130.8, 174.6, 220], // F
-      [98, 146.8, 196, 246.9],  // G
-      [110, 164.8, 220, 329.6], // Am
+      [98, 146.8, 196, 246.9],   // G
+      [110, 164.8, 220, 329.6],  // Am
     ]
-    const chord = chords[this.musicStep % chords.length]
+    const chord = chords[bar % chords.length].map(f => f * key)
+
+    // base drone: always there, the floor of the piece
     for (const f of chord) {
-      this.tone(f, 4.4, { type: 'sine', vol: 0.05, attack: 1.4, dest: this.musicGain })
-      this.tone(f * 2.001, 4.2, { type: 'triangle', vol: 0.014, attack: 1.8, dest: this.musicGain })
+      this.tone(f, BAR_SECONDS * 0.95, { type: 'sine', vol: 0.05, attack: 1.2, delay: when(), dest: g })
+      this.tone(f * 2.001 * detune, BAR_SECONDS * 0.9, { type: 'triangle', vol: 0.013, attack: 1.6, delay: when(), dest: g })
     }
-    const penta = [220, 261.6, 293.7, 329.6, 392, 440, 523.3]
-    const notes = 1 + Math.floor(Math.random() * 3)
-    for (let i = 0; i < notes; i++) {
-      if (Math.random() < 0.4) continue
-      const f = penta[Math.floor(Math.random() * penta.length)]
-      this.tone(f, 1.2, { type: 'triangle', vol: 0.045, attack: 0.01, delay: 0.6 + i * 1.4, dest: this.musicGain })
+
+    // THE MOTIF: four fixed notes, stated on the first bar of every phrase.
+    // A theme needs a landmark that does not move.
+    if (bar % 4 === 0) {
+      const root = chord[0] * 4
+      MOTIF.forEach((step, i) => {
+        this.tone(root * SEMITONE ** step, 0.55, {
+          type: 'triangle', vol: 0.05, attack: 0.01,
+          delay: when(i * 0.42), dest: g,
+        })
+      })
     }
-    this.musicStep++
+
+    // motion: a pulse once anything is walking the road
+    if (st.pressure > 0.02) {
+      const beats = 4
+      for (let b = 0; b < beats; b++) {
+        this.tone(chord[0] * 0.5, 0.16, {
+          type: 'sine', vol: 0.05 + st.pressure * 0.05, attack: 0.005,
+          delay: when(b * (BAR_SECONDS / beats)), dest: g,
+        })
+      }
+    }
+
+    // pressure: as the field fills and the gate gets close, the bar fills in
+    if (st.pressure > 0.35) {
+      for (let b = 0; b < 8; b++) {
+        if (b % 2 === 0) continue
+        this.tone(1800, 0.05, {
+          type: 'square', vol: 0.012 * st.pressure, attack: 0.002,
+          delay: when(b * (BAR_SECONDS / 8)), dest: g,
+        })
+      }
+    }
+
+    // boss: a flat, insistent ostinato underneath everything
+    if (st.boss) {
+      for (let b = 0; b < 4; b++) {
+        this.tone(chord[0] * 0.5, 0.5, {
+          type: 'sawtooth', vol: 0.035, attack: 0.01,
+          delay: when(b * (BAR_SECONDS / 4)), dest: g,
+        })
+      }
+    }
+
+    // the gate in danger: a low toll on the downbeat
+    if (st.livesRatio < 0.34) {
+      this.tone(chord[0] * 0.25, 1.6, {
+        type: 'sine', vol: 0.06, attack: 0.02,
+        delay: when(), dest: g,
+      })
+    }
   }
 }
+
+/** what the arrangement reacts to */
+export interface MusicState {
+  /** 0..1 - how much is on the road and how close it is to the gate */
+  pressure: number
+  surge: boolean
+  boss: boolean
+  /** 0..1 - lives remaining */
+  livesRatio: number
+  phase: string
+}
+
+/** one bar, and how far ahead of the audio clock bars are scheduled */
+const BAR_SECONDS = 4.8
+const BAR_LOOKAHEAD = 0.6
+const SEMITONE = 2 ** (1 / 12)
+
+/**
+ * The Blockhold motif: four notes, fixed forever. The title, the wave horn,
+ * a boss arriving, victory and defeat are all meant to quote it, so that the
+ * game has one thing a player could actually hum back.
+ */
+export const MOTIF = [0, 7, 5, 3]
 
 export const audio = new AudioSystem()
