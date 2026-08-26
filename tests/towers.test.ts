@@ -1,3 +1,4 @@
+import { targetScore, TARGET_POLICY_ORDER, TARGET_POLICY_LABEL, type TargetPolicy } from '../src/game/towers.ts'
 import { describe, expect, it } from 'vitest'
 import { investedGold, resolveCapstone, SELL_REFUND, towerTrees } from '../src/game/towerDefs.ts'
 import { Tower } from '../src/game/towers.ts'
@@ -77,5 +78,38 @@ describe('tower economy', () => {
         expect(Number.isFinite(muzzleHeights[model]), model).toBe(true)
       }
     }
+  })
+})
+
+describe('targeting policies', () => {
+  // remaining = distance still to walk, so a *low* remaining is near the gate
+  const near = { remaining: 2, hp: 50 }    // closest to the gate, mid health
+  const far = { remaining: 9, hp: 30 }     // furthest from the gate, weakest
+  const tank = { remaining: 5, hp: 400 }   // mid lane, toughest
+  const pool = [near, far, tank]
+
+  const pickBy = (policy: TargetPolicy) =>
+    pool.reduce((best, e) => (targetScore(policy, e) < targetScore(policy, best) ? e : best))
+
+  it('first shoots whatever is closest to the gate', () => {
+    expect(pickBy('first')).toBe(near)
+  })
+
+  it('last shoots whatever is furthest from the gate', () => {
+    expect(pickBy('last')).toBe(far)
+  })
+
+  it('strongest shoots the highest health', () => {
+    expect(pickBy('strong')).toBe(tank)
+  })
+
+  it('weakest shoots the lowest health', () => {
+    expect(pickBy('weak')).toBe(far)
+  })
+
+  it('cycles through every policy and wraps', () => {
+    expect(TARGET_POLICY_ORDER).toEqual(['first', 'last', 'strong', 'weak'])
+    expect(new Set(TARGET_POLICY_ORDER).size).toBe(TARGET_POLICY_ORDER.length)
+    for (const p of TARGET_POLICY_ORDER) expect(TARGET_POLICY_LABEL[p]).toBeTruthy()
   })
 })

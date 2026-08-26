@@ -12,6 +12,22 @@ import { buildModel, getPart, disposeClonedMaterials } from '../voxel/builder.ts
 import { towerModel, muzzleHeights, rallyFlagModel } from '../voxel/models_towers.ts'
 import { randRange, lerpAngle, clamp, simChance } from '../core/utils.ts'
 
+export type TargetPolicy = 'first' | 'last' | 'strong' | 'weak'
+export const TARGET_POLICY_LABEL: Record<TargetPolicy, string> = {
+  first: 'First', last: 'Last', strong: 'Strongest', weak: 'Weakest',
+}
+export const TARGET_POLICY_ORDER: TargetPolicy[] = ['first', 'last', 'strong', 'weak']
+
+/** lower wins. Pure so the policies can be tested without a scene. */
+export function targetScore(policy: TargetPolicy, e: { remaining: number, hp: number }): number {
+  switch (policy) {
+    case 'last': return -e.remaining
+    case 'strong': return -e.hp
+    case 'weak': return e.hp
+    default: return e.remaining
+  }
+}
+
 const boltColors: Record<string, number> = {
   mage1: 0x8f5aff, mage2: 0x7a6aff, mage3: 0x5aa0ff, mage4a: 0xb37aff, mage4b: 0x9fe8ff,
   mage5a: 0xd8a5ff, mage5b: 0xbfefff,
@@ -43,6 +59,7 @@ export class Tower {
   target: Enemy | null = null
   soldiers: Soldier[] = []
   rallyPoint = new THREE.Vector3()
+  targetPolicy: TargetPolicy = 'first'
   rallyFlag: THREE.Group | null = null
   /** count of same-family neighbors (0-2), set by Game.recomputeResonance */
   resonance = 0
@@ -311,6 +328,12 @@ export class Tower {
     return this.pos.clone().add(new THREE.Vector3(0, muzzleHeights[this.def.model] * this.sizeMult, 0))
   }
 
+  /**
+   * Targeting was a single hardcoded sort on remaining distance, so every
+   * tower in the game always shot whatever was closest to the gate. The
+   * comparator is the whole decision, so letting the player pick it is very
+   * nearly free - and it is real tactical expression rather than more breadth.
+   */
   private acquireTarget(world: World): void {
     if (this.target) {
       const t = this.target
@@ -319,15 +342,23 @@ export class Tower {
     }
     if (this.target) return
     let best: Enemy | null = null
-    let bestRemaining = Infinity
+    let bestScore = Infinity
     for (const e of world.enemies) {
       if (!e.targetable) continue
       if (e.def.flying && !this.def.flying) continue
       const d = Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z)
       if (d > this.range + e.radius) continue
-      if (e.remaining < bestRemaining) { bestRemaining = e.remaining; best = e }
+      const score = targetScore(this.targetPolicy, e)
+      if (score < bestScore) { bestScore = score; best = e }
     }
     this.target = best
+  }
+
+  cycleTargetPolicy(): TargetPolicy {
+    const order = TARGET_POLICY_ORDER
+    this.targetPolicy = order[(order.indexOf(this.targetPolicy) + 1) % order.length]
+    this.target = null      // re-acquire under the new rule immediately
+    return this.targetPolicy
   }
 
   update(dt: number, world: World): void {

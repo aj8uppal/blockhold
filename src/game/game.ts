@@ -285,6 +285,17 @@ export class Game implements World {
 
   shake(strength: number): void { this.engine.addShake(strength) }
 
+  /** spend the hero's signature; a press with nothing in reach costs nothing */
+  castHeroSignature(): void {
+    if (this.paused || this.phase !== 'playing') return
+    const h = this.hero
+    if (!h || !h.signatureReady) { this.sfx('error'); return }
+    if (!h.castSignature(this)) {
+      this.sfx('error')
+      this.hud.showToast(`${h.heroDef.ability.name}: nothing in reach`, 1.6)
+    }
+  }
+
   shatterUnit(group: THREE.Group, opts: { force?: number, flavor?: DeathFlavor, scale?: number }): void {
     // deliberately Math.random, not the sim stream: debris is presentation, and
     // a quality tier that drew fewer chunks would otherwise desync the run

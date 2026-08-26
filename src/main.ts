@@ -233,6 +233,7 @@ window.addEventListener('keydown', (e) => {
     case 'KeyH': game.selectHero(true); break
     case 'Digit1': game.setTargetMode(game.targetMode === 'meteor' ? null : 'meteor'); break
     case 'Digit2': game.setTargetMode(game.targetMode === 'reinforce' ? null : 'reinforce'); break
+    case 'Digit3': game.castHeroSignature(); break
     case 'KeyC': game.engine.resetView(game.level?.width, game.level?.height); break
     case 'Escape':
       if (game.targetMode) game.setTargetMode(null)

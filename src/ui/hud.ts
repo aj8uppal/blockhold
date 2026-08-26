@@ -9,6 +9,7 @@ import {
   OVERCHARGE_SHARD_COST, OVERCHARGE_DURATION, ASCEND_SHARD_COST, ASCEND_GOLD_COST,
 } from '../game/types.ts'
 import { towerTrees } from '../game/towerDefs.ts'
+import { TARGET_POLICY_LABEL } from '../game/towers.ts'
 import { isCoarsePointer } from '../core/utils.ts'
 import { icon, BOSS_ART } from './icons.ts'
 
@@ -186,6 +187,18 @@ export class HUD {
     }
     mk('meteor', 'meteor', 'Meteor Storm', '1', 'Rain three meteors on a target area (true damage + stun). Hotkey 1.')
     mk('reinforce', 'shield', 'Reinforcements', '2', 'Summon two militia anywhere on the road for 14s. Hotkey 2.')
+    // the hero's signature used to fire itself; it is the player's to spend now
+    this.signatureBtn = el('button', 'ability', bar) as HTMLButtonElement
+    this.signatureBtn.innerHTML =
+      `<span class="ability-icon">${icon('quake')}</span><span class="cd-sweep"></span><span class="hotkey">3</span>`
+    this.signatureBtn.onclick = () => this.game.castHeroSignature()
+  }
+
+  private signatureBtn!: HTMLButtonElement
+  private lastSignatureId = ''
+
+  private static readonly SIGNATURE_ICON: Record<string, string> = {
+    slam: 'quake', volley: 'bow', nova: 'lightning',
   }
 
   private buildPauseOverlay(): void {
@@ -299,6 +312,21 @@ export class HUD {
       sweep.style.setProperty('--p', `${frac * 100}%`)
       btn.classList.toggle('ready', st.cooldown <= 0)
       btn.classList.toggle('active', game.targetMode === key)
+    }
+    // hero signature button: icon follows the chosen hero, sweep follows its cooldown
+    if (game.hero) {
+      const h = game.hero
+      if (this.lastSignatureId !== h.heroDef.id) {
+        this.lastSignatureId = h.heroDef.id
+        const ico = HUD.SIGNATURE_ICON[h.heroDef.ability.kind] ?? 'sparkle'
+        const slot = this.signatureBtn.querySelector('.ability-icon') as HTMLElement
+        if (slot) slot.innerHTML = icon(ico)
+        this.signatureBtn.title = `${h.heroDef.ability.name} — ${h.heroDef.ability.blurb} Hotkey 3.`
+      }
+      const sweep = this.signatureBtn.querySelector('.cd-sweep') as HTMLElement
+      sweep.style.setProperty('--p', `${h.abilityFraction * 100}%`)
+      this.signatureBtn.classList.toggle('ready', h.signatureReady)
+      this.signatureBtn.classList.toggle('downed', h.dead)
     }
     this.refreshHeroPanel()
     // live kill tally on the open tower/trap/hero panel
@@ -584,6 +612,14 @@ export class HUD {
     if (tower.isBarracks) {
       const rally = el('button', 'btn small', row, `${icon('flag')} Rally point`) as HTMLButtonElement
       rally.onclick = this.menuGuard(() => this.game.setTargetMode('rally'))
+    } else {
+      const tgt = el('button', 'btn small', row,
+        `${icon('target')} ${TARGET_POLICY_LABEL[tower.targetPolicy]}`) as HTMLButtonElement
+      tgt.title = 'Which enemy this tower shoots: closest to the gate, furthest from it, the toughest, or the weakest'
+      tgt.onclick = this.menuGuard(() => {
+        const next = tower.cycleTargetPolicy()
+        tgt.innerHTML = `${icon('target')} ${TARGET_POLICY_LABEL[next]}`
+      })
     }
     const sell = el('button', 'btn small sell', row, `Sell ${icon('coin')}${tower.sellValue}`) as HTMLButtonElement
     sell.onclick = this.menuGuard(() => this.game.sellTower(tower))
