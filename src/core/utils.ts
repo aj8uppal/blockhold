@@ -1,5 +1,8 @@
 import * as THREE from 'three'
 
+/** touch-class pointer: hover is not expressible, so info must never be hover-gated */
+export const isCoarsePointer = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 export const randRange = (a: number, b: number) => a + Math.random() * (b - a)

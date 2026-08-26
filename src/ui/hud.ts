@@ -9,6 +9,7 @@ import {
   OVERCHARGE_SHARD_COST, OVERCHARGE_DURATION, ASCEND_SHARD_COST, ASCEND_GOLD_COST,
 } from '../game/types.ts'
 import { towerTrees } from '../game/towerDefs.ts'
+import { isCoarsePointer } from '../core/utils.ts'
 import { icon, BOSS_ART } from './icons.ts'
 
 function chip(label: string, value: string, cls = ''): string {
@@ -41,6 +42,9 @@ export class HUD {
   private musicBtn!: HTMLButtonElement
   private waveBtn!: HTMLButtonElement
   private wavePreviewEl!: HTMLElement
+  private lastWavePreviewHtml = ''
+  /** coarse pointers arm a build option on first tap and commit on the second */
+  private armedBuild: string | null = null
   private abilityBtns: Record<'meteor' | 'reinforce', HTMLButtonElement> = {} as never
   private buildMenu!: HTMLElement
   private towerPanel!: HTMLElement
@@ -142,15 +146,25 @@ export class HUD {
     const wrap = el('div', 'wave-call-wrap', this.root)
     this.waveBtn = el('button', 'wave-call hidden', wrap) as HTMLButtonElement
     this.waveBtn.onclick = () => this.game.callWave()
+    // The roster used to be hover-only, which made it unreachable on touch:
+    // a tap on this button calls the wave, so there is no hover to gate on.
+    // It is now always on screen while a wave is pending, for every pointer.
     this.wavePreviewEl = el('div', 'wave-preview hidden', wrap)
-    this.waveBtn.onmouseenter = () => {
-      const preview = this.game.waves?.nextWavePreview()
-      if (preview) {
-        this.wavePreviewEl.innerHTML = '<b>Incoming:</b> ' + preview.map(p => `${p.count}× ${p.name}`).join(', ')
-        this.wavePreviewEl.classList.remove('hidden')
-      }
-    }
-    this.waveBtn.onmouseleave = () => this.wavePreviewEl.classList.add('hidden')
+  }
+
+  /** roster + decisive counters for the pending wave; empty string when none */
+  private wavePreviewHtml(): string {
+    const w = this.game.waves
+    const preview = w?.nextWavePreview()
+    if (!preview || !preview.length) return ''
+    const roster = preview
+      .map(p => `<span class="wp-unit${p.boss ? ' boss' : ''}">${p.count}× ${p.name}</span>`)
+      .join('')
+    const threats = w!.nextWaveThreats()
+    const tags = threats.length
+      ? `<span class="wp-threats">${threats.map(t => `<span class="wp-tag">${t}</span>`).join('')}</span>`
+      : ''
+    return `<span class="wp-label">Incoming</span>${roster}${tags}`
   }
 
   private heroBtn!: HTMLButtonElement
@@ -230,6 +244,16 @@ export class HUD {
         } else {
           this.waveBtn.classList.add('hidden')
           this.wavePreviewEl.classList.add('hidden')
+          this.lastWavePreviewHtml = ''
+        }
+      }
+      // the roster rides with the button, so it is never hover-gated
+      if (btnText) {
+        const html = this.wavePreviewHtml()
+        if (html !== this.lastWavePreviewHtml) {
+          this.lastWavePreviewHtml = html
+          this.wavePreviewEl.innerHTML = html
+          this.wavePreviewEl.classList.toggle('hidden', !html)
         }
       }
     }
@@ -327,6 +351,7 @@ export class HUD {
   // ---------------- build menu ----------------
 
   openBuildMenu(plot: PlotInfo, x: number, y: number): void {
+    this.armedBuild = null
     this.buildMenu.innerHTML = ''
     const kinds: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks']
     for (const kind of kinds) {
@@ -334,12 +359,19 @@ export class HUD {
       const btn = el('button', 'build-option', this.buildMenu) as HTMLButtonElement
       btn.dataset.cost = `${def.cost}`
       btn.innerHTML = `<span class="b-icon">${icon(TOWER_ICONS[kind])}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
-      btn.onclick = this.menuGuard(() => this.game.buildTower(kind))
+      btn.onclick = this.menuGuard(() => this.commitBuild(kind, btn, () => {
+        this.game.previewRange(kind)
+        this.showBuildTooltip(def, kind)
+      }, () => this.game.buildTower(kind)))
       btn.onmouseenter = () => {
         this.game.previewRange(kind)
         this.showBuildTooltip(def, kind)
       }
-      btn.onmouseleave = () => { this.game.previewRange(null); this.hideBuildTooltip() }
+      btn.onmouseleave = () => {
+        if (this.armedBuild) return   // keep an armed touch selection visible
+        this.game.previewRange(null)
+        this.hideBuildTooltip()
+      }
       btn.classList.toggle('poor', this.game.gold < def.cost)
     }
     const tip = el('div', 'build-tooltip hidden', this.buildMenu)
@@ -368,6 +400,30 @@ export class HUD {
     }
   }
 
+  /**
+   * Touch has no hover, so a single tap used to spend gold before the player
+   * could read a single stat. On coarse pointers the first tap arms the option
+   * (showing its stats and range ring) and only the second tap builds.
+   * Fine pointers keep one-tap building, since hover already showed them.
+   */
+  private commitBuild(key: string, btn: HTMLButtonElement, inspect: () => void, build: () => void): void {
+    if (!isCoarsePointer()) { build(); return }
+    if (this.armedBuild === key) {
+      this.armedBuild = null
+      build()
+      return
+    }
+    this.armedBuild = key
+    for (const b of this.buildMenu.querySelectorAll('.build-option')) b.classList.remove('armed')
+    btn.classList.add('armed')
+    inspect()
+  }
+
+  private clearArmedBuild(): void {
+    this.armedBuild = null
+    for (const b of this.buildMenu.querySelectorAll('.build-option')) b.classList.remove('armed')
+  }
+
   private showBuildTooltip(def: TowerLevelDef, kind: TowerKind): void {
     const tip = document.getElementById('build-tip')
     if (!tip) return
@@ -380,27 +436,32 @@ export class HUD {
   }
 
   closeBuildMenu(): void {
+    this.clearArmedBuild()
     this.buildMenu.classList.add('hidden')
   }
 
   // ---------------- trap menu & panel ----------------
 
   openTrapMenu(spot: TrapSpotInfo, x: number, y: number): void {
+    this.armedBuild = null
     this.buildMenu.innerHTML = ''
     for (const kind of ['spike', 'frost', 'blast'] as TrapKind[]) {
       const def = TRAP_DEFS[kind]
       const btn = el('button', 'build-option trap-option', this.buildMenu) as HTMLButtonElement
       btn.dataset.cost = `${def.cost}`
       btn.innerHTML = `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
-      btn.onclick = this.menuGuard(() => this.game.buildTrap(kind))
-      btn.onmouseenter = () => {
+      const showTrapTip = () => {
         const tip = document.getElementById('build-tip')
         if (tip) {
           tip.innerHTML = `<b>${def.name}</b><br>${def.description}`
           tip.classList.remove('hidden')
         }
       }
-      btn.onmouseleave = () => this.hideBuildTooltip()
+      btn.onclick = this.menuGuard(() => this.commitBuild(
+        `trap:${kind}`, btn, showTrapTip, () => this.game.buildTrap(kind),
+      ))
+      btn.onmouseenter = showTrapTip
+      btn.onmouseleave = () => { if (!this.armedBuild) this.hideBuildTooltip() }
       btn.classList.toggle('poor', this.game.gold < def.cost)
     }
     const tip = el('div', 'build-tooltip hidden', this.buildMenu)

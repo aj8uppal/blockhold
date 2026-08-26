@@ -88,16 +88,40 @@ describe('WaveManager', () => {
   it('aggregates duplicate enemy groups in the next-wave preview', () => {
     const manager = new WaveManager(testLevel, vi.fn(), vi.fn())
 
-    expect(manager.nextWavePreview()).toEqual([
+    expect(manager.nextWavePreview()?.map(p => ({ name: p.name, count: p.count }))).toEqual([
       { name: 'Husk', count: 5 },
       { name: 'Ashhound', count: 1 },
     ])
 
     manager.callNext()
     manager.update(10)
-    expect(manager.nextWavePreview()).toEqual([
+    expect(manager.nextWavePreview()?.map(p => ({ name: p.name, count: p.count }))).toEqual([
       { name: 'Ironclad', count: 2 },
       { name: 'Husk', count: 4 },
     ])
+  })
+
+  // The preview is the only place a touch player can learn what is coming,
+  // so it must carry the traits that decide a build, not just names.
+  it('reports the decisive counters for the next wave', () => {
+    const manager = new WaveManager(testLevel, vi.fn(), vi.fn())
+
+    const first = manager.nextWavePreview()!
+    expect(first.every(e => !e.flying && !e.armored && !e.boss)).toBe(true)
+    expect(manager.nextWaveThreats()).toEqual([])
+
+    // Ironclads carry armor, so wave two must advertise it
+    manager.callNext()
+    manager.update(10)
+    const second = manager.nextWavePreview()!
+    expect(second.find(e => e.name === 'Ironclad')?.armored).toBe(true)
+    expect(manager.nextWaveThreats()).toContain('Armored')
+  })
+
+  it('has no preview once the last wave has started', () => {
+    const manager = new WaveManager(testLevel, vi.fn(), vi.fn())
+    while (!manager.isLastWaveStarted) { manager.callNext(); manager.update(10) }
+    expect(manager.nextWavePreview()).toBeNull()
+    expect(manager.nextWaveThreats()).toEqual([])
   })
 })
