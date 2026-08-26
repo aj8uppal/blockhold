@@ -1,4 +1,5 @@
-import { requestDurableStorage } from './core/save.ts'
+import { requestDurableStorage, writeSave } from './core/save.ts'
+import { cloud } from './core/cloud.ts'
 import { readCheckpoint } from './game/checkpoint.ts'
 import { telemetry } from './core/telemetry.ts'
 import { acquisitionSource, isEmbedded } from './core/platform.ts'
@@ -145,6 +146,8 @@ hud.onHome = () => {
   screens.show('levels')
 }
 game.onPhaseChange = (phase, stars) => {
+  // a finished run is exactly when progress is worth getting off this device
+  if (phase === 'victory' || phase === 'defeat') syncNow()
   if (phase === 'victory') screens.show('victory', { stars, levelId: game.level!.id, stats: game.battleStats() })
   else if (phase === 'defeat') screens.show('defeat', { levelId: game.level!.id, stats: game.battleStats() })
 }
@@ -305,6 +308,18 @@ document.addEventListener('visibilitychange', () => {
 void requestDurableStorage()
 
 telemetry.track({ type: 'session_start', firstRun: !localStorage.getItem('blockhold.save.v1'), source: acquisitionSource(), embedded: isEmbedded() })
+
+// Cloud saves are best-effort and never block play: if the service is off,
+// unreachable or disabled at build time, this is a no-op and the game runs
+// exactly as it did before.
+function syncNow(): void {
+  void cloud.sync(game.save).then(merged => {
+    if (!merged) return
+    Object.assign(game.save, merged)
+    writeSave(game.save)
+  })
+}
+if (cloud.signedIn) syncNow()
 window.addEventListener('error', (e) => telemetry.track({ type: 'error', message: String(e.message).slice(0, 200) }))
 window.addEventListener('pagehide', () => telemetry.flush())
 

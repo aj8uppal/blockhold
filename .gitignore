@@ -4,3 +4,4 @@ dist/
 .DS_Store
 # Midjourney originals stay local; the game ships processed webp from public/art
 art/*.png
+.env.local
