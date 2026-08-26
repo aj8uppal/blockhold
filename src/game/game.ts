@@ -522,7 +522,9 @@ export class Game implements World {
     this.level = level
     this.engine.scene.add(this.particles.group)
     attachDebris(this.engine.scene)
-    this.engine.applyTheme(THEMES[level.theme], level.width, level.height)
+    // always the meadow light: the Hold is the thing being shown, and the
+    // late-campaign void theme lit it too darkly to read behind the menu
+    this.engine.applyTheme(THEMES.forest, 16, 12)
 
     const pieces = holdPieces(this.save)
     this.holdGroup = buildModel(holdModel(pieces), holdCacheKey(pieces), { receiveShadow: true })
@@ -530,11 +532,13 @@ export class Game implements World {
     this.engine.scene.add(this.holdGroup)
     this.engine.resetView(16, 12)
     // frame the keep itself, not the empty sky around it
-    this.engine.distGoal = this.engine.dist = 13.5
-    this.engine.camTargetGoal.set(0, 0, -0.6)
+    // the menu card sits centred, so the keep is framed off to one side and
+    // low, where it can actually be seen rather than hidden behind the panel
+    this.engine.distGoal = this.engine.dist = 15
+    this.engine.camTargetGoal.set(3.4, 0, -2.2)
     this.engine.camTarget.copy(this.engine.camTargetGoal)
-    this.engine.pitchGoal = this.engine.pitch = 0.6
-    this.engine.yawGoal = this.engine.yaw = -0.55
+    this.engine.pitchGoal = this.engine.pitch = 0.46
+    this.engine.yawGoal = this.engine.yaw = -0.6
   }
 
   private holdGroup: THREE.Group | null = null

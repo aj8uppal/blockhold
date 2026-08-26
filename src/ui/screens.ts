@@ -98,8 +98,10 @@ export class Screens {
     const wrap = el('div', 'screen menu-screen', this.root)
     const card = el('div', 'menu-hero', wrap)
     // painted key art under a dark scrim; inline so the URL resolves at runtime
+    // lighter than it was: the player's Hold stands behind this card and is
+    // meant to be seen, not covered up
     card.style.background =
-      'linear-gradient(180deg, rgba(28, 19, 12, 0.82), rgba(22, 15, 10, 0.9) 62%, rgba(20, 14, 9, 0.96)), ' +
+      'linear-gradient(180deg, rgba(24, 16, 10, 0.72), rgba(20, 14, 9, 0.82) 62%, rgba(18, 12, 8, 0.9)), ' +
       'url(art/title.webp) center / cover'
     el('div', 'menu-crest', card, icon('castle', 'gilded'))
     el('h1', 'game-title', card, 'BLOCKHOLD')
