@@ -1074,8 +1074,23 @@ export class Game implements World {
   private lastNewWaveRecord = false
 
   /** end-of-battle summary for the result screens */
+  /**
+   * Waves the player actually survived.
+   *
+   * The end screen used to report `waveIndex + 1` as waves *held*, which
+   * counts the wave you died on - so falling on wave 19 was reported as
+   * holding 19. Reaching a wave and holding it are different numbers and the
+   * screen now says both.
+   */
+  private wavesCleared(): number {
+    if (!this.waves) return 0
+    return this.phase === 'victory' ? this.waves.totalWaves : this.waves.waveIndex
+  }
+
   battleStats(): {
     kills: number, gold: number, shards: number, wavesReached: number, totalWaves: number,
+    /** waves actually survived; the wave you die on is reached, not held */
+    wavesCleared: number,
     timeSec: number, heroLevel: number, endless: boolean, bestEndless: number,
     score: number, prevBestScore: number, newBestScore: boolean, newWaveRecord: boolean,
     perfectWaves: number, bestStreak: number, noleak: boolean,
@@ -1104,6 +1119,7 @@ export class Game implements World {
       gold: this.goldEarned,
       shards: this.shardsEarned,
       wavesReached: this.waves ? this.waves.waveIndex + 1 : 0,
+      wavesCleared: this.wavesCleared(),
       totalWaves: this.waves?.totalWaves ?? 0,
       timeSec: Math.round(this.time),
       heroLevel: this.hero?.level ?? 1,

@@ -32,7 +32,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
 export type GameMode = 'campaign' | 'endless'
 
 export interface BattleStats {
-  kills: number, gold: number, shards: number, wavesReached: number, totalWaves: number,
+  kills: number, gold: number, shards: number, wavesReached: number, wavesCleared: number, totalWaves: number,
   timeSec: number, heroLevel: number, endless: boolean, bestEndless: number,
   score: number, prevBestScore: number, newBestScore: boolean, newWaveRecord: boolean,
   perfectWaves: number, bestStreak: number, noleak: boolean,
@@ -331,9 +331,12 @@ export class Screens {
     el('div', 'end-emoji', card, icon(endless ? 'moon' : won ? 'trophy' : 'skull'))
     el('h2', 'end-title', card, endless ? 'The Long Night ends' : won ? 'Victory!' : 'The gate has fallen')
     if (endless && stats) {
+      // held and fell-on are different numbers, and reporting only one of them
+      // next to the record read as though the record *was* the result
       el('div', 'end-sub', card,
-        `You held for <b>${stats.wavesReached}</b> wave${stats.wavesReached === 1 ? '' : 's'}` +
-        (stats.newWaveRecord ? ` — a new record! ${icon('medal')}` : ` · best: ${stats.bestEndless}`))
+        `You held <b>${stats.wavesCleared}</b> wave${stats.wavesCleared === 1 ? '' : 's'}` +
+        `, and fell on wave <b>${stats.wavesReached}</b>` +
+        (stats.newWaveRecord ? ` — a new record! ${icon('medal')}` : ` · your best is ${stats.bestEndless}`))
     } else if (won) {
       const starRow = el('div', 'end-stars', card)
       for (let i = 0; i < 3; i++) {
