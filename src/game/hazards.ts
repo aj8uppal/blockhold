@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { HazardId } from './types.ts'
-import { randRange, pick, simRandom } from '../core/utils.ts'
+import { randRange, pick, simRandom, simChance } from '../core/utils.ts'
 import type { Game } from './game.ts'
 
 /**
@@ -261,11 +261,234 @@ class Riftlight implements Hazard {
   }
 }
 
+/**
+ * Emberwind Reach: a firestorm that follows your hero.
+ *
+ * Every other hazard in the game happens *to* the player on a timer. This one
+ * is steered: the front drifts toward whoever is carrying the banner, so the
+ * hero stops being only a fighter and becomes bait you walk into the horde -
+ * and it burns him too, so parking in it is not free. Towers caught inside
+ * fire slower, which means the good line is one you can lead the fire past
+ * rather than through.
+ */
+class Emberwind implements Hazard {
+  private pos = new THREE.Vector3(0, 0, 0)
+  private ring: THREE.Mesh | null = null
+  private inner: THREE.Mesh | null = null
+  private announced = false
+  private burnT = 0
+  private started = false
+
+  /** how much of the board the front covers, and how fast it closes */
+  private static readonly RADIUS = 3.1
+  private static readonly SPEED = 0.78
+  private static readonly DPS = 26
+
+  update(dt: number, game: Game): void {
+    if (!this.ring) this.build(game)
+    if (!this.started) {
+      // start it out over the field, not on top of the player's opening build
+      const l = game.lanes[0]
+      const s = l.sample(l.length * 0.35)
+      this.pos.set(s.x, 0, s.z)
+      this.started = true
+    }
+
+    // drift toward the hero; with no hero alive it keeps its heading toward the gate
+    const target = game.hero?.alive ? game.hero.group.position : null
+    if (target) {
+      const dx = target.x - this.pos.x, dz = target.z - this.pos.z
+      const d = Math.hypot(dx, dz)
+      if (d > 0.05) {
+        const step = Math.min(d, Emberwind.SPEED * dt)
+        this.pos.x += dx / d * step
+        this.pos.z += dz / d * step
+      }
+    }
+
+    const r = Emberwind.RADIUS
+    if (this.ring) {
+      this.ring.position.set(this.pos.x, 0.06, this.pos.z)
+      this.ring.rotation.z += dt * 0.35
+      const m = this.ring.material as THREE.MeshBasicMaterial
+      m.opacity = 0.34 + Math.sin(game.time * 3.1) * 0.08
+    }
+    if (this.inner) {
+      this.inner.position.set(this.pos.x, 0.05, this.pos.z)
+      const m = this.inner.material as THREE.MeshBasicMaterial
+      m.opacity = 0.16 + Math.sin(game.time * 4.4) * 0.05
+    }
+
+    // burn ticks on a cadence so damage is legible rather than a smooth drain
+    this.burnT -= dt
+    const tick = this.burnT <= 0
+    if (tick) this.burnT = 0.5
+
+    for (const e of game.enemies) {
+      if (!e.targetable) continue
+      if (Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) > r + e.radius) continue
+      if (tick) e.takeDamage(Emberwind.DPS * 0.5, 'true', game)
+      if (tick && simChance(0.25)) game.particles.hitSpark(e.pos.x, 0.5, e.pos.z, 0xff8a3c)
+    }
+    // the hero is not immune, or leading it would cost nothing
+    const h = game.hero
+    if (tick && h?.alive && Math.hypot(h.group.position.x - this.pos.x, h.group.position.z - this.pos.z) < r) {
+      h.takeDamage(Emberwind.DPS * 0.22, game)
+    }
+    // and neither are the guns: anything inside the front works slower
+    for (const t of game.towers) {
+      t.suppressed = Math.hypot(t.pos.x - this.pos.x, t.pos.z - this.pos.z) < r
+    }
+
+    if (!this.announced && game.time > 4) {
+      this.announced = true
+      game.hud.showToast('The Emberwind follows your hero. Lead it into the horde — but it burns him too, and towers inside it fire slower.', 8)
+    }
+  }
+
+  private build(game: Game): void {
+    const geo = new THREE.RingGeometry(Emberwind.RADIUS - 0.22, Emberwind.RADIUS, 40)
+    geo.rotateX(-Math.PI / 2)
+    this.ring = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0xff7a2a, transparent: true, opacity: 0.34, toneMapped: false, depthWrite: false,
+    }))
+    this.ring.renderOrder = 3
+    game.dynamic.add(this.ring)
+
+    const fill = new THREE.CircleGeometry(Emberwind.RADIUS - 0.22, 40)
+    fill.rotateX(-Math.PI / 2)
+    this.inner = new THREE.Mesh(fill, new THREE.MeshBasicMaterial({
+      color: 0xff9a4a, transparent: true, opacity: 0.16, toneMapped: false, depthWrite: false,
+    }))
+    this.inner.renderOrder = 2
+    game.dynamic.add(this.inner)
+  }
+
+  dispose(game: Game): void {
+    for (const m of [this.ring, this.inner]) {
+      if (!m) continue
+      game.dynamic.remove(m)
+      m.geometry.dispose()
+      ;(m.material as THREE.Material).dispose()
+    }
+    this.ring = this.inner = null
+    for (const t of game.towers) t.suppressed = false
+  }
+}
+
+/**
+ * Tidereach Causeway: the tide decides which roads exist.
+ *
+ * Every other map hands you a board and lets you solve it once. Here the shape
+ * of the problem changes underneath a defense you have already paid for: a
+ * causeway floods and the guns watching it have nothing to do, while a road
+ * that was safe all battle opens and arrives already under pressure. Selling
+ * and rebuilding is the intended answer, which is why Full Salvage is worth
+ * owning by the time a player gets here.
+ *
+ * Two rules keep it fair rather than merely cruel: the change is announced a
+ * wave before it happens, and the roads are never all shut at once.
+ */
+class ShiftingRoads implements Hazard {
+  private lastWave = -99
+  private closed = new Set<number>()
+  private flood: THREE.Mesh[] = []
+  private announced = false
+  private warned = -1
+
+  /** which roads are shut, as a function of how far in we are */
+  private planFor(wave: number, lanes: number): Set<number> {
+    const out = new Set<number>()
+    if (lanes < 3 || wave < 3) return out
+    // one road at a time early, two once the player has a board to spare
+    const shut = wave >= 14 && lanes >= 5 ? 2 : 1
+    // Road zero carries the gate and is never shut, so the rotation runs over
+    // the others: picking freely and then deleting zero left waves where the
+    // tide did nothing at all, which reads as the mechanic being broken.
+    const rotating = lanes - 1
+    for (let k = 0; k < Math.min(shut, rotating - 1); k++) {
+      out.add(1 + (Math.floor(wave / 4) + k * 2) % rotating)
+    }
+    return out
+  }
+
+  update(_dt: number, game: Game): void {
+    const wave = game.waves?.waveIndex ?? -1
+    if (wave === this.lastWave) return
+    this.lastWave = wave
+    const lanes = game.lanes.length
+    const next = this.planFor(wave, lanes)
+
+    // tell the player before it happens, not after they have built into it
+    const soon = this.planFor(wave + 1, lanes)
+    if (wave >= 0 && this.warned !== wave && !sameSet(soon, next)) {
+      this.warned = wave
+      game.hud.showToast('The tide is turning — the causeways change after this wave.', 4)
+    }
+
+    if (sameSet(next, this.closed)) return
+    this.closed = next
+    game.closedLanes = new Set(next)
+    this.redraw(game)
+
+    if (!this.announced) {
+      this.announced = true
+      game.hud.showToast('The tide closes causeways and opens others. Traffic reroutes to whatever is still standing — build so you can move.', 8)
+    } else if (wave > 0) {
+      game.sfx('horn', 0.45)
+    }
+  }
+
+  /** a flooded causeway is drawn over, so "shut" is visible and not a surprise */
+  private redraw(game: Game): void {
+    for (const m of this.flood) {
+      game.dynamic.remove(m)
+      m.geometry.dispose()
+      ;(m.material as THREE.Material).dispose()
+    }
+    this.flood = []
+    for (const i of this.closed) {
+      const lane = game.lanes[i]
+      if (!lane) continue
+      for (let d = 0; d < lane.length; d += 0.9) {
+        const s = lane.sample(d)
+        const geo = new THREE.PlaneGeometry(1.05, 1.05)
+        geo.rotateX(-Math.PI / 2)
+        const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+          color: 0x2f8fa8, transparent: true, opacity: 0.62, toneMapped: false, depthWrite: false,
+        }))
+        mesh.position.set(s.x, 0.09, s.z)
+        mesh.renderOrder = 2
+        game.dynamic.add(mesh)
+        this.flood.push(mesh)
+      }
+    }
+  }
+
+  dispose(game: Game): void {
+    for (const m of this.flood) {
+      game.dynamic.remove(m)
+      m.geometry.dispose()
+      ;(m.material as THREE.Material).dispose()
+    }
+    this.flood = []
+    game.closedLanes = new Set()
+  }
+}
+
+function sameSet(a: Set<number>, b: Set<number>): boolean {
+  if (a.size !== b.size) return false
+  for (const v of a) if (!b.has(v)) return false
+  return true
+}
+
 export function createHazard(id: HazardId, levelId: string): Hazard {
   switch (id) {
     case 'deepchill': return new DeepChill()
     case 'eruption': return new Eruption(levelId === 'cinderwake' ? 80 : 60)
     case 'witchlights': return new Witchlights()
     case 'riftlight': return new Riftlight()
+    case 'emberwind': return new Emberwind()
+    case 'shiftingroads': return new ShiftingRoads()
   }
 }

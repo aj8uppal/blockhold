@@ -133,7 +133,7 @@ export type LandmarkKind =
   | 'greatTree'
 
 /** map signature mechanics — opportunity windows, never chores */
-export type HazardId = 'deepchill' | 'eruption' | 'witchlights' | 'riftlight'
+export type HazardId = 'deepchill' | 'eruption' | 'witchlights' | 'riftlight' | 'emberwind' | 'shiftingroads'
 
 // ---------------- road traps ----------------
 

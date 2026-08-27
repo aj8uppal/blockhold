@@ -301,7 +301,7 @@ export const sunderfallLevel: LevelDef = {
   ],
   plots: [[28, 8], [32, 12], [34, 12], [28, 12], [25, 8], [15, 1], [32, 14], [20, 1], [26, 14], [22, 8], [19, 8], [17, 7], [15, 5], [15, 8], [25, 12], [23, 14], [22, 12], [20, 14], [19, 12], [17, 14], [16, 12], [14, 14]],
   trapSpots: [[2, 3], [7, 3], [12, 3], [17, 3], [22, 3], [27, 3], [30, 7], [2, 16], [7, 16], [12, 16], [17, 16], [22, 16], [27, 16], [30, 12], [2, 10], [7, 10], [12, 10], [17, 10], [22, 10]],
-  plateaus: [[6, 5, 12, 8, 1.7], [20, 12, 27, 15, 1.5], [12, 12, 17, 14, 1.2], [22, 5, 28, 8, 1.3]],
+  plateaus: [[8, 6, 29, 13, 2], [3, 5, 6, 8, 1.4], [31, 6, 34, 12, 1.4]],
   landmarks: [[4, 6, 'monolith'], [8, 6, 'arch'], [12, 6, 'spire'], [4, 13, 'greatTree'], [8, 13, 'monolith'], [12, 13, 'arch'], [16, 13, 'spire'], [20, 13, 'greatTree'], [24, 13, 'monolith']],
   water: [[0, 6, 3, 8], [8, 18, 14, 19]],
   hills: [[22, 17, 28, 19], [0, 0, 2, 1], [34, 0, 35, 1]],
@@ -314,6 +314,7 @@ export const sunderfallLevel: LevelDef = {
 
 export const emberwindLevel: LevelDef = {
   id: 'emberwind',
+  hazard: 'emberwind',
   name: 'Emberwind Reach',
   subtitle: 'The firestorm follows your hero',
   theme: 'ashfall',
@@ -341,6 +342,7 @@ export const emberwindLevel: LevelDef = {
 
 export const tidereachLevel: LevelDef = {
   id: 'tidereach',
+  hazard: 'shiftingroads',
   name: 'Tidereach Causeway',
   subtitle: 'The roads themselves are not yours',
   theme: 'tidal',

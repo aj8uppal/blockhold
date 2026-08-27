@@ -61,10 +61,12 @@ export const THEMES: Record<ThemeId, ThemeColors> = {
   // cold cliff country: pale stone terraces over dark pine, lit hard from a
   // low sun so the height difference casts and reads
   highland: {
-    grass: 0x6f8f5e, grassAlt: 0x627f53, dirt: 0x6b6154, road: 0xc2b492, roadAlt: 0xb4a684,
+    // cold stone country, not another meadow: the ground is lichen over rock,
+    // so the terraces read as cut cliff rather than a green step
+    grass: 0x7d8a6a, grassAlt: 0x6d7a5c, dirt: 0x6b6154, road: 0xbfc0b0, roadAlt: 0xb0b2a2,
     waterDeep: 0x2f6a86, waterShallow: 0x5fa3bd, waterGlow: 0,
-    skyTop: 0x4d86b8, skyBottom: 0xd6e6ef, fog: 0xbcd2df,
-    sunColor: 0xfff0d4, sunIntensity: 2.5, hemiSky: 0xa8c8e4, hemiGround: 0x4e5344, ambient: 0.3,
+    skyTop: 0x3f79ad, skyBottom: 0xdfe9ea, fog: 0xc4d2d6,
+    sunColor: 0xfff2dc, sunIntensity: 2.6, hemiSky: 0xb4cade, hemiGround: 0x545a4a, ambient: 0.28,
   },
   // burnt ground under a lit sky: everything reads warm so the firestorm has
   // to be hotter than its own world to stand out
@@ -82,6 +84,9 @@ export const THEMES: Record<ThemeId, ThemeColors> = {
     sunColor: 0xe8f4e0, sunIntensity: 2.1, hemiSky: 0x9fd0cf, hemiGround: 0x445048, ambient: 0.34,
   },
 }
+
+/** how far above its own footing a tower can still shoot over */
+export const SIGHT_CLEARANCE = 0.55
 
 export interface PlotInfo {
   index: number
@@ -202,6 +207,33 @@ export class Terrain {
       if (c >= c0 && c <= c1 && r >= r0 && r <= r1) best = Math.max(best, h)
     }
     return best
+  }
+
+  /**
+   * Does raised ground stand between these two points?
+   *
+   * A tower shoots from its own ground level, so a ridge only blocks it if the
+   * ridge is meaningfully higher than the ground the tower is standing on. That
+   * one rule gives the terraces their whole meaning - a gun on the shelf sees
+   * over everything, a gun in the hollow behind it cannot reach the far road -
+   * and it costs nothing on a flat board, where there is no raised ground to
+   * find and the walk exits immediately.
+   */
+  sightBlocked(fromX: number, fromZ: number, fromY: number, toX: number, toZ: number): boolean {
+    if (!(this.level.plateaus ?? []).length) return false
+    const dx = toX - fromX, dz = toZ - fromZ
+    const dist = Math.hypot(dx, dz)
+    if (dist < 1.2) return false
+    const steps = Math.min(14, Math.max(3, Math.round(dist)))
+    const clear = fromY + SIGHT_CLEARANCE
+    // skip the muzzle and the target's own cell; a ridge you stand on, or one
+    // the target is stood against, is not what blocks the shot
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps
+      const [c, r] = this.worldToCell(fromX + dx * t, fromZ + dz * t)
+      if (this.plateauAt(c, r) > clear) return true
+    }
+    return false
   }
 
   /** height of the ground a unit standing at this world point rests on */
