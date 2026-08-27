@@ -16,6 +16,7 @@ import { buildPaths, LanePath } from './path.ts'
 import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
 import { holdModel, holdPieces, holdCacheKey } from './hold.ts'
 import { isNotable } from './dossier.ts'
+import { HERO_RANK_MAX, heroRankCost } from './hero.ts'
 import { levels, generateEndlessWaves } from './levels.ts'
 import { Terrain, PlotInfo, THEMES } from './terrain.ts'
 import { Particles } from './particles.ts'
@@ -491,6 +492,21 @@ export class Game implements World {
       this.paused = paused
       this.hud.setChrome(wasChrome)
     }
+  }
+
+  /** invest shards in the hero's signature */
+  upgradeHeroSignature(): void {
+    const h = this.hero
+    if (this.paused || !h) return
+    if (h.signatureRank >= HERO_RANK_MAX) { this.sfx('error'); return }
+    const cost = heroRankCost(h.signatureRank)
+    if (this.shards < cost) { this.sfx('error'); this.hud.showToast(`Needs ${cost} shards`, 2); return }
+    this.shards -= cost
+    h.signatureRank++
+    this.sfx('upgrade')
+    this.particles.healSparkle(h.group.position.x, h.group.position.y + 1, h.group.position.z)
+    this.hud.showToast(`${h.heroDef.ability.name} sharpened to rank ${h.signatureRank}`, 3)
+    this.hud.openHeroPanel(h)
   }
 
   /** spend the hero's signature; a press with nothing in reach costs nothing */

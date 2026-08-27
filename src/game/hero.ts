@@ -8,6 +8,10 @@ import { icon } from '../ui/icons.ts'
 const RESPAWN_TIME = 16
 const XP_LEVELS = [0, 60, 150, 280, 450, 660, 920, 1240, 1620, 2100]
 
+/** how far a signature can be sharpened, and what each rank costs in shards */
+export const HERO_RANK_MAX = 3
+export const heroRankCost = (rank: number): number => 4 + rank * 2
+
 export const HERO_DEFS: Record<HeroId, HeroDef> = {
   aldric: {
     id: 'aldric', name: 'Sir Aldric', title: 'the Bulwark', icon: 'helmPlume',
@@ -177,6 +181,29 @@ export class Hero extends Soldier {
 
   }
 
+  /**
+   * Signature ranks, bought with shards.
+   *
+   * The hero was the only thing on the board the player could not invest in:
+   * towers had five tiers and two ascensions, and the named, illustrated
+   * champion had nothing. Each rank shortens the cooldown and widens the
+   * effect, so a hero built around can genuinely carry a lane.
+   */
+  signatureRank = 0
+
+  get signatureCooldown(): number {
+    return this.heroDef.ability.cooldown * (1 - this.signatureRank * 0.12)
+  }
+
+  /** how much wider and harder the signature lands at this rank */
+  get signaturePower(): number {
+    return 1 + this.signatureRank * 0.28
+  }
+
+  get signatureReach(): number {
+    return 1 + this.signatureRank * 0.18
+  }
+
   /** the hero's signature is the player's to spend, not the AI's */
   get signatureReady(): boolean { return this.abilityCooldown <= 0 && this.alive && !this.dead }
 
@@ -189,10 +216,10 @@ export class Hero extends Soldier {
     const pos = this.group.position
     const kind = this.heroDef.ability.kind
     if (kind === 'slam') {
-      const victims = world.enemies.filter(e => e.targetable && !e.def.flying && e.pos.distanceTo(pos) < 1.35)
+      const victims = world.enemies.filter(e => e.targetable && !e.def.flying && e.pos.distanceTo(pos) < 1.35 * this.signatureReach)
       if (!victims.length) return false
-      this.abilityCooldown = this.heroDef.ability.cooldown
-      const dmg = 26 + this.level * 6
+      this.abilityCooldown = this.signatureCooldown
+      const dmg = (26 + this.level * 6) * this.signaturePower
       for (const v of victims) {
         v.takeDamage(dmg * (0.85 + simRandom() * 0.3), 'true', world, { credit: this })
         v.applyStun(0.8, world)
@@ -210,13 +237,13 @@ export class Hero extends Soldier {
         .filter(e => e.targetable && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < range + 0.5)
         .sort((a, b) => a.remaining - b.remaining)
       if (!victims.length) return false
-      this.abilityCooldown = this.heroDef.ability.cooldown
-      for (const v of victims.slice(0, 7)) {
+      this.abilityCooldown = this.signatureCooldown
+      for (const v of victims.slice(0, 7 + this.signatureRank * 2)) {
         world.fireProjectile({
           kind: 'arrow',
           from: pos.clone().add(new THREE.Vector3(0, 0.5, 0)),
           target: v,
-          damage: randRange(...this.def.damage) * 1.25,
+          damage: randRange(...this.def.damage) * 1.25 * this.signaturePower,
           crit: true,
           credit: this,
           world,
@@ -227,10 +254,10 @@ export class Hero extends Soldier {
       return true
     }
     // nova
-    const victims = world.enemies.filter(e => e.targetable && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < 2.0)
+    const victims = world.enemies.filter(e => e.targetable && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < 2.0 * this.signatureReach)
     if (!victims.length) return false
-    this.abilityCooldown = this.heroDef.ability.cooldown
-    const dmg = 18 + this.level * 5
+    this.abilityCooldown = this.signatureCooldown
+    const dmg = (18 + this.level * 5) * this.signaturePower
     for (const v of victims) {
       v.takeDamage(dmg * (0.85 + simRandom() * 0.3), 'magic', world, { credit: this })
       v.applySlow(0.45, 2.5, world)

@@ -15,6 +15,7 @@ import { isPortalMode } from '../core/platform.ts'
 import { EARTHWORK_DEFS, type EarthworkSpot, type Earthwork } from '../game/earthworks.ts'
 import { beatIndex, BEATS_PER_BAR } from '../game/beat.ts'
 import { traitsOf, counterFor } from '../game/dossier.ts'
+import { HERO_RANK_MAX, heroRankCost } from '../game/hero.ts'
 import type { EnemyDef } from '../game/types.ts'
 import { icon, BOSS_ART } from './icons.ts'
 
@@ -826,7 +827,17 @@ export class HUD {
         : chip('Guards', `${icon('range')} r ${hero.guardRange}`)))
 
     el('div', 'tp-traits', p,
-      `✦ <b>${hero.heroDef.ability.name}</b> — ${hero.heroDef.ability.blurb} <span class="ability-cd-num"></span>`)
+      `✦ <b>${hero.heroDef.ability.name}</b>${hero.signatureRank > 0 ? ` <span class="hero-rank">rank ${hero.signatureRank}</span>` : ''}`
+      + ` — ${hero.heroDef.ability.blurb} <span class="ability-cd-num"></span>`)
+    if (hero.signatureRank < HERO_RANK_MAX) {
+      const cost = heroRankCost(hero.signatureRank)
+      const up = el('button', 'btn upgrade', p,
+        `<span class="u-name">✦ Sharpen ${hero.heroDef.ability.name}</span>`
+        + `<span class="u-cost">${icon('gem')}${cost}</span>`
+        + `<span class="u-desc">Rank ${hero.signatureRank + 1}: +28% effect, +18% reach, 12% faster recharge.</span>`) as HTMLButtonElement
+      up.onclick = this.menuGuard(() => this.game.upgradeHeroSignature())
+      up.classList.toggle('poor', this.game.shards < cost)
+    }
     el('div', 'tp-lineage', p, hero.ranged
       ? 'Holds her ground where she stands. Click the ground to reposition her.'
       : 'Fights whatever enters the ring around his post. Click the ground to move the post.')
