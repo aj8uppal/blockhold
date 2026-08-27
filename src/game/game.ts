@@ -120,6 +120,7 @@ export class Game implements World {
   private raycaster = new THREE.Raycaster()
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   private rangeRing: THREE.Mesh
+  private upgradeRing: THREE.Mesh
   private selectRing: THREE.Mesh
   private targetRing: THREE.Mesh
   private heroRing: THREE.Mesh
@@ -144,12 +145,13 @@ export class Game implements World {
     audio.setMusicMuted(this.save.musicMuted)
 
     this.rangeRing = makeRing(1, 0x7fd4ff, 0.24)
+    this.upgradeRing = makeRing(1, 0x8fff9f, 0.42)
     this.selectRing = makeRing(1, 0xffe89f, 0.5)
     this.selectRing.scale.setScalar(0.62)
     this.targetRing = makeRing(1.15, 0xff8c42, 0.5)
     this.heroRing = makeRing(0.42, 0x7fd4ff, 0.7)
     this.heroGuardRing = makeRing(1, 0x7fd4ff, 0.2)
-    this.rangeRing.visible = this.selectRing.visible = this.targetRing.visible = this.heroRing.visible = this.heroGuardRing.visible = false
+    this.rangeRing.visible = this.upgradeRing.visible = this.selectRing.visible = this.targetRing.visible = this.heroRing.visible = this.heroGuardRing.visible = false
   }
 
   // ---------------- World impl ----------------
@@ -301,7 +303,12 @@ export class Game implements World {
         this.bestStreak = Math.max(this.bestStreak, this.defenseStreak)
         this.perfectWaves++
         // streak pay scales harder now that campaigns run longer and capstones cost real gold
-        const bonus = 4 + Math.min(12, this.defenseStreak * 2)
+        // A wave held is the game's most frequent reward, and it paid so
+        // little that players did not notice it. It scales with how deep the
+        // battle is now, so late waves pay something a tower could be built
+        // from, on top of the streak.
+        const waveNo = e.waveTag + 1
+        const bonus = 10 + waveNo * 3 + Math.min(24, this.defenseStreak * 4)
         this.addGold(bonus)
         const end = e.lane.sample(e.lane.length - 0.5)
         this.floater(end.x, 0.9, end.z, this.defenseStreak >= 2
@@ -599,7 +606,7 @@ export class Game implements World {
     this.engine.scene.add(this.terrain.group)
     this.engine.scene.add(this.dynamic)
     this.engine.scene.add(this.particles.group)
-    this.engine.scene.add(this.rangeRing, this.selectRing, this.targetRing, this.heroRing, this.heroGuardRing)
+    this.engine.scene.add(this.rangeRing, this.upgradeRing, this.selectRing, this.targetRing, this.heroRing, this.heroGuardRing)
     this.engine.applyTheme(THEMES[level.theme], level.width, level.height)
     this.engine.resetView(level.width, level.height)
 
@@ -1322,9 +1329,32 @@ export class Game implements World {
     this.hud.closeBuildMenu()
     this.hud.closeTowerPanel()
     this.rangeRing.visible = false
+    this.upgradeRing.visible = false
     this.selectRing.visible = false
     this.heroRing.visible = false
     this.heroGuardRing.visible = false
+  }
+
+  /**
+   * Show the range an upgrade would give, as a second ring beside the one the
+   * tower has now - so the player can see what they are buying rather than
+   * inferring it from a description.
+   */
+  previewUpgradeRange(tower: Tower, opt: { range: number } | null): void {
+    if (!opt) {
+      this.rangeRing.visible = !!this.selectedTower
+      if (this.selectedTower) {
+        this.rangeRing.position.set(this.selectedTower.pos.x, 0.04, this.selectedTower.pos.z)
+        this.rangeRing.scale.setScalar(this.selectedTower.range)
+      }
+      this.upgradeRing.visible = false
+      return
+    }
+    // the upgrade's own multipliers ride along, so the ring is the real number
+    const scale = opt.range / tower.def.range
+    this.upgradeRing.visible = true
+    this.upgradeRing.position.set(tower.pos.x, 0.05, tower.pos.z)
+    this.upgradeRing.scale.setScalar(tower.range * scale)
   }
 
   /** preview range for a build option (hover in build menu) */

@@ -681,7 +681,17 @@ export class HUD {
       const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, actions) as HTMLButtonElement
       btn.dataset.cost = `${opt.cost}`
       btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span><span class="u-desc">${opt.description}</span>`
-      btn.onclick = this.menuGuard(() => this.game.upgradeTower(tower, i))
+      // show what the upgrade actually buys in range terms, on both pointers:
+      // hover for a mouse, and the first tap for touch (which arms before it
+      // commits, so the preview is visible before any gold is spent)
+      const preview = () => this.game.previewUpgradeRange(tower, opt)
+      const clearPreview = () => { if (!this.armedBuild) this.game.previewUpgradeRange(tower, null) }
+      btn.onmouseenter = preview
+      btn.onmouseleave = clearPreview
+      btn.onclick = this.menuGuard(() => this.commitBuild(
+        `upgrade:${tower.plot.index}:${i}`, btn, preview,
+        () => { this.game.previewUpgradeRange(tower, null); this.game.upgradeTower(tower, i) },
+      ))
       btn.disabled = this.game.gold < opt.cost
     })
     // ascension: tier-4+ towers pick one of two shard-bought perks

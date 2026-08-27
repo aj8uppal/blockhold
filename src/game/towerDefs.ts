@@ -161,13 +161,13 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
         description: 'Three militia hold the road and buy your towers time.',
       },
       {
-        name: 'Footman Barracks', cost: 130, model: 'barracks2', range: 2.2,
+        name: 'Footman Barracks', cost: 130, model: 'barracks2', range: 2.45,
         soldierCount: 3, respawnTime: 9,
         soldier: { name: 'Footman', hp: 110, damage: [4, 8], attackInterval: 1.0, armor: 0.2, model: 'footman' },
         description: 'Trained footmen with mail and shields.',
       },
       {
-        name: 'Knight Barracks', cost: 200, model: 'barracks3', range: 2.2,
+        name: 'Knight Barracks', cost: 200, model: 'barracks3', range: 2.7,
         soldierCount: 3, respawnTime: 10,
         soldier: { name: 'Knight', hp: 190, damage: [8, 14], attackInterval: 1.0, armor: 0.35, model: 'knight' },
         description: 'Knights of Blockhold. They do not break.',
@@ -175,7 +175,7 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
     ],
     branches: [
       {
-        name: 'Paladin Sanctum', cost: 300, model: 'barracks4a', range: 2.4,
+        name: 'Paladin Sanctum', cost: 300, model: 'barracks4a', range: 3.0,
         soldierCount: 3, respawnTime: 11,
         soldier: {
           name: 'Paladin', hp: 300, damage: [12, 20], attackInterval: 1.0, armor: 0.5, regen: 4,
@@ -184,7 +184,7 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
         description: 'Holy bulwarks that regenerate and pulse healing to allies.',
       },
       {
-        name: 'Berserker Hall', cost: 300, model: 'barracks4b', range: 2.6,
+        name: 'Berserker Hall', cost: 300, model: 'barracks4b', range: 3.15,
         soldierCount: 3, respawnTime: 8,
         soldier: {
           name: 'Berserker', hp: 210, damage: [17, 28], attackInterval: 0.65, armor: 0, lifesteal: 0.3, model: 'berserker',
@@ -194,7 +194,7 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
     ],
     capstones: [
       {
-        name: 'Oathgate Citadel', cost: 800, model: 'barracks5a', range: 2.8,
+        name: 'Oathgate Citadel', cost: 800, model: 'barracks5a', range: 3.5,
         soldierCount: 4, respawnTime: 10,
         soldier: {
           name: 'Oath Paladin', hp: 440, damage: [17, 27], attackInterval: 0.9, armor: 0.55, regen: 5,

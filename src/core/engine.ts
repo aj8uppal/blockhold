@@ -153,9 +153,26 @@ export class Engine {
   }
 
   /** Deep Chill: blend toward pale aurora blue (0..1); surge takes precedence */
+  /**
+   * Target for the chill grade. The world used to snap between grades the
+   * instant a hazard flipped, which reads as a rendering glitch rather than
+   * weather; it eases now, like the surge blend already did.
+   */
   setChillBlend(blend: number): void {
-    if (blend === this.chillBlendAmt) return
-    this.chillBlendAmt = blend
+    this.chillTarget = blend
+  }
+
+  private chillTarget = 0
+
+  private updateChillBlend(dt: number): void {
+    if (Math.abs(this.chillBlendAmt - this.chillTarget) < 0.003) {
+      if (this.chillBlendAmt !== this.chillTarget) {
+        this.chillBlendAmt = this.chillTarget
+        this.applyAmbientBlend()
+      }
+      return
+    }
+    this.chillBlendAmt += (this.chillTarget - this.chillBlendAmt) * Math.min(1, dt * 1.8)
     this.applyAmbientBlend()
   }
 
@@ -387,6 +404,7 @@ export class Engine {
   }
 
   updateCamera(dt: number): void {
+    this.updateChillBlend(dt)
     if (this.cineT > 0) {
       this.cineT -= dt
       if (this.cineT <= 0) this.releaseCinematic()
