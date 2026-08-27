@@ -53,6 +53,8 @@ export interface World {
   readonly sellRefund: number
   /** the Bellfoundry is keeping time this battle */
   readonly isBellfoundry: boolean
+  /** height of the ground under a world point, so units stand on raised shelves */
+  groundY(x: number, z: number): number
   /** is this point inside a player-dug cutting? */
   cuttingAt(x: number, z: number): boolean
   shake(strength: number): void

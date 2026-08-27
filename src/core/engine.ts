@@ -418,11 +418,20 @@ export class Engine {
    * scene.background alone does nothing, because applyTheme builds a gradient
    * dome that sits in front of it.
    */
-  setDioramaMood(m: { sky: number, ambient: number, key: number, keyIntensity: number, keyDir?: [number, number, number], fill?: number }): void {
-    const top = new THREE.Color(m.sky)
-    const bottom = new THREE.Color(m.sky).lerp(new THREE.Color(m.ambient), 0.55)
+  /** a back light used only by dioramas, to edge the subject off the ground */
+  private dioRim: THREE.DirectionalLight | null = null
+
+  setDioramaMood(m: { sky: number, ambient: number, key: number, keyIntensity: number, keyDir?: [number, number, number], fill?: number, rim?: number, rimDir?: [number, number, number], rimIntensity?: number, skyTop?: number, skyBottom?: number }): void {
+    /*
+     * A diorama frames close to the horizon, so the band of sky actually in
+     * shot is the dome's *upper* half - the lighter horizon colour sits behind
+     * the terrain and is never seen. Deriving both ends from one hue therefore
+     * rendered as a flat dead slab. Scenes name both ends themselves.
+     */
+    const top = new THREE.Color(m.skyTop ?? m.sky)
+    const bottom = new THREE.Color(m.skyBottom ?? m.sky).lerp(new THREE.Color(m.ambient), 0.55)
     this.buildSky({ skyTop: top.getHex(), skyBottom: bottom.getHex() } as never)
-    this.scene.background = new THREE.Color(m.sky)
+    this.scene.background = new THREE.Color(m.skyTop ?? m.sky)
     this.scene.fog = new THREE.Fog(bottom.getHex(), 30, 90)
     this.hemi.color.setHex(m.ambient)
     this.hemi.groundColor.setHex(m.ambient)
@@ -437,6 +446,26 @@ export class Engine {
     const sc = this.sun.shadow.camera
     sc.left = -18; sc.right = 18; sc.top = 18; sc.bottom = -18
     sc.updateProjectionMatrix()
+
+    /*
+     * Rim light. Flat-shaded voxels lit from one side turn into a single
+     * silhouette against a same-value background - which is exactly how the
+     * first pass read. A cool back light catches the top and rear faces only,
+     * so the subject gets an edge and separates from the ground behind it.
+     */
+    if (!this.dioRim) {
+      this.dioRim = new THREE.DirectionalLight(0xffffff, 0)
+      this.scene.add(this.dioRim)
+    }
+    const [rx, ry, rz] = m.rimDir ?? [-kx, Math.abs(ky) * 0.65, -kz]
+    this.dioRim.position.set(rx, ry, rz)
+    this.dioRim.color.setHex(m.rim ?? 0xbcd8ff)
+    this.dioRim.intensity = m.rimIntensity ?? 0.9
+  }
+
+  /** dioramas own the rim light; every other scene must not inherit it */
+  clearDioramaRim(): void {
+    if (this.dioRim) this.dioRim.intensity = 0
   }
 
   addShake(strength: number): void {

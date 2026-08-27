@@ -4,6 +4,7 @@ import { enemyDefs } from '../src/game/enemyDefs.ts'
 import { levels } from '../src/game/levels.ts'
 import { REACTION_RADIUS } from '../src/game/towers.ts'
 import { buildPaths, gridToWorld } from '../src/game/path.ts'
+import { Terrain } from '../src/game/terrain.ts'
 import type { Rect } from '../src/game/types.ts'
 
 function expectRectInBounds(rect: Rect, width: number, height: number): void {
@@ -288,6 +289,39 @@ describe('map set-pieces', () => {
       for (const [c, r, kind] of lvl.landmarks ?? []) {
         const margin = Math.min(c, r, lvl.width - 1 - c, lvl.height - 1 - r)
         expect(margin, `${lvl.id} ${kind} at [${c},${r}] hugs the border`).toBeGreaterThanOrEqual(2)
+      }
+    }
+  })
+})
+
+describe('raised ground', () => {
+  /**
+   * Enemies ride a flat rail and the hero walks at ground level, so a road
+   * lifted onto a plateau puts both inside the hillside - Veilscar raised
+   * fourteen road cells to 1.8 and the whole column walked through it. Roads
+   * are carved through raised ground, never ramped over it.
+   */
+  it('never raises a road cell', () => {
+    for (const lvl of levels) {
+      if (!(lvl.plateaus ?? []).length) continue
+      const terrain = new Terrain(lvl, buildPaths(lvl))
+      for (const [c0, r0, c1, r1] of lvl.plateaus ?? []) {
+        for (let r = r0; r <= r1; r++) {
+          for (let c = c0; c <= c1; c++) {
+            if (!terrain.paths.roadCells.has(`${c},${r}`)) continue
+            expect(terrain.plateauAt(c, r), `${lvl.id} raised road [${c},${r}]`).toBe(0)
+            expect(terrain.cellTop(c, r), `${lvl.id} road [${c},${r}] off the ground`).toBe(0)
+          }
+        }
+      }
+    }
+  })
+
+  /** a shelf a unit can stand on, not a wall it disappears behind */
+  it('keeps raised ground to a low shelf', () => {
+    for (const lvl of levels) {
+      for (const [, , , , h] of lvl.plateaus ?? []) {
+        expect(h, `${lvl.id} plateau is a wall at ${h}`).toBeLessThanOrEqual(0.5)
       }
     }
   })

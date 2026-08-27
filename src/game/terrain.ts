@@ -163,13 +163,28 @@ export class Terrain {
     return k === 'hill' ? 0.5 : k === 'water' ? -0.4 : 0
   }
 
-  /** height of any authored plateau covering this cell, else 0 */
+  /**
+   * Height of any authored plateau covering this cell, else 0.
+   *
+   * A road is never raised, even where a plateau covers it. Enemies ride a
+   * flat rail and the hero walks at ground level, so lifting the road they
+   * travel on put both *inside* the terrain - Veilscar raised fourteen road
+   * cells to 1.8 and the whole column walked through the hillside. Roads cut
+   * through raised ground instead, which is also how a pass should read.
+   */
   plateauAt(c: number, r: number): number {
+    if (this.paths.roadCells.has(`${c},${r}`)) return 0
     let best = 0
     for (const [c0, r0, c1, r1, h] of this.level.plateaus ?? []) {
       if (c >= c0 && c <= c1 && r >= r0 && r <= r1) best = Math.max(best, h)
     }
     return best
+  }
+
+  /** height of the ground a unit standing at this world point rests on */
+  groundTopAt(x: number, z: number): number {
+    const [c, r] = this.worldToCell(x, z)
+    return Math.max(0, this.cellTop(c, r))
   }
 
   /** can ground units stand here? (flat grass or road) */
@@ -331,7 +346,7 @@ export class Terrain {
         const plateau = this.plateauAt(c, r)
         if (plateau > 0 && kind !== 'water') {
           addBox(x, z, bottom, plateau, 1, 1,
-            shuffleColor(kind === 'road' ? t.road : rng() < 0.5 ? t.grass : t.grassAlt, 0.07, rng))
+            shuffleColor(rng() < 0.5 ? t.grass : t.grassAlt, 0.07, rng))
           continue
         }
         switch (kind) {

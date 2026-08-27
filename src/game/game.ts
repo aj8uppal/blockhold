@@ -936,6 +936,7 @@ export class Game implements World {
   }
 
   disposeLevel(): void {
+    this.engine.clearDioramaRim()
     audio.stopMusic()
     audio.setMusicState({ pressure: 0, surge: false, boss: false, livesRatio: 1, phase: 'idle' })
     this.hazard?.dispose(this)
@@ -1586,6 +1587,11 @@ export class Game implements World {
       )
       t.onHighGround = nearRampart || this.terrain?.isOnHill(t.plot.cell[0], t.plot.cell[1]) === true
     }
+  }
+
+  /** ground height under a world point, so a unit rests on raised ground */
+  groundY(x: number, z: number): number {
+    return this.terrain?.groundTopAt(x, z) ?? 0
   }
 
   /** a cutting slows and exposes whatever is down in it */

@@ -17,21 +17,21 @@ export const HERO_DEFS: Record<HeroId, HeroDef> = {
     id: 'aldric', name: 'Sir Aldric', title: 'the Bulwark', icon: 'helmPlume',
     blurb: 'A frontline champion who pins groups in place and shatters them with Valor Slam.',
     hp: 320, damage: [18, 30], attackInterval: 0.85, armor: 0.35, regen: 7,
-    moveSpeed: 1.75, model: 'hero', scale: 1.85,
+    moveSpeed: 1.75, model: 'hero', scale: 2.3,
     ability: { kind: 'slam', name: 'Valor Slam', cooldown: 13, blurb: 'Shockwave: true damage + stun around him.' },
   },
   liora: {
     id: 'liora', name: 'Liora', title: 'the Gale Warden', icon: 'bow',
     blurb: 'A ranger who strikes from range — the only hero who can shoot flyers from the ground.',
     hp: 215, damage: [15, 24], attackInterval: 0.75, armor: 0.1, regen: 6,
-    moveSpeed: 2.0, model: 'liora', scale: 1.72, attackRange: 2.3, projectile: 'arrow',
+    moveSpeed: 2.0, model: 'liora', scale: 2.15, attackRange: 2.3, projectile: 'arrow',
     ability: { kind: 'volley', name: 'Piercing Volley', cooldown: 14, blurb: 'Looses arrows at up to seven foes, gate-runners first.' },
   },
   zephyra: {
     id: 'zephyra', name: 'Zephyra', title: 'the Stormcaller', icon: 'lightning',
     blurb: 'A tempest mage whose bolts ignore armor — and whose nova freezes whole packs in place.',
     hp: 190, damage: [14, 21], attackInterval: 0.95, armor: 0.05, regen: 6,
-    moveSpeed: 1.9, model: 'zephyra', scale: 1.72, attackRange: 2.1, projectile: 'bolt',
+    moveSpeed: 1.9, model: 'zephyra', scale: 2.15, attackRange: 2.1, projectile: 'bolt',
     ability: { kind: 'nova', name: 'Static Nova', cooldown: 15, blurb: 'Shocks and slows everything around her.' },
   },
 }
@@ -43,6 +43,16 @@ export const HERO_DEFS: Record<HeroId, HeroDef> = {
  * signature ability, and self-respawn.
  */
 export class Hero extends Soldier {
+  /**
+   * The hero's height is composed, not written by whichever animation happens
+   * to run. `baseY` is the ground under their feet and `bobY` is the walk
+   * bounce; update() adds them. Letting the animations set `position.y`
+   * directly meant a melee hero standing still ran no animation at all, so he
+   * kept whatever height he last had and stood buried in any raised ground.
+   */
+  private baseY = 0
+  private bobY = 0
+
   moveOrder: THREE.Vector3 | null = null
   private waypoints: THREE.Vector3[] = []
   level = 1
@@ -178,7 +188,9 @@ export class Hero extends Soldier {
       this.target = null
     }
     super.update(dt, world)
-
+    // raised ground is scenery the hero stands on, not something to sink into
+    this.baseY = world.groundY(this.group.position.x, this.group.position.z)
+    this.group.position.y = this.baseY + this.bobY
   }
 
   /**
@@ -318,7 +330,7 @@ export class Hero extends Soldier {
       const p = this.heroPart(name)
       if (p) p.rotation.x = rot
     }
-    this.group.position.y = Math.abs(Math.sin(this.walkT * 9.5)) * 0.03
+    this.bobY = Math.abs(Math.sin(this.walkT * 9.5)) * 0.03
   }
 
   private drawBowAnim(): void {
@@ -335,6 +347,6 @@ export class Hero extends Soldier {
     if (armR) armR.rotation.x = -Math.sin(this.walkT * 1.8) * 0.05
     if (legL) legL.rotation.x = 0
     if (legR) legR.rotation.x = 0
-    this.group.position.y = 0
+    this.bobY = 0
   }
 }

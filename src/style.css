@@ -22,8 +22,16 @@ html, body { height: 100%; overflow: hidden; background: #0d1420; }
 #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 
 #hud, #screens { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+/* Chrome-hidden must clear the frame completely: it is what a diorama and a
+   Siege Tape capture render behind, and a stray coach mark or banner lands in
+   the picture. Anything that floats over the battlefield belongs here. */
 #hud.chrome-hidden .topbar,
 #hud.chrome-hidden .abilities,
+#hud.chrome-hidden .coach-mark,
+#hud.chrome-hidden .banner,
+#hud.chrome-hidden .toast,
+#hud.chrome-hidden .intro,
+#hud.chrome-hidden .enemy-tip,
 #hud.chrome-hidden .wave-call-wrap { display: none; }
 /* passive overlays and layout containers must never intercept clicks —
    these rules must outrank `#hud > *`; interactive children re-enable below */
