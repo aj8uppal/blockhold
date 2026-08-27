@@ -157,19 +157,19 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
       {
         name: 'Militia Barracks', cost: 80, model: 'barracks1', range: 2.2,
         soldierCount: 3, respawnTime: 9,
-        soldier: { name: 'Militia', hp: 55, damage: [2, 5], attackInterval: 1.1, armor: 0, model: 'militia' },
+        soldier: { name: 'Militia', hp: 55, damage: [2, 5], attackInterval: 1.1, armor: 0, model: 'militia', scale: 0.92 },
         description: 'Three militia hold the road and buy your towers time.',
       },
       {
         name: 'Footman Barracks', cost: 130, model: 'barracks2', range: 2.45,
         soldierCount: 3, respawnTime: 9,
-        soldier: { name: 'Footman', hp: 110, damage: [4, 8], attackInterval: 1.0, armor: 0.2, model: 'footman' },
+        soldier: { name: 'Footman', hp: 110, damage: [4, 8], attackInterval: 1.0, armor: 0.2, model: 'footman', scale: 1.02 },
         description: 'Trained footmen with mail and shields.',
       },
       {
         name: 'Knight Barracks', cost: 200, model: 'barracks3', range: 2.7,
         soldierCount: 3, respawnTime: 10,
-        soldier: { name: 'Knight', hp: 190, damage: [8, 14], attackInterval: 1.0, armor: 0.35, model: 'knight' },
+        soldier: { name: 'Knight', hp: 190, damage: [8, 14], attackInterval: 1.0, armor: 0.35, model: 'knight', scale: 1.12 },
         description: 'Knights of Blockhold. They do not break.',
       },
     ],
@@ -179,7 +179,7 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
         soldierCount: 3, respawnTime: 11,
         soldier: {
           name: 'Paladin', hp: 300, damage: [12, 20], attackInterval: 1.0, armor: 0.5, regen: 4,
-          healPulse: { amount: 30, interval: 5, radius: 1.2 }, model: 'paladin',
+          healPulse: { amount: 30, interval: 5, radius: 1.2 }, model: 'paladin', scale: 1.22,
         },
         description: 'Holy bulwarks that regenerate and pulse healing to allies.',
       },
@@ -187,7 +187,7 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
         name: 'Berserker Hall', cost: 300, model: 'barracks4b', range: 3.15,
         soldierCount: 3, respawnTime: 8,
         soldier: {
-          name: 'Berserker', hp: 210, damage: [17, 28], attackInterval: 0.65, armor: 0, lifesteal: 0.3, model: 'berserker',
+          name: 'Berserker', hp: 210, damage: [17, 28], attackInterval: 0.65, armor: 0, lifesteal: 0.3, model: 'berserker', scale: 1.18,
         },
         description: 'Frenzied axes, frightening damage, and blood-fueled healing.',
       },
@@ -198,7 +198,7 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
         soldierCount: 4, respawnTime: 10,
         soldier: {
           name: 'Oath Paladin', hp: 440, damage: [17, 27], attackInterval: 0.9, armor: 0.55, regen: 5,
-          healPulse: { amount: 34, interval: 5, radius: 1.3 }, model: 'paladin',
+          healPulse: { amount: 34, interval: 5, radius: 1.3 }, model: 'paladin', scale: 1.34,
         },
         signature: 'lastMuster',
         description: 'A fourth sworn paladin joins the watch. When one falls, the Last Muster answers: two Retainers rush from the gate to hold the line.',
@@ -207,7 +207,7 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
         name: 'Stormhowl Warcamp', cost: 800, model: 'barracks5b', range: 3.4,
         soldierCount: 4, respawnTime: 8,
         soldier: {
-          name: 'Stormhowl', hp: 310, damage: [24, 38], attackInterval: 0.6, armor: 0, lifesteal: 0.35, model: 'berserker',
+          name: 'Stormhowl', hp: 310, damage: [24, 38], attackInterval: 0.6, armor: 0, lifesteal: 0.35, model: 'berserker', scale: 1.3,
         },
         // the only barracks that can touch a flyer: the camp itself throws
         damage: [46, 74], damageType: 'physical', attackInterval: 0.9, flying: true, airOnly: true,

@@ -174,6 +174,41 @@ export class Tower {
   get pos(): THREE.Vector3 { return this.group.position }
   get isBarracks(): boolean { return this.kind === 'barracks' }
 
+  /**
+   * Tier presence. Tiers 1-3 were distinguished only by model and a little
+   * scale, so an expensive board did not look expensive. From tier 4 the
+   * stonework catches light, and a capstone wears a slow halo - visible at the
+   * distance the game is actually played at, without adding a draw call.
+   */
+  private tierHalo: THREE.Mesh | null = null
+
+  private applyTierPresence(): void {
+    if (!this.model) return
+    const lit = this.level >= 4
+    if (lit) {
+      const glow = this.level >= 5 ? 0.34 : 0.16
+      const hue = this.level >= 5 ? 0xffd98f : 0xffc76a
+      this.model.traverse(o => {
+        if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
+          if (o.material.userData.shared) return
+          o.material.emissive.setHex(hue)
+          o.material.emissiveIntensity = glow
+        }
+      })
+    }
+    if (this.level >= 5 && !this.tierHalo) {
+      const geo = new THREE.RingGeometry(0.46, 0.6, 40)
+      geo.rotateX(-Math.PI / 2)
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xffd98f, transparent: true, opacity: 0.5, toneMapped: false, depthWrite: false,
+      })
+      this.tierHalo = new THREE.Mesh(geo, mat)
+      this.tierHalo.position.y = 0.07
+      this.tierHalo.renderOrder = 3
+      this.group.add(this.tierHalo)
+    }
+  }
+
   /** effective range including perks */
   get range(): number {
     return (this.def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0))
@@ -241,15 +276,21 @@ export class Tower {
   }
 
   private applyLevel(def: TowerLevelDef, world: World, initial = false): void {
-    if (this.model) this.group.remove(this.model)
+    if (this.model) {
+      this.group.remove(this.model)
+      disposeClonedMaterials(this.model)
+    }
+    if (this.tierHalo) { this.group.remove(this.tierHalo); this.tierHalo = null }
     this.def = def
-    // ghosts need their own materials so they can be made translucent without
-    // dimming every tower sharing the cached ones
-    this.model = buildModel(towerModel(def.model), `tower:${def.model}`, { cloneMaterials: this.isGhost })
+    // Every tower gets its own materials. Tier glow and the ghost wash are
+    // per-tower effects, and writing either onto a cached shared material
+    // would change every tower built from the same model.
+    this.model = buildModel(towerModel(def.model), `tower:${def.model}`, { cloneMaterials: true })
     if (this.isGhost) applyGhostLook(this.model)
     this.group.add(this.model)
     this.sizeMult = TIER_SCALE[this.level - 1]
     this.buildT = 0
+    this.applyTierPresence()
     if (this.isBarracks) {
       if (initial) this.pickDefaultRally(world)
       this.respawnAllSoldiers(world)

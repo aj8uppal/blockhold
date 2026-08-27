@@ -237,9 +237,27 @@ export class Game implements World {
   }
 
   /** endless difficulty ramp; applies to every spawn, including brood/summons */
+  /**
+   * The Long Night's escalation.
+   *
+   * The enemy pool caps at wave 16 and group counts cap at 18, so past wave 20
+   * the only things still moving were counts and HP - quantity inflation with
+   * no new tactical problem. HP still climbs, but every tenth wave now also
+   * hardens the horde: armor and resistance creep up in bands, so a defense
+   * that never changes its damage types stops working even though it is
+   * killing the same creatures.
+   */
   private endlessHpScale(): number {
     if (!this.isEndless || !this.waves) return 1
-    return 1 + Math.max(0, this.waves.waveIndex - 6) * 0.035
+    const w = this.waves.waveIndex
+    // compounding rather than linear, so wave 80 is genuinely a wall
+    return (1 + Math.max(0, w - 6) * 0.035) * (1 + Math.max(0, w - 30) * 0.012)
+  }
+
+  /** deep-endless hardening: 0 until wave 20, then bands of armor/resist */
+  private endlessToughness(): number {
+    if (!this.isEndless || !this.waves) return 0
+    return Math.min(0.35, Math.max(0, Math.floor((this.waves.waveIndex - 20) / 10)) * 0.07)
   }
 
   spawnEnemyAt(id: string, laneIndex: number, dist: number, opts: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean } = {}): void {
@@ -263,6 +281,7 @@ export class Game implements World {
     const elite = (opts.eliteRoll ?? false) && !def.boss && simChance(eliteChance)
     const e = new Enemy(def, this.lanes[laneIndex], laneIndex, dist, {
       hpMult: DIFFICULTIES[this.difficulty].enemyHp * (surged ? 1.3 : 1) * (opts.hpScale ?? this.endlessHpScale()),
+      toughness: this.endlessToughness(),
       speedMult: surged ? 1.12 : 1,
       elite,
       surged,

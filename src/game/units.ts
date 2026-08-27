@@ -9,6 +9,9 @@ import { clamp, lerpAngle, randRange, simRandom } from '../core/utils.ts'
 import { CUTTING_SLOW, CUTTING_VULN } from './earthworks.ts'
 import { HP_BAR_NAME } from './debris.ts'
 
+/** how often a boss throws its blockers off */
+export const BOSS_SWEEP_INTERVAL = 5.5
+
 export const enemyModelFactories: Record<string, () => VoxModel> = {
   husk: units.huskModel,
   sprinter: units.sprinterModel,
@@ -116,6 +119,8 @@ export interface EnemySpawnOpts {
   waveTag?: number
   /** summoned while the summoner lives: no bounty/shards/XP (anti-farming) */
   noReward?: boolean
+  /** deep-endless hardening added to armor and magic resistance */
+  toughness?: number
 }
 
 const ELITE_TINT = 0x9f3aff
@@ -151,6 +156,8 @@ export class Enemy {
   private lastHitForce = 1
   /** down inside a player-dug cutting */
   private inCutting = false
+  /** bosses periodically clear whoever is holding them */
+  private sweepTimer = BOSS_SWEEP_INTERVAL
   private hitCount = 0
   /** hexling: the tower this imp is perched on, silencing */
   hexTarget: Tower | null = null
@@ -176,8 +183,11 @@ export class Enemy {
     this.speedMult = opts.speedMult ?? 1
     const hpMult = (opts.hpMult ?? 1) * (this.elite ? 1.9 : 1)
     this.hp = this.maxHp = Math.round(def.hp * hpMult)
-    this.armor = def.armor
-    this.magicResistNow = def.magicResist
+    // deep-endless hardening: the same creatures, but progressively harder to
+    // hurt, so one damage type stops being an answer forever
+    const tough = opts.toughness ?? 0
+    this.armor = Math.min(0.8, def.armor + tough)
+    this.magicResistNow = Math.min(0.8, def.magicResist + tough)
     this.dist = startDist
     this.offset = randRange(-0.27, 0.27)
     this.attackTimer = def.attackInterval * simRandom()
@@ -506,6 +516,29 @@ export class Enemy {
     const engaged = this.blockers.some(s => s.alive && s.group.position.distanceTo(this.pos) < 0.62)
     this.blockers = this.blockers.filter(s => s.alive && s.target === this)
 
+    // A boss held forever by one blocker is not a fight, it is a lock. The
+    // Juggernaut could be soloed by a single Paladin because nothing it does
+    // ever breaks a block. Bosses now sweep: periodically they hurl their
+    // blockers clear and keep walking, so soldiers buy time rather than
+    // replacing the defense.
+    if (this.def.boss && engaged && !stunned) {
+      this.sweepTimer -= dt
+      if (this.sweepTimer <= 0) {
+        this.sweepTimer = BOSS_SWEEP_INTERVAL
+        for (const s of this.blockers) {
+          if (!s.alive) continue
+          s.takeDamage(randRange(this.def.attackDamage[0] * 1.6, this.def.attackDamage[1] * 1.8), world)
+          s.knockBack(this.pos, world)
+        }
+        this.releaseBlockers()
+        world.particles.explosion(this.pos.x, this.pos.y + 0.2, this.pos.z, 0.8)
+        world.shake(0.14)
+        world.impact('heavy')
+        world.floater(this.pos.x, this.pos.y + this.barY, this.pos.z, 'Swept aside!', 'crit')
+        return
+      }
+    }
+
     if (engaged && !stunned) {
       const target = this.blockers.find(s => s.alive)
       if (target) {
@@ -714,6 +747,8 @@ export class Soldier {
   private strikeT = 0
   private hitCount = 0
   private healPulseTimer = 0
+  /** world time before which this soldier cannot take a new block */
+  reengageAt = 0
   private animT = Math.random() * 10
   private flash = 0
   private yaw = 0
@@ -769,6 +804,19 @@ export class Soldier {
     this.group.visible = false
   }
 
+  /** thrown clear by a boss sweep: pushed back, and briefly unable to re-block */
+  knockBack(from: THREE.Vector3, world: World): void {
+    if (!this.alive) return
+    const dx = this.group.position.x - from.x
+    const dz = this.group.position.z - from.z
+    const len = Math.hypot(dx, dz) || 1
+    this.group.position.x += (dx / len) * 0.9
+    this.group.position.z += (dz / len) * 0.9
+    this.target = null
+    this.reengageAt = world.time + 1.4
+    world.particles.hitSpark(this.group.position.x, this.group.position.y + 0.4, this.group.position.z, 0xffd24a)
+  }
+
   revive(spawnPos: THREE.Vector3): void {
     this.dead = false
     this.musterConsumed = false
@@ -812,7 +860,13 @@ export class Soldier {
             healed = true
           }
         }
-        if (healed) world.sfx('heal', 0.5)
+        if (healed) {
+          world.sfx('heal', 0.5)
+          world.particles.healRing(
+            this.group.position.x, this.group.position.y, this.group.position.z,
+            this.def.healPulse.radius,
+          )
+        }
       }
     }
 
@@ -822,7 +876,9 @@ export class Soldier {
       if (bi >= 0) this.target.blockers.splice(bi, 1)
       this.target = null
     }
-    if (!this.target) {
+    // a soldier just thrown clear by a boss needs a beat before it can grab on
+    // again, or the sweep changes nothing
+    if (!this.target && world.time >= this.reengageAt) {
       let best: Enemy | null = null
       let bestScore = Infinity
       for (const e of world.enemies) {
