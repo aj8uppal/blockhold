@@ -58,6 +58,29 @@ export const THEMES: Record<ThemeId, ThemeColors> = {
     skyTop: 0x181228, skyBottom: 0x6f4a8f, fog: 0x584a70,
     sunColor: 0xd8c9ff, sunIntensity: 1.9, hemiSky: 0x8f7ab8, hemiGround: 0x453e58, ambient: 0.36,
   },
+  // cold cliff country: pale stone terraces over dark pine, lit hard from a
+  // low sun so the height difference casts and reads
+  highland: {
+    grass: 0x6f8f5e, grassAlt: 0x627f53, dirt: 0x6b6154, road: 0xc2b492, roadAlt: 0xb4a684,
+    waterDeep: 0x2f6a86, waterShallow: 0x5fa3bd, waterGlow: 0,
+    skyTop: 0x4d86b8, skyBottom: 0xd6e6ef, fog: 0xbcd2df,
+    sunColor: 0xfff0d4, sunIntensity: 2.5, hemiSky: 0xa8c8e4, hemiGround: 0x4e5344, ambient: 0.3,
+  },
+  // burnt ground under a lit sky: everything reads warm so the firestorm has
+  // to be hotter than its own world to stand out
+  ashfall: {
+    grass: 0x6b5a4a, grassAlt: 0x5e4e40, dirt: 0x463a30, road: 0x9c8a72, roadAlt: 0x8f7a63,
+    waterDeep: 0xd8401a, waterShallow: 0xff8a3c, waterGlow: 1,
+    skyTop: 0x3f1c14, skyBottom: 0xd8703c, fog: 0x8a4a30,
+    sunColor: 0xffb070, sunIntensity: 2.3, hemiSky: 0xd8905a, hemiGround: 0x4a382c, ambient: 0.38,
+  },
+  // a drowned coast, where the roads themselves are the thing that changes
+  tidal: {
+    grass: 0x5f8f7a, grassAlt: 0x527f6c, dirt: 0x4a5c52, road: 0xc8b98f, roadAlt: 0xb9aa80,
+    waterDeep: 0x1d5a6e, waterShallow: 0x3f97a8, waterGlow: 0,
+    skyTop: 0x2c5f74, skyBottom: 0xbfe0e0, fog: 0x9cc4c4,
+    sunColor: 0xe8f4e0, sunIntensity: 2.1, hemiSky: 0x9fd0cf, hemiGround: 0x445048, ambient: 0.34,
+  },
 }
 
 export interface PlotInfo {

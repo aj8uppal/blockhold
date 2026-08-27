@@ -122,7 +122,7 @@ export interface WaveDef {
   surge?: boolean
 }
 
-export type ThemeId = 'forest' | 'winter' | 'ember' | 'swamp' | 'void'
+export type ThemeId = 'forest' | 'winter' | 'ember' | 'swamp' | 'void' | 'highland' | 'ashfall' | 'tidal'
 
 /** large scenery that breaks the horizon and gives a board its character */
 export type LandmarkKind =

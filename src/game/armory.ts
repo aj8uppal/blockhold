@@ -19,17 +19,21 @@ export const ARMORY_TRACKS: ArmoryTrack[] = [
   { id: 'bulwark', icon: 'castle', name: 'Gate Ward', desc: 'The first enemy to reach the gate each battle costs you nothing.', tierCosts: [4] },
   { id: 'secondwind', icon: 'respawn', name: 'Second Wind', desc: 'Your hero returns from the field in half the time.', tierCosts: [3] },
   { id: 'comet', icon: 'meteor', name: 'Comet Calling', desc: 'Meteor Storm recharges 20% faster and calls one extra meteor.', tierCosts: [3] },
-  { id: 'runesmith', icon: 'rune', name: 'Runesmith', desc: 'Road traps re-arm 20% faster per tier.', tierCosts: [1, 2] },
-  { id: 'coffers', icon: 'chest', name: 'Royal Coffers', desc: 'Begin every battle with +40 gold per tier.', tierCosts: [1, 2] },
-  { id: 'prospector', icon: 'gem', name: 'Prospector', desc: 'Begin every battle with +3 shards per tier.', tierCosts: [1, 2] },
-  { id: 'drill', icon: 'shield', name: 'Drill Sergeants', desc: 'Barracks soldiers and reinforcements gain +15% health per tier.', tierCosts: [1, 2] },
+  { id: 'runesmith', icon: 'rune', name: 'Runesmith', desc: 'Road traps re-arm 20% faster per tier.', tierCosts: [1, 2, 3] },
+  { id: 'coffers', icon: 'chest', name: 'Royal Coffers', desc: 'Begin every battle with +40 gold per tier.', tierCosts: [1, 2, 3] },
+  { id: 'prospector', icon: 'gem', name: 'Prospector', desc: 'Begin every battle with +3 shards per tier.', tierCosts: [1, 2, 3] },
+  { id: 'drill', icon: 'shield', name: 'Drill Sergeants', desc: 'Barracks soldiers and reinforcements gain +15% health per tier.', tierCosts: [1, 2, 3] },
 ]
 
 /**
- * The campaign yields exactly 21 stars. The board deliberately costs 30, so
- * finishing it no longer buys everything and the free respec has a job:
- * the old board cost exactly 21 too, which closed the loop the moment a
- * player finished and made the respec pointless.
+ * The board must always cost more than the campaign can pay for, or finishing
+ * it buys everything and the free respec has nothing to do.
+ *
+ * Ten maps yield thirty stars. The board was priced at twenty-five for a
+ * seven-map campaign, so the three new battlefields would have handed players
+ * the whole thing with change to spare; the four scaling tracks gained a third
+ * tier rather than the prices being inflated, which keeps the choice live and
+ * gives a longer campaign something left to buy.
  */
 export const ARMORY_TOTAL_COST = ARMORY_TRACKS.reduce((sum, t) => sum + t.tierCosts.reduce((a, b) => a + b, 0), 0)
 

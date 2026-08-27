@@ -43,15 +43,6 @@ export const HERO_DEFS: Record<HeroId, HeroDef> = {
  * signature ability, and self-respawn.
  */
 export class Hero extends Soldier {
-  /**
-   * The hero's height is composed, not written by whichever animation happens
-   * to run. `baseY` is the ground under their feet and `bobY` is the walk
-   * bounce; update() adds them. Letting the animations set `position.y`
-   * directly meant a melee hero standing still ran no animation at all, so he
-   * kept whatever height he last had and stood buried in any raised ground.
-   */
-  private baseY = 0
-  private bobY = 0
 
   moveOrder: THREE.Vector3 | null = null
   private waypoints: THREE.Vector3[] = []
@@ -188,9 +179,6 @@ export class Hero extends Soldier {
       this.target = null
     }
     super.update(dt, world)
-    // raised ground is scenery the hero stands on, not something to sink into
-    this.baseY = world.groundY(this.group.position.x, this.group.position.z)
-    this.group.position.y = this.baseY + this.bobY
   }
 
   /**

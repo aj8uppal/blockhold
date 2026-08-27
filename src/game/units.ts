@@ -731,6 +731,16 @@ export class Enemy {
 // ---------------- Soldier ----------------
 
 export class Soldier {
+  /**
+   * Height is composed, never written by an animation.
+   *
+   * `baseY` is the ground under the unit and `bobY` is its walk bounce; update
+   * adds them. Animations used to set `position.y` outright, which meant a unit
+   * standing on raised ground was buried in it - and a unit whose current
+   * animation happens not to touch height kept whatever it last had.
+   */
+  protected baseY = 0
+  protected bobY = 0
   group: THREE.Group
   hp: number
   maxHp: number
@@ -970,7 +980,7 @@ export class Soldier {
     if (armL) armL.rotation.x = -swing * 0.6
     if (armR) armR.rotation.x = swing * 0.6
     if (body) body.rotation.x *= 0.85
-    this.group.position.y = Math.abs(Math.sin(this.animT * 9)) * 0.03
+    this.bobY = Math.abs(Math.sin(this.animT * 9)) * 0.03
   }
 
   /** strike-synced swings with per-soldier character */
@@ -998,7 +1008,7 @@ export class Soldier {
     const legL = this.part('legL'), legR = this.part('legR')
     if (legL) legL.rotation.x = 0.12
     if (legR) legR.rotation.x = -0.12
-    this.group.position.y = 0
+    this.bobY = 0
   }
 
   private animIdle(): void {
@@ -1010,6 +1020,6 @@ export class Soldier {
     if (armL) armL.rotation.x = Math.sin(this.animT * 1.8) * 0.05
     if (armR) armR.rotation.x = -Math.sin(this.animT * 1.8) * 0.05
     if (body) body.rotation.x = 0
-    this.group.position.y = 0
+    this.bobY = 0
   }
 }

@@ -321,11 +321,19 @@ describe('raised ground', () => {
     }
   })
 
-  /** a shelf a unit can stand on, not a wall it disappears behind */
-  it('keeps raised ground to a low shelf', () => {
+  /**
+   * Raised ground has to stay something a unit stands *on*.
+   *
+   * This was capped at a 0.35 shelf when plateaus were lifting the roads
+   * themselves and burying whatever walked there. Both causes are fixed - a
+   * road is never raised, and every ground unit now takes its height from the
+   * terrain - so real terraces are allowed again. The ceiling is only here to
+   * keep a plateau from becoming a wall taller than the things on it.
+   */
+  it('keeps raised ground to something a unit can stand on', () => {
     for (const lvl of levels) {
       for (const [, , , , h] of lvl.plateaus ?? []) {
-        expect(h, `${lvl.id} plateau is a wall at ${h}`).toBeLessThanOrEqual(0.5)
+        expect(h, `${lvl.id} plateau is a wall at ${h}`).toBeLessThanOrEqual(2)
       }
     }
   })

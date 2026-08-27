@@ -375,6 +375,13 @@ button:disabled { cursor: not-allowed; }
   100% { opacity: 0; transform: translateX(-50%) translateY(-16px) scale(0.98); }
 }
 
+/* The level intro and the onboarding coach mark are both bottom-centred and
+   sat 20px apart, so a three-line intro drew straight through the coach mark.
+   The toast steps up out of the way whenever a coach mark is on screen. */
+#hud:has(.coach-mark:not(.hidden)) .toast { bottom: 166px; }
+@media (max-height: 560px) {
+  #hud:has(.coach-mark:not(.hidden)) .toast { bottom: 138px; }
+}
 .toast {
   position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%);
   max-width: 520px;
