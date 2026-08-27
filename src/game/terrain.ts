@@ -109,6 +109,11 @@ export class Terrain {
     return 'grass'
   }
 
+  /** is this cell part of the map's own raised ground? */
+  isOnHill(c: number, r: number): boolean {
+    return inRects(c, r, this.level.hills)
+  }
+
   cellTop(c: number, r: number): number {
     const k = this.cellKind(c, r)
     return k === 'hill' ? 0.5 : k === 'water' ? -0.4 : 0

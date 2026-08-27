@@ -66,11 +66,34 @@ export interface EarthworkSpot {
 export class Earthwork {
   group: THREE.Group
   def: EarthworkDef
+  /** the reach ring, shown while the earthwork is selected */
+  private ring: THREE.Mesh | null = null
 
   constructor(readonly kind: EarthworkKind, readonly spot: EarthworkSpot) {
     this.def = EARTHWORK_DEFS[kind]
     this.group = buildModel(earthworkModel(kind), `earthwork:${kind}`, { receiveShadow: true })
     this.group.position.copy(spot.pos)
+  }
+
+  /**
+   * A rampart with no visible reach was impossible to reason about: the
+   * player could not tell which towers it was helping, or whether it was
+   * doing anything at all.
+   */
+  showReach(on: boolean): void {
+    if (this.kind !== 'rampart') return
+    if (!this.ring) {
+      const geo = new THREE.RingGeometry(RAMPART_REACH - 0.06, RAMPART_REACH, 48)
+      geo.rotateX(-Math.PI / 2)
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xe8c24a, transparent: true, opacity: 0.55, toneMapped: false, depthWrite: false,
+      })
+      this.ring = new THREE.Mesh(geo, mat)
+      this.ring.position.y = 0.09
+      this.ring.renderOrder = 4
+      this.group.add(this.ring)
+    }
+    this.ring.visible = on
   }
 
   dispose(): void {

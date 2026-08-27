@@ -12,7 +12,7 @@ import { towerTrees } from '../game/towerDefs.ts'
 import { TARGET_POLICY_LABEL, REACTIONS } from '../game/towers.ts'
 import { isCoarsePointer } from '../core/utils.ts'
 import { isPortalMode } from '../core/platform.ts'
-import { EARTHWORK_DEFS, type EarthworkSpot } from '../game/earthworks.ts'
+import { EARTHWORK_DEFS, type EarthworkSpot, type Earthwork } from '../game/earthworks.ts'
 import { beatIndex, BEATS_PER_BAR } from '../game/beat.ts'
 import { traitsOf, counterFor } from '../game/dossier.ts'
 import type { EnemyDef } from '../game/types.ts'
@@ -533,6 +533,32 @@ export class HUD {
     const tip = el('div', 'build-tooltip hidden', this.buildMenu)
     tip.id = 'build-tip'
     this.placeMenu(x, y)
+  }
+
+  /** what an existing earthwork is doing, and what it is doing it to */
+  openEarthworkPanel(work: Earthwork, towersHelped: number): void {
+    this.closeTowerPanel()
+    this.currentTower = null
+    const p = this.towerPanel
+    p.innerHTML = ''
+    p.classList.remove('hidden')
+    this.currentTrap = null
+    this.currentHero = null
+    this.menuOpenedAt = performance.now()
+    const head = el('div', 'tp-head', p)
+    el('div', 'tp-icon', head, icon(work.def.icon))
+    const t = el('div', 'tp-title', head)
+    el('div', 'tp-name', t, work.def.name)
+    el('div', 'tp-level', t, work.kind === 'rampart' ? 'High ground' : 'Sunken road')
+    const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    close.onclick = () => this.game.clearSelection()
+
+    el('div', 'tp-traits', p, work.def.description)
+    if (work.kind === 'rampart') {
+      el('div', 'tp-traits', p, towersHelped > 0
+        ? `${icon('range')} Lifting <b>${towersHelped}</b> tower${towersHelped === 1 ? '' : 's'} onto the high ground.`
+        : `${icon('range')} No tower is close enough to use it yet — build inside the ring.`)
+    }
   }
 
   // ---------------- trap menu & panel ----------------

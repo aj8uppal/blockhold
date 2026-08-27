@@ -108,6 +108,7 @@ export class Game implements World {
   selectedPlot: PlotInfo | null = null
   selectedTrapSpot: TrapSpotInfo | null = null
   selectedEarthSpot: EarthworkSpot | null = null
+  selectedEarthwork: Earthwork | null = null
   hero: Hero | null = null
   heroSelected = false
   targetMode: TargetMode = null
@@ -1105,14 +1106,28 @@ export class Game implements World {
     return this.raycaster.intersectObject(this.hero.group, true).length > 0
   }
 
-  selectHero(center = false): void {
+  /**
+   * Select the hero so the next tap on the ground is a move order.
+   *
+   * The hero button used to drag the camera to wherever the hero was standing,
+   * which is backwards: the usual reason to select the hero is to bring them
+   * to what you are already looking at. The camera stays put, and a double tap
+   * on the button goes to them if that is genuinely what you wanted.
+   */
+  selectHero(fromButton = false): void {
     if (!this.hero || this.hero.dead) { if (this.hero?.dead) this.sfx('error'); return }
+    const wasSelected = this.heroSelected
     this.clearSelection()
     this.heroSelected = true
     this.heroRing.visible = true
     this.hud.openHeroPanel(this.hero)
-    if (center) {
+    // second press of the button: now go and look at them
+    if (fromButton && wasSelected) {
+      this.engine.cancelCinematic()
       this.engine.focusOn(this.hero.group.position.x, this.hero.group.position.z)
+      this.hud.showToast('Camera moved to your hero', 1.6)
+    } else if (fromButton) {
+      this.hud.showToast('Tap the ground to send your hero there', 2.2)
     }
     this.sfx('click')
   }
@@ -1134,6 +1149,8 @@ export class Game implements World {
     if (trapSpot) { this.selectTrapSpot(trapSpot, sx, sy); return }
     const earthSpot = this.pickEarthworkSpot(sx, sy)
     if (earthSpot) { this.selectEarthworkSpot(earthSpot, sx, sy); return }
+    const built = this.pickEarthwork(sx, sy)
+    if (built) { this.selectBuiltEarthwork(built); return }
     const trap = this.pickTrap(sx, sy)
     if (trap) {
       this.clearSelection()
@@ -1294,6 +1311,7 @@ export class Game implements World {
     this.selectedPlot = null
     this.selectedTrapSpot = null
     this.selectedEarthSpot = null
+    if (this.selectedEarthwork) { this.selectedEarthwork.showReach(false); this.selectedEarthwork = null }
     this.heroSelected = false
     if (this.targetMode === 'rally') {
       // rally mode has no owner once its tower is deselected
@@ -1408,12 +1426,18 @@ export class Game implements World {
     this.clearSelection()
   }
 
-  /** which towers are standing next to raised earth */
+  /**
+   * Which towers are shooting from height: next to a rampart the player
+   * raised, or standing on the map's own high ground. A plot sitting on a
+   * visibly raised shelf that behaved exactly like flat ground was reading as
+   * a bug rather than scenery.
+   */
   recomputeHighGround(): void {
     for (const t of this.towers) {
-      t.onHighGround = this.earthworks.some(
+      const nearRampart = this.earthworks.some(
         w => w.kind === 'rampart' && w.group.position.distanceTo(t.pos) <= RAMPART_REACH,
       )
+      t.onHighGround = nearRampart || this.terrain?.isOnHill(t.plot.cell[0], t.plot.cell[1]) === true
     }
   }
 
@@ -1424,6 +1448,36 @@ export class Game implements World {
       if (Math.hypot(w.group.position.x - x, w.group.position.z - z) < 0.55) return true
     }
     return false
+  }
+
+  /** an earthwork already standing, so its effect can be inspected */
+  pickEarthwork(sx: number, sy: number): Earthwork | null {
+    const g = this.groundPoint(sx, sy)
+    if (!g) return null
+    for (const w of this.earthworks) {
+      if (Math.hypot(g.x - w.group.position.x, g.z - w.group.position.z) < 0.55) return w
+    }
+    return null
+  }
+
+  selectBuiltEarthwork(work: Earthwork): void {
+    this.clearSelection()
+    this.selectedEarthwork = work
+    work.showReach(true)
+    // light up the towers it is actually helping, which is the whole question
+    if (work.kind === 'rampart') {
+      for (const t of this.towers) {
+        if (t.onHighGround && work.group.position.distanceTo(t.pos) <= RAMPART_REACH) {
+          this.particles.healSparkle(t.pos.x, t.pos.y + 0.8, t.pos.z)
+        }
+      }
+    }
+    this.selectRing.visible = true
+    this.selectRing.position.set(work.group.position.x, 0.1, work.group.position.z)
+    this.hud.openEarthworkPanel(work, this.towers.filter(
+      t => work.kind === 'rampart' && t.onHighGround && work.group.position.distanceTo(t.pos) <= RAMPART_REACH,
+    ).length)
+    this.sfx('click')
   }
 
   buildTrap(kind: TrapKind): void {
