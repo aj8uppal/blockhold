@@ -640,6 +640,29 @@ export class Game implements World {
 
   private holdGroup: THREE.Group | null = null
 
+  /** dev-only: pose a diorama in an empty scene, for capturing art */
+  showDiorama(spec: {
+    build: () => THREE.Group
+    camera: { dist: number, yaw: number, pitch: number, target: [number, number, number] }
+    mood: { sky: number, ambient: number, key: number, keyIntensity: number, keyDir?: [number, number, number], fill?: number }
+  }): void {
+    this.disposeLevel()
+    this.hud.setChrome(false)
+    document.getElementById('screens')?.classList.add('hidden')
+    const g = spec.build()
+    this.dioramaGroup = g
+    this.engine.scene.add(g)
+    this.engine.setDioramaMood(spec.mood)
+    const [tx, ty, tz] = spec.camera.target
+    this.engine.camTargetGoal.set(tx, ty, tz)
+    this.engine.camTarget.set(tx, ty, tz)
+    this.engine.distGoal = this.engine.dist = spec.camera.dist
+    this.engine.yawGoal = this.engine.yaw = spec.camera.yaw
+    this.engine.pitchGoal = this.engine.pitch = spec.camera.pitch
+  }
+
+  private dioramaGroup: THREE.Group | null = null
+
   startLevel(
     level: LevelDef,
     difficulty: Difficulty = 'normal',
@@ -916,6 +939,11 @@ export class Game implements World {
     this.hazard?.dispose(this)
     this.hazard = null
     this.removeLanePreview()
+    if (this.dioramaGroup) {
+      this.engine.scene.remove(this.dioramaGroup)
+      disposeClonedMaterials(this.dioramaGroup)
+      this.dioramaGroup = null
+    }
     if (this.holdGroup) {
       this.engine.scene.remove(this.holdGroup)
       disposeClonedMaterials(this.holdGroup)

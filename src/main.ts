@@ -169,7 +169,16 @@ if (challengeSeed !== null) {
 }
 
 // dev/testing handle
-;(window as unknown as Record<string, unknown>).vg = { game, hud, screens }
+;(window as unknown as Record<string, unknown>).vg = {
+  game, hud, screens,
+  /** dev: stage a voxel diorama for capture. Not reachable in normal play. */
+  async diorama(id: string) {
+    const { dioramaById } = await import('./voxel/dioramas.ts')
+    const spec = dioramaById(id as never)
+    game.showDiorama(spec)
+    return { id: spec.id, title: spec.title, use: spec.use }
+  },
+}
 
 // PWA: offline shell + installability (production only, so dev stays live-reloadable)
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {

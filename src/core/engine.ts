@@ -373,6 +373,34 @@ export class Engine {
     this.camTarget.copy(this.camTargetGoal)
   }
 
+  /**
+   * Dev-only: light a diorama with its own mood.
+   *
+   * This has to go through the same sky the themes use - setting
+   * scene.background alone does nothing, because applyTheme builds a gradient
+   * dome that sits in front of it.
+   */
+  setDioramaMood(m: { sky: number, ambient: number, key: number, keyIntensity: number, keyDir?: [number, number, number], fill?: number }): void {
+    const top = new THREE.Color(m.sky)
+    const bottom = new THREE.Color(m.sky).lerp(new THREE.Color(m.ambient), 0.55)
+    this.buildSky({ skyTop: top.getHex(), skyBottom: bottom.getHex() } as never)
+    this.scene.background = new THREE.Color(m.sky)
+    this.scene.fog = new THREE.Fog(bottom.getHex(), 30, 90)
+    this.hemi.color.setHex(m.ambient)
+    this.hemi.groundColor.setHex(m.ambient)
+    this.hemi.intensity = 0.9
+    // a dark subject lit from behind is a silhouette, not a portrait, so each
+    // scene says where its key comes from
+    this.ambient.intensity = m.fill ?? 0.55
+    this.sun.color.setHex(m.key)
+    this.sun.intensity = m.keyIntensity
+    const [kx, ky, kz] = m.keyDir ?? [9, 14, 7]
+    this.sun.position.set(kx, ky, kz)
+    const sc = this.sun.shadow.camera
+    sc.left = -18; sc.right = 18; sc.top = 18; sc.bottom = -18
+    sc.updateProjectionMatrix()
+  }
+
   addShake(strength: number): void {
     // CSS reduced-motion never reached the camera or the effects; a player who
     // asked their system for less movement was still getting shaken
