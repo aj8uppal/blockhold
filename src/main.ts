@@ -10,7 +10,7 @@ import { canRecordTape, downloadTape, tapeFileExtension } from './core/capture.t
 import { Game } from './game/game.ts'
 import { HUD } from './ui/hud.ts'
 import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
-import { levelById } from './game/levels.ts'
+import { levelById, levels } from './game/levels.ts'
 import { audio } from './core/audio.ts'
 import './style.css'
 
@@ -18,6 +18,16 @@ const canvas = document.getElementById('game') as HTMLCanvasElement
 const game = new Game(canvas)
 const hud = new HUD(game)
 const screens = new Screens(() => game.save)
+
+/**
+ * `?unlock` opens the whole campaign, for looking at the later boards without
+ * playing six maps to reach them. Dev build only - it is compiled out of a
+ * production bundle, so it can never become a way to skip the game.
+ */
+if (import.meta.env.DEV && new URLSearchParams(location.search).has('unlock')) {
+  game.save.unlocked = levels.length
+  writeSave(game.save)
+}
 
 // ---- fullscreen (Android/desktop have the API; iOS Safari relies on Add to Home Screen) ----
 
