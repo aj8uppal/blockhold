@@ -11,11 +11,14 @@ import { Earthwork, EARTHWORK_DEFS, RAMPART_REACH, type EarthworkSpot } from './
 import { Hazard, createHazard } from './hazards.ts'
 import { enemyDef } from './enemyDefs.ts'
 import { towerTrees, SELL_REFUND } from './towerDefs.ts'
+import { tallestLandmark } from '../voxel/models_env.ts'
 import { reactionFor, REACTION_RADIUS } from './towers.ts'
 import { buildPaths, LanePath } from './path.ts'
 import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
 import { holdModel, holdPieces, holdCacheKey } from './hold.ts'
 import { isNotable } from './dossier.ts'
+import { campaignScale } from './balanceModel.ts'
+import { OnboardingDirector } from './onboarding.ts'
 import { HERO_RANK_MAX, heroRankCost } from './hero.ts'
 import { levels, generateEndlessWaves } from './levels.ts'
 import { Terrain, PlotInfo, THEMES } from './terrain.ts'
@@ -255,6 +258,18 @@ export class Game implements World {
     return (1 + Math.max(0, w - 6) * 0.035) * (1 + Math.max(0, w - 30) * 0.012)
   }
 
+  /**
+   * Campaign escalation. Measured across all seven maps, every one front-loaded
+   * its tension and then decayed to roughly a third of it - the finale of the
+   * 28-wave map was easier than its opening, because affordable damage grows
+   * far faster than the authored waves do. Enemies harden as a map goes on so
+   * the curve stays a curve.
+   */
+  private campaignHpScale(): number {
+    if (this.isEndless || this.isDaily || !this.waves || !this.level) return 1
+    return campaignScale(Math.max(0, this.waves.waveIndex), this.level.waves.length)
+  }
+
   /** deep-endless hardening: 0 until wave 20, then bands of armor/resist */
   private endlessToughness(): number {
     if (!this.isEndless || !this.waves) return 0
@@ -281,7 +296,8 @@ export class Game implements World {
     const eliteChance = this.difficulty === 'veteran' ? 0.12 : this.isEndless ? 0.08 : 0
     const elite = (opts.eliteRoll ?? false) && !def.boss && simChance(eliteChance)
     const e = new Enemy(def, this.lanes[laneIndex], laneIndex, dist, {
-      hpMult: DIFFICULTIES[this.difficulty].enemyHp * (surged ? 1.3 : 1) * (opts.hpScale ?? this.endlessHpScale()),
+      hpMult: DIFFICULTIES[this.difficulty].enemyHp * (surged ? 1.3 : 1)
+        * (opts.hpScale ?? this.endlessHpScale()) * this.campaignHpScale(),
       toughness: this.endlessToughness(),
       speedMult: surged ? 1.12 : 1,
       elite,
@@ -358,6 +374,9 @@ export class Game implements World {
    */
   private checkpointT = 0
   private firstBuildAt = -1
+  /** true once the player has issued a hero move order, for onboarding */
+  heroHasMoved = false
+  private onboarding: OnboardingDirector | null = null
   /** per-wave result, in order, for the shareable daily block */
   waveOutcomes: ('held' | 'leaked')[] = []
   isDaily = false
@@ -424,6 +443,28 @@ export class Game implements World {
       livesRatio: maxLives > 0 ? this.lives / maxLives : 1,
       phase: this.phase,
     })
+  }
+
+  private updateOnboarding(dt: number): void {
+    const o = this.onboarding
+    if (!o) return
+    if (o.finished) {
+      this.onboarding = null
+      this.save.taughtBasics = true
+      writeSave(this.save)
+      this.hud.setCoachMark(null)
+      this.terrain?.pulsePlots(false)
+      return
+    }
+    const prompt = o.update(this, dt)
+    this.hud.setCoachMark(prompt)
+    this.terrain?.pulsePlots(!!prompt && !!o.current?.pulsePlots)
+  }
+
+  /** the player gave up on being taught */
+  skipOnboarding(): void {
+    this.onboarding?.skip()
+    this.updateOnboarding(0)
   }
 
   get surgeActive(): boolean {
@@ -600,6 +641,29 @@ export class Game implements World {
 
   private holdGroup: THREE.Group | null = null
 
+  /** dev-only: pose a diorama in an empty scene, for capturing art */
+  showDiorama(spec: {
+    build: () => THREE.Group
+    camera: { dist: number, yaw: number, pitch: number, target: [number, number, number] }
+    mood: { sky: number, ambient: number, key: number, keyIntensity: number, keyDir?: [number, number, number], fill?: number }
+  }): void {
+    this.disposeLevel()
+    this.hud.setChrome(false)
+    document.getElementById('screens')?.classList.add('hidden')
+    const g = spec.build()
+    this.dioramaGroup = g
+    this.engine.scene.add(g)
+    this.engine.setDioramaMood(spec.mood)
+    const [tx, ty, tz] = spec.camera.target
+    this.engine.camTargetGoal.set(tx, ty, tz)
+    this.engine.camTarget.set(tx, ty, tz)
+    this.engine.distGoal = this.engine.dist = spec.camera.dist
+    this.engine.yawGoal = this.engine.yaw = spec.camera.yaw
+    this.engine.pitchGoal = this.engine.pitch = spec.camera.pitch
+  }
+
+  private dioramaGroup: THREE.Group | null = null
+
   startLevel(
     level: LevelDef,
     difficulty: Difficulty = 'normal',
@@ -643,7 +707,8 @@ export class Game implements World {
     this.engine.scene.add(this.particles.group)
     this.engine.scene.add(this.rangeRing, this.upgradeRing, this.selectRing, this.targetRing, this.heroRing, this.heroGuardRing)
     this.engine.applyTheme(THEMES[level.theme], level.width, level.height)
-    this.engine.resetView(level.width, level.height)
+    this.engine.resetView(level.width, level.height,
+      tallestLandmark((level.landmarks ?? []).map(([, , k]) => k)))
 
     this.gold = level.startGold + 40 * armoryTier(this.save, 'coffers')
     this.shards = (level.startShards ?? 2) + 3 * armoryTier(this.save, 'prospector')
@@ -699,6 +764,10 @@ export class Game implements World {
       seed: this.runSeed, resumed: !!resume,
     })
     this.firstBuildAt = -1
+    this.heroHasMoved = false
+    // the guided opening runs once, on a player's very first battle
+    this.onboarding = (!this.save.taughtBasics && !this.isDaily && !this.isWatches)
+      ? new OnboardingDirector() : null
     if (this.isWatches) this.raiseGhosts()
     if (resume) this.applyCheckpoint(resume)
     else if (level.intro) this.hud.showToast(level.intro, 5)
@@ -867,11 +936,17 @@ export class Game implements World {
   }
 
   disposeLevel(): void {
+    this.engine.clearDioramaRim()
     audio.stopMusic()
     audio.setMusicState({ pressure: 0, surge: false, boss: false, livesRatio: 1, phase: 'idle' })
     this.hazard?.dispose(this)
     this.hazard = null
     this.removeLanePreview()
+    if (this.dioramaGroup) {
+      this.engine.scene.remove(this.dioramaGroup)
+      disposeClonedMaterials(this.dioramaGroup)
+      this.dioramaGroup = null
+    }
     if (this.holdGroup) {
       this.engine.scene.remove(this.holdGroup)
       disposeClonedMaterials(this.holdGroup)
@@ -999,8 +1074,23 @@ export class Game implements World {
   private lastNewWaveRecord = false
 
   /** end-of-battle summary for the result screens */
+  /**
+   * Waves the player actually survived.
+   *
+   * The end screen used to report `waveIndex + 1` as waves *held*, which
+   * counts the wave you died on - so falling on wave 19 was reported as
+   * holding 19. Reaching a wave and holding it are different numbers and the
+   * screen now says both.
+   */
+  private wavesCleared(): number {
+    if (!this.waves) return 0
+    return this.phase === 'victory' ? this.waves.totalWaves : this.waves.waveIndex
+  }
+
   battleStats(): {
     kills: number, gold: number, shards: number, wavesReached: number, totalWaves: number,
+    /** waves actually survived; the wave you die on is reached, not held */
+    wavesCleared: number,
     timeSec: number, heroLevel: number, endless: boolean, bestEndless: number,
     score: number, prevBestScore: number, newBestScore: boolean, newWaveRecord: boolean,
     perfectWaves: number, bestStreak: number, noleak: boolean,
@@ -1029,6 +1119,7 @@ export class Game implements World {
       gold: this.goldEarned,
       shards: this.shardsEarned,
       wavesReached: this.waves ? this.waves.waveIndex + 1 : 0,
+      wavesCleared: this.wavesCleared(),
       totalWaves: this.waves?.totalWaves ?? 0,
       timeSec: Math.round(this.time),
       heroLevel: this.hero?.level ?? 1,
@@ -1212,6 +1303,7 @@ export class Game implements World {
     if (enemy) {
       if (this.heroSelected && this.hero && !this.hero.dead) {
         this.hero.orderMove(enemy.pos.clone(), this)   // attack-move onto the target
+        this.heroHasMoved = true
       } else {
         this.hud.showEnemyTip(enemy, sx, sy)           // tap-to-inspect (touch has no hover)
       }
@@ -1221,6 +1313,7 @@ export class Game implements World {
       const g = this.groundPoint(sx, sy)
       if (g) {
         if (!this.hero.orderMove(g, this)) this.sfx('error')
+        else this.heroHasMoved = true
         return
       }
     }
@@ -1510,6 +1603,11 @@ export class Game implements World {
       )
       t.onHighGround = nearRampart || this.terrain?.isOnHill(t.plot.cell[0], t.plot.cell[1]) === true
     }
+  }
+
+  /** ground height under a world point, so a unit rests on raised ground */
+  groundY(x: number, z: number): number {
+    return this.terrain?.groundTopAt(x, z) ?? 0
   }
 
   /** a cutting slows and exposes whatever is down in it */
@@ -1820,6 +1918,7 @@ export class Game implements World {
         this.checkpointT = 0
         this.maybeCheckpoint()
         this.updateMusicState()
+        this.updateOnboarding(1)
       }
     }
 

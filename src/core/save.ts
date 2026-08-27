@@ -6,6 +6,8 @@ export interface SaveData {
   bestScore: Record<string, number>    // "levelId:difficulty|endless" -> best score
   medals: Record<string, string[]>     // level id -> earned medals (veteran, noleak)
   lastHero: string
+  /** the guided first battle has been played, so it never runs again */
+  taughtBasics: boolean
   /** enemy types the player has already been introduced to, so a dossier shows once ever */
   seenEnemies: string[]
   /** best result on the current Daily Hold; the daily never touches campaign progress */
@@ -35,7 +37,7 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
 }
 
 const DEFAULT_SAVE = (): SaveData =>
-  ({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestScore: {}, medals: {}, seenEnemies: [], lastHero: 'aldric', sfxMuted: false, musicMuted: false })
+  ({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestScore: {}, medals: {}, seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false })
 
 /** validate anything claiming to be a save; the same gate for disk and for imports */
 export function parseSave(d: unknown): SaveData | null {
@@ -82,6 +84,7 @@ export function parseSave(d: unknown): SaveData | null {
           medals,
           lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',
           dailyBest: parseDailyBest(o.dailyBest),
+          taughtBasics: !!o.taughtBasics,
           seenEnemies: Array.isArray(o.seenEnemies)
             ? o.seenEnemies.filter((x): x is string => typeof x === 'string' && x.length < 24).slice(0, 64)
             : [],

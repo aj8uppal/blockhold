@@ -521,13 +521,96 @@ export function berserkerModel(): VoxModel {
 export function reinforcementModel(): VoxModel {
   return humanoid({ skin: 0xd9a066, shirt: 0x7f8f5a, pants: 0x5c4a35, hair: 0x3d2f1f, weapon: 'spear', shield: 0x8a6a4a })
 }
+/**
+ * Hero detailing.
+ *
+ * A hero used the same `humanoid` silhouette as a militia with two or three
+ * boxes bolted on, which was survivable at the old 1.72-1.85 scale and stopped
+ * being so once heroes grew past the bosses: at that size the player is looking
+ * straight at a militia wearing a different palette. These layer real armour
+ * onto the same six parts and the same pivots, so the walk rig is untouched and
+ * only the block count goes up.
+ */
+
+/** full plate: the Bulwark reads as the heaviest thing on the field */
+function plateArmour(m: VoxModel, metal: number, trim: number, leather: number): VoxModel {
+  const { body, head, legL, legR, armL, armR } = m.parts
+  body.push(
+    // narrower than the torso on purpose: the shirt shows at the shoulders and
+    // flanks, so the hero keeps his colours instead of reading as a grey slab
+    box(0, 2.85, 0.08, 1.92, 1.42, 1.62, metal),     // cuirass over the tabard
+    box(0, 2.95, 0.9, 0.9, 1.05, 0.12, trim),        // heraldry plate
+    box(0, 2.02, 0.05, 2.14, 0.5, 1.58, metal),      // fauld
+    box(0, 3.48, 0, 2.05, 0.36, 1.4, trim),          // gorget
+    box(0, 1.72, 0, 2.56, 0.42, 1.6, leather),       // belt
+    box(0, 1.72, 0.84, 0.56, 0.42, 0.14, trim),      // buckle
+    box(-0.76, 1.36, 0.05, 0.9, 0.72, 1.52, metal),  // tassets
+    box(0.76, 1.36, 0.05, 0.9, 0.72, 1.52, metal),
+  )
+  // the helm is trim-coloured, so its guards must be too or the face reads broken
+  head.push(
+    box(-0.74, 4.46, 0.52, 0.34, 0.9, 0.85, trim),   // cheek guards
+    box(0.74, 4.46, 0.52, 0.34, 0.9, 0.85, trim),
+    box(0, 5.02, 0.86, 1.92, 0.3, 0.26, metal),      // brow band
+  )
+  for (const [arm, sx] of [[armL, -1], [armR, 1]] as const) {
+    arm.push(
+      box(sx * 1.62, 3.5, 0, 1.36, 0.72, 1.36, metal),   // pauldron
+      box(sx * 1.62, 3.88, 0, 1.16, 0.26, 1.16, trim),   // pauldron cap
+      box(sx * 1.55, 2.06, 0, 0.96, 0.76, 0.96, metal),  // bracer
+    )
+  }
+  for (const [leg, sx] of [[legL, -0.62], [legR, 0.62]] as const) {
+    leg.push(
+      box(sx, 0.72, 0, 1.14, 1.12, 1.14, metal),      // greave
+      box(sx, 1.22, 0.56, 0.96, 0.4, 0.34, trim),     // knee plate
+      box(sx, 0.13, 0.14, 1.2, 0.36, 1.42, leather),  // boot
+    )
+  }
+  return m
+}
+
+/** a layered shield: rim, boss and a cross, instead of one flat slab */
+function heraldicShield(m: VoxModel, face: number, trim: number): VoxModel {
+  const a = m.parts.armL
+  a.push(
+    box(-2.22, 3.78, 0.3, 0.34, 0.3, 1.96, trim),   // rim
+    box(-2.22, 1.42, 0.3, 0.34, 0.3, 1.96, trim),
+    box(-2.3, 2.6, 0.3, 0.2, 2.4, 0.24, trim),      // cross, upright
+    box(-2.3, 2.6, 0.3, 0.2, 0.26, 1.5, trim),      // cross, arms
+    box(-2.38, 2.6, 0.3, 0.22, 0.72, 0.72, face),   // boss
+  )
+  return m
+}
+
+/** a blade with a fuller, a guard and a pommel reads as a weapon, not a stick */
+function knightSword(m: VoxModel, steel: number, trim: number): VoxModel {
+  const a = m.parts.armR
+  a.push(
+    box(1.55, 3.1, 0.75, 0.12, 2.3, 0.32, steel),   // fuller
+    box(1.55, 4.42, 0.75, 0.2, 0.5, 0.2, steel),    // point
+    box(1.55, 1.56, 0.75, 0.44, 0.36, 0.44, trim),  // pommel
+    box(1.55, 1.72, 0.75, 0.3, 0.32, 0.3, 0x5a4028),// grip wrap
+  )
+  return m
+}
+
 export function heroModel(): VoxModel {
-  return humanoid({
+  const m = humanoid({
     skin: 0xd9a066, shirt: 0x3d5a8f, pants: 0x2d4066,
     helmet: 0xe8c95f, helmetCrest: 0x3d5a8f,
     weapon: 'sword', shield: 0x3d5a8f, shieldTrim: 0xe8c95f,
     tabard: 0xe8c95f, cape: 0x8f2f2f,
   })
+  plateArmour(m, 0xb9c2d0, 0xe8c95f, 0x6a4a2c)
+  heraldicShield(m, 0xe8c95f, 0xd8b64a)
+  knightSword(m, 0xdfe6f0, 0xe8c95f)
+  // a longer cape, clasped: the silhouette that says "this one is yours"
+  m.parts.body.push(
+    box(0, 2.3, -0.92, 2.36, 3.2, 0.34, 0x8f2f2f),
+    box(0, 3.42, -0.72, 1.0, 0.34, 0.3, 0xe8c95f),
+  )
+  return m
 }
 export function zephyraModel(): VoxModel {
   const m = humanoid({
@@ -535,8 +618,32 @@ export function zephyraModel(): VoxModel {
     hair: 0xdfe8ee, weapon: 'staff', weaponGlow: 0x9fe8ff,
     cape: 0x5aa0d8, tabard: 0x9fe8ff,
   })
-  // storm circlet
-  m.parts.head.push(box(0, 5.5, 0, 1.95, 0.3, 1.95, 0x9fe8ff, true))
+  // storm circlet, with the stone it channels through
+  m.parts.head.push(
+    box(0, 5.5, 0, 1.95, 0.3, 1.95, 0x9fe8ff, true),
+    box(0, 5.66, 0.82, 0.42, 0.42, 0.3, 0xffffff, true),
+    box(-0.86, 5.5, 0.5, 0.24, 0.5, 0.5, 0x5aa0d8),
+    box(0.86, 5.5, 0.5, 0.24, 0.5, 0.5, 0x5aa0d8),
+  )
+  // robes rather than plate: a mantle, a sash, and a hem that falls past the knee
+  m.parts.body.push(
+    box(0, 3.4, 0, 2.7, 0.6, 1.85, 0x5aa0d8),        // shoulder mantle
+    box(0, 3.62, 0, 2.2, 0.24, 1.6, 0x9fe8ff, true), // mantle trim, lit
+    box(0, 1.72, 0, 2.5, 0.4, 1.58, 0x2a3f66),       // sash
+    box(0, 1.74, 0.82, 0.5, 0.5, 0.14, 0x9fe8ff, true),
+  )
+  for (const [leg, sx] of [[m.parts.legL, -0.62], [m.parts.legR, 0.62]] as const) {
+    leg.push(
+      box(sx, 1.0, 0, 1.22, 1.5, 1.22, 0x3d5a8f),  // robe skirt
+      box(sx, 0.16, 0.1, 1.16, 0.4, 1.34, 0x2a3f66),
+    )
+  }
+  // a staff worth carrying: rings around the orb
+  m.parts.armR.push(
+    box(1.55, 5.3, 0.75, 1.1, 0.16, 0.16, 0x9fe8ff, true),
+    box(1.55, 5.3, 0.75, 0.16, 1.1, 0.16, 0x9fe8ff, true),
+    box(1.55, 4.6, 0.75, 0.48, 0.3, 0.48, 0xc8cdd6),
+  )
   return m
 }
 
@@ -545,8 +652,32 @@ export function lioraModel(): VoxModel {
     skin: 0xe8b58a, shirt: 0x4a7a3f, pants: 0x33512b,
     hair: 0xc9803a, weapon: 'bow', cape: 0x2f4f28, tabard: 0x9fdf8f,
   })
-  // quiver on the back
-  m.parts.body.push(box(0.7, 3.1, -0.95, 0.7, 1.7, 0.5, 0x6d4c28))
-  m.parts.body.push(box(0.7, 4.1, -0.95, 0.55, 0.5, 0.4, 0x9fdf8f))
+  const leather = 0x6d4c28, dark = 0x4a3520
+  // quiver on the back, with arrows actually in it
+  m.parts.body.push(
+    box(0.7, 3.1, -0.95, 0.72, 1.7, 0.52, leather),
+    box(0.7, 4.15, -0.95, 0.58, 0.6, 0.42, 0x9fdf8f),
+    box(0.52, 4.5, -0.95, 0.12, 0.7, 0.12, 0xdfe6f0),
+    box(0.86, 4.44, -0.95, 0.12, 0.6, 0.12, 0xdfe6f0),
+    // a ranger's kit: hood, jerkin, belt and pouch
+    box(0, 3.44, -0.18, 2.3, 0.6, 1.7, 0x2f4f28),
+    box(0, 2.8, 0.08, 2.16, 1.3, 1.6, 0x3f6a35),
+    box(0, 1.74, 0, 2.52, 0.38, 1.58, leather),
+    box(-0.82, 1.62, 0.5, 0.6, 0.62, 0.5, dark),
+  )
+  m.parts.head.push(
+    box(0, 5.3, -0.3, 2.0, 0.7, 2.1, 0x2f4f28),   // hood
+    box(0, 4.6, -1.02, 1.9, 1.5, 0.3, 0x2f4f28),
+  )
+  for (const [arm, sx] of [[m.parts.armL, -1], [m.parts.armR, 1]] as const) {
+    arm.push(box(sx * 1.55, 2.08, 0, 0.94, 0.7, 0.94, leather))   // bracers
+  }
+  for (const [leg, sx] of [[m.parts.legL, -0.62], [m.parts.legR, 0.62]] as const) {
+    leg.push(
+      box(sx, 0.55, 0, 1.12, 0.9, 1.12, dark),      // high boots
+      box(sx, 1.02, 0, 1.16, 0.26, 1.16, leather),  // boot cuff
+      box(sx, 0.13, 0.14, 1.18, 0.36, 1.4, dark),
+    )
+  }
   return m
 }

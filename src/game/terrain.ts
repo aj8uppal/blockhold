@@ -94,6 +94,7 @@ export class Terrain {
     this.buildGround(rng)
     this.buildPlots()
     this.buildDecorations(rng)
+    this.buildLandmarks(rng)
     this.buildEndpoints()
     this.buildClouds(rng)
   }
@@ -109,14 +110,81 @@ export class Terrain {
     return 'grass'
   }
 
+  /** the big set-pieces that give a board its horizon */
+  private buildLandmarks(rng: () => number): void {
+    const { level } = this
+    for (const [c, r, kind] of level.landmarks ?? []) {
+      // a set-piece dropped on the road or a foundation reads as a bug, so an
+      // authoring mistake is skipped loudly rather than rendered
+      const on = this.cellKind(c, r)
+      if (on === 'road' || on === 'plot' || on === 'void' || on === 'water') {
+        console.warn(`level ${level.id}: landmark ${kind} at [${c},${r}] sits on ${on}`)
+        continue
+      }
+      const [x, z] = gridToWorld(c, r, level.width, level.height)
+      const m = buildModel(env.landmark(kind, rng, level.theme), `landmark:${kind}:${level.theme}`, {
+        castShadow: true, receiveShadow: true,
+      })
+      m.position.set(x, this.cellTop(c, r), z)
+      m.rotation.y = Math.round(rng() * 3) * (Math.PI / 2)
+      this.group.add(m)
+    }
+  }
+
+  /**
+   * Make the buildable pads obvious. A newcomer has no reason to know a grey
+   * square is a foundation, so the guided first battle lights them.
+   */
+  pulsePlots(on: boolean): void {
+    if (on === this.plotsPulsing) return
+    this.plotsPulsing = on
+    for (const p of this.plots) {
+      p.mesh.traverse(o => {
+        if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
+          if (o.material.userData.shared) return
+          o.material.emissive.setHex(on ? 0xffd24a : 0x000000)
+          o.material.emissiveIntensity = on ? 0.5 : 0
+        }
+      })
+    }
+  }
+
+  private plotsPulsing = false
+
   /** is this cell part of the map's own raised ground? */
   isOnHill(c: number, r: number): boolean {
-    return inRects(c, r, this.level.hills)
+    return inRects(c, r, this.level.hills) || this.plateauAt(c, r) > 0
   }
 
   cellTop(c: number, r: number): number {
+    const p = this.plateauAt(c, r)
+    if (p > 0) return p
     const k = this.cellKind(c, r)
     return k === 'hill' ? 0.5 : k === 'water' ? -0.4 : 0
+  }
+
+  /**
+   * Height of any authored plateau covering this cell, else 0.
+   *
+   * A road is never raised, even where a plateau covers it. Enemies ride a
+   * flat rail and the hero walks at ground level, so lifting the road they
+   * travel on put both *inside* the terrain - Veilscar raised fourteen road
+   * cells to 1.8 and the whole column walked through the hillside. Roads cut
+   * through raised ground instead, which is also how a pass should read.
+   */
+  plateauAt(c: number, r: number): number {
+    if (this.paths.roadCells.has(`${c},${r}`)) return 0
+    let best = 0
+    for (const [c0, r0, c1, r1, h] of this.level.plateaus ?? []) {
+      if (c >= c0 && c <= c1 && r >= r0 && r <= r1) best = Math.max(best, h)
+    }
+    return best
+  }
+
+  /** height of the ground a unit standing at this world point rests on */
+  groundTopAt(x: number, z: number): number {
+    const [c, r] = this.worldToCell(x, z)
+    return Math.max(0, this.cellTop(c, r))
   }
 
   /** can ground units stand here? (flat grass or road) */
@@ -274,6 +342,13 @@ export class Terrain {
           || ['void'].includes(this.cellKind(c, r + 1)) || ['void'].includes(this.cellKind(c, r - 1))
           || c === 0 || r === 0 || c === level.width - 1 || r === level.height - 1
         const bottom = edge ? -1.6 - rng() * 0.9 : -1.2
+        // an authored plateau lifts the ground itself, not just what stands on it
+        const plateau = this.plateauAt(c, r)
+        if (plateau > 0 && kind !== 'water') {
+          addBox(x, z, bottom, plateau, 1, 1,
+            shuffleColor(rng() < 0.5 ? t.grass : t.grassAlt, 0.07, rng))
+          continue
+        }
         switch (kind) {
           case 'road':
             addBox(x, z, bottom, 0.02, 1, 1, shuffleColor(rng() < 0.5 ? t.road : t.roadAlt, 0.06, rng))
@@ -359,7 +434,7 @@ export class Terrain {
     const { level } = this
     level.plots.forEach(([c, r], i) => {
       const [x, z] = gridToWorld(c, r, level.width, level.height)
-      const mesh = buildModel(plotVox(), 'plot', { castShadow: false, receiveShadow: true })
+      const mesh = buildModel(plotVox(), 'plot', { castShadow: false, receiveShadow: true, cloneMaterials: true })
       mesh.position.set(x, 0, z)
       this.group.add(mesh)
       this.plots.push({ index: i, cell: [c, r], pos: new THREE.Vector3(x, 0.1, z), occupied: false, mesh })

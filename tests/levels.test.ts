@@ -2,7 +2,9 @@ import { deriveEarthworkSpots, RAMPART_REACH } from '../src/game/earthworks.ts'
 import { describe, expect, it } from 'vitest'
 import { enemyDefs } from '../src/game/enemyDefs.ts'
 import { levels } from '../src/game/levels.ts'
+import { REACTION_RADIUS } from '../src/game/towers.ts'
 import { buildPaths, gridToWorld } from '../src/game/path.ts'
+import { Terrain } from '../src/game/terrain.ts'
 import type { Rect } from '../src/game/types.ts'
 
 function expectRectInBounds(rect: Rect, width: number, height: number): void {
@@ -170,13 +172,17 @@ describe('earthworks', () => {
       }
       const isTrap = (c: number, r: number) => (lvl.trapSpots ?? []).some(([tc, tr]) => tc === c && tr === r)
       const plots = lvl.plots.map(([c, r]) => gridToWorld(c, r, lvl.width, lvl.height))
-      const inReach = deriveEarthworkSpots(lvl, kindOf, isTrap)
-        .filter(s => s.kind === 'rampart')
-        .filter(s => {
-          const [x, z] = gridToWorld(s.cell[0], s.cell[1], lvl.width, lvl.height)
-          return plots.some(p => Math.hypot(p[0] - x, p[1] - z) <= RAMPART_REACH)
-        })
-      expect(inReach.length, `${lvl.id} has no rampart a tower could use`).toBeGreaterThanOrEqual(2)
+      const all = deriveEarthworkSpots(lvl, kindOf, isTrap).filter(s => s.kind === 'rampart')
+      const usable = (s: { cell: [number, number] }) => {
+        const [x, z] = gridToWorld(s.cell[0], s.cell[1], lvl.width, lvl.height)
+        return plots.some(p => Math.hypot(p[0] - x, p[1] - z) <= RAMPART_REACH)
+      }
+      // not "some are usable" - every one, or the player is offered a build
+      // site whose own tooltip admits no tower can reach it
+      for (const s of all) {
+        expect(usable(s), `${lvl.id} offers a rampart at [${s.cell}] no tower can use`).toBe(true)
+      }
+      expect(all.length, `${lvl.id} offers no ramparts at all`).toBeGreaterThanOrEqual(2)
     }
   })
 
@@ -187,6 +193,165 @@ describe('earthworks', () => {
     const kindOf = (c: number, r: number) => paths.roadCells.has(`${c},${r}`) ? 'road' : 'grass'
     for (const s of deriveEarthworkSpots(lvl, kindOf, isTrap)) {
       if (s.kind === 'cutting') expect(isTrap(s.cell[0], s.cell[1])).toBe(false)
+    }
+  })
+})
+
+describe('map set-pieces', () => {
+  /**
+   * A landmark is deliberately oversized. Dropped on a road, a foundation or
+   * open water it does not read as scenery, it reads as a bug - and seven of
+   * the first placements did exactly that before this test existed.
+   */
+  it('never stands a landmark on road, plot, water or void', () => {
+    for (const lvl of levels) {
+      const paths = buildPaths(lvl)
+      for (const [c, r, kind] of lvl.landmarks ?? []) {
+        const onRoad = paths.roadCells.has(`${c},${r}`)
+        const onPlot = lvl.plots.some(([pc, pr]) => pc === c && pr === r)
+        const inRect = (rects: number[][]) =>
+          rects.some(([a, b, x, y]) => c >= a && c <= x && r >= b && r <= y)
+        expect(onRoad, `${lvl.id} ${kind} on road`).toBe(false)
+        expect(onPlot, `${lvl.id} ${kind} on plot`).toBe(false)
+        expect(inRect(lvl.water), `${lvl.id} ${kind} in water`).toBe(false)
+        expect(inRect(lvl.voids), `${lvl.id} ${kind} over the void`).toBe(false)
+      }
+    }
+  })
+
+  it('escalates terrain drama through the campaign', () => {
+    const drama = levels.map(l => (l.landmarks?.length ?? 0) + (l.plateaus?.length ?? 0))
+    const early = drama.slice(0, 3).reduce((a, b) => a + b, 0)
+    const late = drama.slice(-3).reduce((a, b) => a + b, 0)
+    expect(late, 'later maps should be more dramatic than earlier ones').toBeGreaterThan(early)
+  })
+
+  it('keeps plateaus inside their map', () => {
+    for (const lvl of levels) {
+      for (const [c0, r0, c1, r1, h] of lvl.plateaus ?? []) {
+        expect(c0).toBeGreaterThanOrEqual(0)
+        expect(r0).toBeGreaterThanOrEqual(0)
+        expect(c1).toBeLessThan(lvl.width)
+        expect(r1).toBeLessThan(lvl.height)
+        expect(h).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  /**
+   * Tower adjacency is a real mechanic, and it has died twice: once because
+   * its radius was smaller than the gap between plots, and again when the
+   * later boards grew and scaled every plot apart. Both times it became dead
+   * content that no player could ever trigger. Each map has to keep enough
+   * neighbouring foundations for the mechanic to exist at all.
+   */
+  it('keeps tower adjacency reachable on every map', () => {
+    for (const lvl of levels) {
+      let pairs = 0
+      for (let i = 0; i < lvl.plots.length; i++) {
+        for (let j = i + 1; j < lvl.plots.length; j++) {
+          const d = Math.hypot(lvl.plots[i][0] - lvl.plots[j][0], lvl.plots[i][1] - lvl.plots[j][1])
+          if (d <= REACTION_RADIUS) pairs++
+        }
+      }
+      expect(pairs, `${lvl.id} has no adjacent foundations`).toBeGreaterThanOrEqual(4)
+    }
+  })
+
+  /** high ground is only a mechanic if foundations actually stand on it */
+  it('puts foundations on the high ground it authors', () => {
+    const covered = levels.map(lvl => {
+      const rects = (lvl.plateaus ?? []).map(([a, b, x, y]) => [a, b, x, y])
+      return lvl.plots.filter(([c, r]) =>
+        rects.some(([a, b, x, y]) => c >= a && c <= x && r >= b && r <= y)).length
+    })
+    for (const [i, lvl] of levels.entries()) {
+      if ((lvl.plateaus?.length ?? 0) === 0) continue
+      expect(covered[i], `${lvl.id} raises ground no tower can use`).toBeGreaterThan(0)
+    }
+    const early = covered.slice(0, 3).reduce((a, b) => a + b, 0)
+    const late = covered.slice(-3).reduce((a, b) => a + b, 0)
+    expect(late, 'later maps should offer more high ground').toBeGreaterThan(early)
+  })
+
+  /** later boards are meant to be bigger and longer walks, not just busier */
+  it('grows the board through the campaign', () => {
+    const area = levels.map(l => l.width * l.height)
+    const early = Math.max(...area.slice(0, 3))
+    const late = Math.min(...area.slice(-3))
+    expect(late, 'late maps should outgrow early ones').toBeGreaterThan(early)
+  })
+
+  /**
+   * A set-piece is tall, and the camera looks down at the board - so anything
+   * near the rim projects up past the frame the camera fitted and renders half
+   * off-screen, which reads as a clipping bug rather than scenery. Two cells of
+   * margin is what it takes for the tallest of them to stay fully visible.
+   */
+  it('keeps landmarks off the outer ring', () => {
+    for (const lvl of levels) {
+      for (const [c, r, kind] of lvl.landmarks ?? []) {
+        const margin = Math.min(c, r, lvl.width - 1 - c, lvl.height - 1 - r)
+        expect(margin, `${lvl.id} ${kind} at [${c},${r}] hugs the border`).toBeGreaterThanOrEqual(2)
+      }
+    }
+  })
+})
+
+describe('raised ground', () => {
+  /**
+   * Enemies ride a flat rail and the hero walks at ground level, so a road
+   * lifted onto a plateau puts both inside the hillside - Veilscar raised
+   * fourteen road cells to 1.8 and the whole column walked through it. Roads
+   * are carved through raised ground, never ramped over it.
+   */
+  it('never raises a road cell', () => {
+    for (const lvl of levels) {
+      if (!(lvl.plateaus ?? []).length) continue
+      const terrain = new Terrain(lvl, buildPaths(lvl))
+      for (const [c0, r0, c1, r1] of lvl.plateaus ?? []) {
+        for (let r = r0; r <= r1; r++) {
+          for (let c = c0; c <= c1; c++) {
+            if (!terrain.paths.roadCells.has(`${c},${r}`)) continue
+            expect(terrain.plateauAt(c, r), `${lvl.id} raised road [${c},${r}]`).toBe(0)
+            expect(terrain.cellTop(c, r), `${lvl.id} road [${c},${r}] off the ground`).toBe(0)
+          }
+        }
+      }
+    }
+  })
+
+  /** a shelf a unit can stand on, not a wall it disappears behind */
+  it('keeps raised ground to a low shelf', () => {
+    for (const lvl of levels) {
+      for (const [, , , , h] of lvl.plateaus ?? []) {
+        expect(h, `${lvl.id} plateau is a wall at ${h}`).toBeLessThanOrEqual(0.5)
+      }
+    }
+  })
+})
+
+describe('lane coverage', () => {
+  /**
+   * Every road has to be defensible. A lane with only a handful of plots in
+   * reach cannot be held however well the player plays, and growing the boards
+   * is exactly the kind of change that could quietly starve one - Veilscar has
+   * three roads and twenty foundations, but they are not evenly shared.
+   */
+  it('gives every lane enough foundations to hold it', () => {
+    const REACH = 3.6   // a mid-tier tower
+    for (const lvl of levels) {
+      const paths = buildPaths(lvl)
+      const perLane = paths.lanes.map(() => 0)
+      for (const [c, r] of lvl.plots) {
+        const [x, z] = gridToWorld(c, r, lvl.width, lvl.height)
+        paths.lanes.forEach((lane, i) => {
+          if (lane.distanceToPath(x, z) <= REACH) perLane[i]++
+        })
+      }
+      perLane.forEach((n, i) => {
+        expect(n, `${lvl.id} lane ${i} has only ${n} plots in reach`).toBeGreaterThanOrEqual(6)
+      })
     }
   })
 })

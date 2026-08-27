@@ -45,9 +45,9 @@ Three difficulties per map (Veteran adds elite-affix enemies), three stars per v
 - **A hero roster.** Sir Aldric the Bulwark (melee anchor, Valor Slam), Liora the Gale Warden (ranged, hits flyers, Piercing Volley), or Zephyra the Stormcaller (armor-ignoring bolts, Static Nova slow-burst). Heroes take move orders with real A* pathfinding, level from nearby kills, and respawn where they fell.
 - **The Long Night.** Beat any map to unlock its Endless mode: 200 procedurally escalating waves, a surge every fifth, a boss every tenth, HP that keeps climbing — and a per-map deepest-wave record to chase.
 - **Enemies that bend the rules.** Mistwalkers phase untargetable; Shardbacks are armored piñatas; the Veilqueen flies over everything you built on the ground and births gargoyles as she comes — and her Regent phases mid-march while singing heralds into being.
-- **Capstone towers.** Every family's tree ends in one very expensive tier-5 crown that keeps the chosen branch identity and adds a signature mechanic: the Crownwing Aerie's five-target Crown Volley, the Convergence Monolith's pulsing lightning runes, the Faultline Arsenal's buried Seismic Charges, and the Oathgate Citadel's Last Muster of retainers.
+- **Branching capstones.** Each family's two tier-4 specializations lead to *different* tier-5 crowns, so the branch you pick decides the ending: Kingsreach or the Crownwing Aerie's five-target Crown Volley; The Unmaking or the Convergence Monolith's pulsing lightning runes; Emberthrone or the Faultline Arsenal's buried Seismic Charges; the Oathgate Citadel's Last Muster of retainers or the Stormhowl Warcamp, whose soldiers strike air.
 
-Plus the genre backbone: 4 tower families × 3 levels × 2 elite specializations × 1 capstone, armor/magic-resist counterplay, soldier blocking with rally points, early wave calls, Meteor Storm and Reinforcements, and the star-funded **Royal Armory** meta-upgrade board (8 tracks, free respec).
+Plus the genre backbone: 4 tower families × 3 levels × 2 elite specializations × 2 branch-locked capstones, armor/magic-resist counterplay, soldier blocking with rally points, early wave calls, Meteor Storm and Reinforcements, and the star-funded **Royal Armory** meta-upgrade board (8 tracks, free respec).
 
 ### Controls
 

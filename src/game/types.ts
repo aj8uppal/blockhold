@@ -124,6 +124,14 @@ export interface WaveDef {
 
 export type ThemeId = 'forest' | 'winter' | 'ember' | 'swamp' | 'void'
 
+/** large scenery that breaks the horizon and gives a board its character */
+export type LandmarkKind =
+  | 'spire'      // a broken stone tower
+  | 'arch'       // a natural rock arch the road passes under
+  | 'monolith'   // a standing veil-stone
+  | 'ruin'       // a collapsed wall
+  | 'greatTree'
+
 /** map signature mechanics — opportunity windows, never chores */
 export type HazardId = 'deepchill' | 'eruption' | 'witchlights' | 'riftlight'
 
@@ -255,6 +263,14 @@ export interface LevelDef {
   trapSpots?: [number, number][]
   water: Rect[]
   hills: Rect[]
+  /**
+   * Raised ground with a real height, for maps that want vertical drama
+   * rather than a flat table. [c0, r0, c1, r1, height] in world units.
+   * Towers built on a plateau shoot from high ground.
+   */
+  plateaus?: [number, number, number, number, number][]
+  /** big set-pieces that give a map a silhouette: [col, row, kind] */
+  landmarks?: [number, number, LandmarkKind][]
   voids: Rect[]
   /** the map's signature mechanic (see src/game/hazards.ts) */
   hazard?: HazardId

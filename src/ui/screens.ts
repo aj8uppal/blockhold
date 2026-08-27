@@ -32,7 +32,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
 export type GameMode = 'campaign' | 'endless'
 
 export interface BattleStats {
-  kills: number, gold: number, shards: number, wavesReached: number, totalWaves: number,
+  kills: number, gold: number, shards: number, wavesReached: number, wavesCleared: number, totalWaves: number,
   timeSec: number, heroLevel: number, endless: boolean, bestEndless: number,
   score: number, prevBestScore: number, newBestScore: boolean, newWaveRecord: boolean,
   perfectWaves: number, bestStreak: number, noleak: boolean,
@@ -128,10 +128,14 @@ export class Screens {
     // one battle, the same one for everyone in the world today
     const day = dailyNumber()
     const done = save.dailyBest?.day === day
-    const daily = el('button', 'btn ghost', card,
+    // the same row as the other modes: its (i) used to be appended straight to
+    // the column, so it dropped onto its own line and sat centred under the
+    // button while every other info dot sat inline at the right
+    const dailyRow = el('div', 'menu-mode-row', card)
+    const daily = el('button', 'btn ghost mode-btn', dailyRow,
       `${icon('moon')} Daily Hold #${day}${done ? ` · wave ${save.dailyBest!.wave}` : ''}`) as HTMLButtonElement
     daily.onclick = () => this.onPlayDaily()
-    this.infoButton(card, daily, {
+    this.infoButton(dailyRow, daily, {
       tagline: 'One battle a day, the same for everyone.',
       body: 'Twelve waves on a board built from today\'s date, identical for every player in the world. It resets at midnight UTC.',
       skill: 'When it ends you get a result bar you can copy, and a link that drops a friend onto the exact same board.',
@@ -331,9 +335,12 @@ export class Screens {
     el('div', 'end-emoji', card, icon(endless ? 'moon' : won ? 'trophy' : 'skull'))
     el('h2', 'end-title', card, endless ? 'The Long Night ends' : won ? 'Victory!' : 'The gate has fallen')
     if (endless && stats) {
+      // held and fell-on are different numbers, and reporting only one of them
+      // next to the record read as though the record *was* the result
       el('div', 'end-sub', card,
-        `You held for <b>${stats.wavesReached}</b> wave${stats.wavesReached === 1 ? '' : 's'}` +
-        (stats.newWaveRecord ? ` — a new record! ${icon('medal')}` : ` · best: ${stats.bestEndless}`))
+        `You held <b>${stats.wavesCleared}</b> wave${stats.wavesCleared === 1 ? '' : 's'}` +
+        `, and fell on wave <b>${stats.wavesReached}</b>` +
+        (stats.newWaveRecord ? ` — a new record! ${icon('medal')}` : ` · your best is ${stats.bestEndless}`))
     } else if (won) {
       const starRow = el('div', 'end-stars', card)
       for (let i = 0; i < 3; i++) {
@@ -411,7 +418,7 @@ export class Screens {
     parent: HTMLElement, ico: string, label: string, play: () => void,
     info: { tagline: string, body: string, skill: string },
   ): void {
-    const row = el('div', 'mode-row', parent)
+    const row = el('div', 'menu-mode-row', parent)
     const btn = el('button', 'btn ghost mode-btn', row, `${icon(ico)} ${label}`) as HTMLButtonElement
     btn.onclick = play
     this.infoButton(row, btn, info, label)

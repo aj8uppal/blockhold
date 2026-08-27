@@ -31,6 +31,11 @@ export const box = (
 
 const litMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.0 })
 const glowMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })
+// Every uncloned model in the game draws with these two. Tagging them means a
+// per-object effect - a glow, a fade, a wash - can check before writing, and
+// cannot accidentally repaint the entire world.
+litMaterial.userData.shared = true
+glowMaterial.userData.shared = true
 
 const geoCache = new Map<string, { lit: THREE.BufferGeometry | null, glow: THREE.BufferGeometry | null }>()
 

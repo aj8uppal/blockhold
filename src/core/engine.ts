@@ -231,8 +231,9 @@ export class Engine {
     this.renderer.setSize(w, h)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
-    // orientation change re-derives the zoom ceiling (portrait needs more headroom)
-    this.maxZoomOut = this.camera.aspect < 1 ? 34 : 22
+    // orientation change re-derives the zoom ceiling (portrait needs more
+    // headroom, and a big board needs more than either default)
+    this.maxZoomOut = this.zoomCeiling(this.board.w, this.board.h, this.liftFor(this.tallest))
     this.distGoal = Math.min(this.distGoal, this.maxZoomOut)
     this.dist = Math.min(this.dist, this.maxZoomOut)
   }
@@ -352,7 +353,41 @@ export class Engine {
     this.camTargetGoal.z = clamp(z, -this.bounds.z, this.bounds.z)
   }
 
-  resetView(mapW = 24, mapH = 14): void {
+  /** the board this camera is framing, so a resize can re-fit it */
+  private board = { w: 24, h: 14 }
+
+  /**
+   * How far back the camera may pull.
+   *
+   * This used to be a flat 22 (34 in portrait), which silently became a bug the
+   * moment the later boards grew: Veilscar needs about 25 to fit, so the map
+   * ran off all four edges and no amount of zooming could show it. The ceiling
+   * is now whatever the board actually needs, plus room to breathe. It uses the
+   * roomier desktop margins on purpose: a ceiling only has to be generous
+   * enough never to clamp the fit below what `resetView` asked for.
+   */
+  private zoomCeiling(mapW: number, mapH: number, lift = 0): number {
+    const base = this.camera.aspect < 1 ? 34 : 22
+    const t = Math.tan((this.camera.fov * Math.PI / 180) / 2)
+    const need = Math.max((mapH * 0.62 + lift) / t, (mapW * 0.56) / t / this.camera.aspect)
+    return Math.max(base, need * 1.12)
+  }
+
+  /** how much extra depth the tallest set-piece asks the fit to allow for */
+  private liftFor(tallest: number): number { return Math.min(tallest, 7) * 0.22 }
+
+  private tallest = 0
+
+  /**
+   * @param tallest height of the biggest set-piece on the board, in world
+   *   units. The camera looks down, so anything standing on the far rows
+   *   projects upward in frame: fitting to the flat board alone sheared the
+   *   tops off Mistfen's monoliths. The fit treats the board as deeper by
+   *   that height, so a monolith on the back row still reads whole.
+   */
+  resetView(mapW = 24, mapH = 14, tallest = 0): void {
+    this.board = { w: mapW, h: mapH }
+    this.tallest = tallest
     this.camTargetGoal.set(0, 0, 0.5)
     this.yawGoal = 0
     this.pitchGoal = 0.98
@@ -362,15 +397,75 @@ export class Engine {
     const tight = window.innerHeight <= 500 || window.matchMedia('(pointer: coarse)').matches
     const mh = tight ? 0.545 : 0.62
     const mw = tight ? 0.50 : 0.56
-    const fitH = (mapH * mh) / Math.tan((this.camera.fov * Math.PI / 180) / 2)
+    // a set-piece on the far rows projects upward, so the board is framed as
+    // if it were deeper by a share of the tallest thing standing on it
+    const lift = this.liftFor(tallest)
+    const fitH = (mapH * mh + lift) / Math.tan((this.camera.fov * Math.PI / 180) / 2)
     const fitW = (mapW * mw) / Math.tan((this.camera.fov * Math.PI / 180) / 2) / this.camera.aspect
-    const maxDist = this.camera.aspect < 1 ? 34 : 22
+    const maxDist = this.zoomCeiling(mapW, mapH, lift)
     this.maxZoomOut = maxDist
     this.distGoal = clamp(Math.max(fitH, fitW), 10, maxDist)
     this.dist = this.distGoal
     this.yaw = this.yawGoal
     this.pitch = this.pitchGoal
     this.camTarget.copy(this.camTargetGoal)
+  }
+
+  /**
+   * Dev-only: light a diorama with its own mood.
+   *
+   * This has to go through the same sky the themes use - setting
+   * scene.background alone does nothing, because applyTheme builds a gradient
+   * dome that sits in front of it.
+   */
+  /** a back light used only by dioramas, to edge the subject off the ground */
+  private dioRim: THREE.DirectionalLight | null = null
+
+  setDioramaMood(m: { sky: number, ambient: number, key: number, keyIntensity: number, keyDir?: [number, number, number], fill?: number, rim?: number, rimDir?: [number, number, number], rimIntensity?: number, skyTop?: number, skyBottom?: number }): void {
+    /*
+     * A diorama frames close to the horizon, so the band of sky actually in
+     * shot is the dome's *upper* half - the lighter horizon colour sits behind
+     * the terrain and is never seen. Deriving both ends from one hue therefore
+     * rendered as a flat dead slab. Scenes name both ends themselves.
+     */
+    const top = new THREE.Color(m.skyTop ?? m.sky)
+    const bottom = new THREE.Color(m.skyBottom ?? m.sky).lerp(new THREE.Color(m.ambient), 0.55)
+    this.buildSky({ skyTop: top.getHex(), skyBottom: bottom.getHex() } as never)
+    this.scene.background = new THREE.Color(m.skyTop ?? m.sky)
+    this.scene.fog = new THREE.Fog(bottom.getHex(), 30, 90)
+    this.hemi.color.setHex(m.ambient)
+    this.hemi.groundColor.setHex(m.ambient)
+    this.hemi.intensity = 0.9
+    // a dark subject lit from behind is a silhouette, not a portrait, so each
+    // scene says where its key comes from
+    this.ambient.intensity = m.fill ?? 0.55
+    this.sun.color.setHex(m.key)
+    this.sun.intensity = m.keyIntensity
+    const [kx, ky, kz] = m.keyDir ?? [9, 14, 7]
+    this.sun.position.set(kx, ky, kz)
+    const sc = this.sun.shadow.camera
+    sc.left = -18; sc.right = 18; sc.top = 18; sc.bottom = -18
+    sc.updateProjectionMatrix()
+
+    /*
+     * Rim light. Flat-shaded voxels lit from one side turn into a single
+     * silhouette against a same-value background - which is exactly how the
+     * first pass read. A cool back light catches the top and rear faces only,
+     * so the subject gets an edge and separates from the ground behind it.
+     */
+    if (!this.dioRim) {
+      this.dioRim = new THREE.DirectionalLight(0xffffff, 0)
+      this.scene.add(this.dioRim)
+    }
+    const [rx, ry, rz] = m.rimDir ?? [-kx, Math.abs(ky) * 0.65, -kz]
+    this.dioRim.position.set(rx, ry, rz)
+    this.dioRim.color.setHex(m.rim ?? 0xbcd8ff)
+    this.dioRim.intensity = m.rimIntensity ?? 0.9
+  }
+
+  /** dioramas own the rim light; every other scene must not inherit it */
+  clearDioramaRim(): void {
+    if (this.dioRim) this.dioRim.intensity = 0
   }
 
   addShake(strength: number): void {

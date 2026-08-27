@@ -10,7 +10,7 @@ import { canRecordTape, downloadTape, tapeFileExtension } from './core/capture.t
 import { Game } from './game/game.ts'
 import { HUD } from './ui/hud.ts'
 import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
-import { levelById } from './game/levels.ts'
+import { levelById, levels } from './game/levels.ts'
 import { audio } from './core/audio.ts'
 import './style.css'
 
@@ -18,6 +18,16 @@ const canvas = document.getElementById('game') as HTMLCanvasElement
 const game = new Game(canvas)
 const hud = new HUD(game)
 const screens = new Screens(() => game.save)
+
+/**
+ * `?unlock` opens the whole campaign, for looking at the later boards without
+ * playing six maps to reach them. Dev build only - it is compiled out of a
+ * production bundle, so it can never become a way to skip the game.
+ */
+if (import.meta.env.DEV && new URLSearchParams(location.search).has('unlock')) {
+  game.save.unlocked = levels.length
+  writeSave(game.save)
+}
 
 // ---- fullscreen (Android/desktop have the API; iOS Safari relies on Add to Home Screen) ----
 
@@ -169,7 +179,16 @@ if (challengeSeed !== null) {
 }
 
 // dev/testing handle
-;(window as unknown as Record<string, unknown>).vg = { game, hud, screens }
+;(window as unknown as Record<string, unknown>).vg = {
+  game, hud, screens,
+  /** dev: stage a voxel diorama for capture. Not reachable in normal play. */
+  async diorama(id: string) {
+    const { dioramaById } = await import('./voxel/dioramas.ts')
+    const spec = dioramaById(id as never)
+    game.showDiorama(spec)
+    return { id: spec.id, title: spec.title, use: spec.use }
+  },
+}
 
 // PWA: offline shell + installability (production only, so dev stays live-reloadable)
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {

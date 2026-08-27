@@ -106,6 +106,7 @@ export class HUD {
     this.bannerEl = el('div', 'banner hidden', this.root)
     this.toastEl = el('div', 'toast hidden', this.root)
     this.modeHint = el('div', 'mode-hint hidden', this.root)
+    this.coachMark = el('div', 'coach-mark hidden', this.root)
     this.abilityTip = el('div', 'ability-tip hidden', this.root)
     this.beatEl = el('div', 'beat-meter hidden', this.root)
     this.beatEl.innerHTML = Array.from({ length: BEATS_PER_BAR }, () => '<i></i>').join('')
@@ -226,6 +227,24 @@ export class HUD {
   private signatureBtn!: HTMLButtonElement
   private lastSignatureId = ''
   private armedAbility: string | null = null
+  private coachMark!: HTMLElement
+  private lastCoach: string | null = null
+
+  /**
+   * One thing at a time, in the player's language. Never blocks play: it is a
+   * line of text with a way to dismiss it, not a modal.
+   */
+  setCoachMark(text: string | null): void {
+    if (text === this.lastCoach) return
+    this.lastCoach = text
+    if (!text) { this.coachMark.classList.add('hidden'); return }
+    this.coachMark.innerHTML = ''
+    el('span', 'coach-text', this.coachMark, text)
+    const skip = el('button', 'coach-skip', this.coachMark, 'Skip') as HTMLButtonElement
+    skip.title = 'Stop showing these'
+    skip.onclick = () => this.game.skipOnboarding()
+    this.coachMark.classList.remove('hidden')
+  }
   private abilityTip!: HTMLElement
 
   private showAbilityTip(name: string, desc: string): void {

@@ -48,7 +48,7 @@ export const EARTHWORK_DEFS: Record<EarthworkKind, EarthworkDef> = {
 }
 
 /** how far a rampart's high ground reaches */
-export const RAMPART_REACH = 1.7
+export const RAMPART_REACH = 2.0
 export const RAMPART_RANGE_BONUS = 0.15
 export const RAMPART_DAMAGE_BONUS = 0.10
 export const CUTTING_SLOW = 0.65
@@ -189,13 +189,27 @@ export function deriveEarthworkSpots(
       else if (k === 'road' && !isTrapSpot(c, r)) cuttings.push([c, r])
     }
   }
+
+  /**
+   * A rampart is only ever offered where a tower can actually use it.
+   *
+   * This used to merely *prefer* such cells and then top the list up with
+   * whatever was left, which is how a player ends up staring at a build site
+   * whose own tooltip says "no tower is close enough to use it yet". The reach
+   * here is the same constant the buff is granted with, so the offer and the
+   * effect can never disagree; if a board cannot supply enough usable cells it
+   * offers fewer ramparts, because dead content is worse than less content.
+   */
+  const nearPlot = (c: number, r: number) =>
+    level.plots.some(([pc, pr]) => Math.hypot(pc - c, pr - r) <= RAMPART_REACH)
   // spread across the board instead of clustering wherever the scan started
   const spread = <T>(arr: T[], n: number): T[] => {
     if (arr.length <= n) return arr
     const step = arr.length / n
     return Array.from({ length: n }, (_, i) => arr[Math.floor(i * step + step / 2)] ?? arr[arr.length - 1])
   }
-  for (const cell of spread(ramparts, limit.rampart)) out.push({ cell, kind: 'rampart' })
+  const useful = ramparts.filter(([c, r]) => nearPlot(c, r))
+  for (const cell of spread(useful, limit.rampart)) out.push({ cell, kind: 'rampart' })
   for (const cell of spread(cuttings, limit.cutting)) out.push({ cell, kind: 'cutting' })
   return out
 }
