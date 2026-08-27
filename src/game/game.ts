@@ -16,6 +16,7 @@ import { buildPaths, LanePath } from './path.ts'
 import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
 import { holdModel, holdPieces, holdCacheKey } from './hold.ts'
 import { isNotable } from './dossier.ts'
+import { campaignScale } from './balanceModel.ts'
 import { HERO_RANK_MAX, heroRankCost } from './hero.ts'
 import { levels, generateEndlessWaves } from './levels.ts'
 import { Terrain, PlotInfo, THEMES } from './terrain.ts'
@@ -255,6 +256,18 @@ export class Game implements World {
     return (1 + Math.max(0, w - 6) * 0.035) * (1 + Math.max(0, w - 30) * 0.012)
   }
 
+  /**
+   * Campaign escalation. Measured across all seven maps, every one front-loaded
+   * its tension and then decayed to roughly a third of it - the finale of the
+   * 28-wave map was easier than its opening, because affordable damage grows
+   * far faster than the authored waves do. Enemies harden as a map goes on so
+   * the curve stays a curve.
+   */
+  private campaignHpScale(): number {
+    if (this.isEndless || this.isDaily || !this.waves || !this.level) return 1
+    return campaignScale(Math.max(0, this.waves.waveIndex), this.level.waves.length)
+  }
+
   /** deep-endless hardening: 0 until wave 20, then bands of armor/resist */
   private endlessToughness(): number {
     if (!this.isEndless || !this.waves) return 0
@@ -281,7 +294,8 @@ export class Game implements World {
     const eliteChance = this.difficulty === 'veteran' ? 0.12 : this.isEndless ? 0.08 : 0
     const elite = (opts.eliteRoll ?? false) && !def.boss && simChance(eliteChance)
     const e = new Enemy(def, this.lanes[laneIndex], laneIndex, dist, {
-      hpMult: DIFFICULTIES[this.difficulty].enemyHp * (surged ? 1.3 : 1) * (opts.hpScale ?? this.endlessHpScale()),
+      hpMult: DIFFICULTIES[this.difficulty].enemyHp * (surged ? 1.3 : 1)
+        * (opts.hpScale ?? this.endlessHpScale()) * this.campaignHpScale(),
       toughness: this.endlessToughness(),
       speedMult: surged ? 1.12 : 1,
       elite,
