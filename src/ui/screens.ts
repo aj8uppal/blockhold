@@ -128,10 +128,14 @@ export class Screens {
     // one battle, the same one for everyone in the world today
     const day = dailyNumber()
     const done = save.dailyBest?.day === day
-    const daily = el('button', 'btn ghost', card,
+    // the same row as the other modes: its (i) used to be appended straight to
+    // the column, so it dropped onto its own line and sat centred under the
+    // button while every other info dot sat inline at the right
+    const dailyRow = el('div', 'menu-mode-row', card)
+    const daily = el('button', 'btn ghost mode-btn', dailyRow,
       `${icon('moon')} Daily Hold #${day}${done ? ` · wave ${save.dailyBest!.wave}` : ''}`) as HTMLButtonElement
     daily.onclick = () => this.onPlayDaily()
-    this.infoButton(card, daily, {
+    this.infoButton(dailyRow, daily, {
       tagline: 'One battle a day, the same for everyone.',
       body: 'Twelve waves on a board built from today\'s date, identical for every player in the world. It resets at midnight UTC.',
       skill: 'When it ends you get a result bar you can copy, and a link that drops a friend onto the exact same board.',
@@ -414,7 +418,7 @@ export class Screens {
     parent: HTMLElement, ico: string, label: string, play: () => void,
     info: { tagline: string, body: string, skill: string },
   ): void {
-    const row = el('div', 'mode-row', parent)
+    const row = el('div', 'menu-mode-row', parent)
     const btn = el('button', 'btn ghost mode-btn', row, `${icon(ico)} ${label}`) as HTMLButtonElement
     btn.onclick = play
     this.infoButton(row, btn, info, label)

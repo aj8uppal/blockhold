@@ -503,7 +503,10 @@ button:disabled { cursor: not-allowed; }
   filter: drop-shadow(0 3px 1px rgba(0,0,0,0.55));
 }
 .game-tagline { color: rgba(244, 232, 207, 0.8); font-size: 15px; font-style: italic; margin-top: -8px; }
-.menu-footer { position: absolute; bottom: 22px; color: rgba(244, 232, 207, 0.4); font-size: 12.5px; }
+/* In flow, not pinned. Absolutely positioning this to the viewport bottom put
+   it straight through the menu card whenever the card was taller than the
+   screen - which is every phone in landscape. */
+.menu-footer { color: rgba(244, 232, 207, 0.4); font-size: 12.5px; text-align: center; }
 
 .levels-head { display: flex; align-items: center; gap: 18px; width: min(920px, 92vw); }
 .levels-head .spacer { width: 86px; }
@@ -875,6 +878,21 @@ button:focus-visible {
   .game-title { font-size: 34px; letter-spacing: 6px; }
 }
 
+/* Phone landscape is the orientation this game is actually played in, and the
+   menu card is the tallest thing in it: trim the hero down so every option,
+   including the ones below the fold, is reachable without a scroll. */
+@media (max-height: 430px) {
+  .menu-hero { padding: 9px 24px; gap: 4px; border-radius: 16px; }
+  .menu-crest { font-size: 22px; }
+  .game-title { font-size: 22px; letter-spacing: 3px; }
+  .menu-tagline { font-size: 11px; }
+  .menu-hero .btn { padding: 5px 16px; font-size: 13px; }
+  .menu-hero .btn.primary { padding: 7px 24px; font-size: 15px; }
+  .info-dot { width: 21px; height: 21px; font-size: 11px; }
+  .menu-footer { font-size: 10.5px; }
+  #screens .screen { gap: 5px; }
+}
+
 /* very short landscape (phone landscape, 800x450 portal iframes): the level
    grid has to fit two rows of cards without clipping the second one */
 @media (max-height: 480px) {
@@ -990,8 +1008,11 @@ button:focus-visible {
 
 /* ---------- mode info + account ---------- */
 
-.mode-row { display: flex; align-items: center; gap: 8px; }
-.mode-row .mode-btn { flex: 1; }
+/* the menu's mode rows: button plus its (i), aligned in a column.
+   Named apart from `.mode-row` above, which is the difficulty picker - two
+   components sharing one class were quietly fighting over justify-content. */
+.menu-mode-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.menu-mode-row .mode-btn { flex: 1; min-width: 0; }
 .info-dot {
   flex: none;
   width: 26px; height: 26px; border-radius: 50%;

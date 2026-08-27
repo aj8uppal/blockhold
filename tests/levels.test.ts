@@ -172,13 +172,17 @@ describe('earthworks', () => {
       }
       const isTrap = (c: number, r: number) => (lvl.trapSpots ?? []).some(([tc, tr]) => tc === c && tr === r)
       const plots = lvl.plots.map(([c, r]) => gridToWorld(c, r, lvl.width, lvl.height))
-      const inReach = deriveEarthworkSpots(lvl, kindOf, isTrap)
-        .filter(s => s.kind === 'rampart')
-        .filter(s => {
-          const [x, z] = gridToWorld(s.cell[0], s.cell[1], lvl.width, lvl.height)
-          return plots.some(p => Math.hypot(p[0] - x, p[1] - z) <= RAMPART_REACH)
-        })
-      expect(inReach.length, `${lvl.id} has no rampart a tower could use`).toBeGreaterThanOrEqual(2)
+      const all = deriveEarthworkSpots(lvl, kindOf, isTrap).filter(s => s.kind === 'rampart')
+      const usable = (s: { cell: [number, number] }) => {
+        const [x, z] = gridToWorld(s.cell[0], s.cell[1], lvl.width, lvl.height)
+        return plots.some(p => Math.hypot(p[0] - x, p[1] - z) <= RAMPART_REACH)
+      }
+      // not "some are usable" - every one, or the player is offered a build
+      // site whose own tooltip admits no tower can reach it
+      for (const s of all) {
+        expect(usable(s), `${lvl.id} offers a rampart at [${s.cell}] no tower can use`).toBe(true)
+      }
+      expect(all.length, `${lvl.id} offers no ramparts at all`).toBeGreaterThanOrEqual(2)
     }
   })
 

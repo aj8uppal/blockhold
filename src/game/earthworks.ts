@@ -191,13 +191,17 @@ export function deriveEarthworkSpots(
   }
 
   /**
-   * A rampart only pays if a tower can stand beside it, so prefer the cells
-   * that are actually near a foundation. Without this, bigger boards spread
-   * the candidates out and most ramparts end up helping nothing - which is
-   * how the mechanic dies quietly as maps grow.
+   * A rampart is only ever offered where a tower can actually use it.
+   *
+   * This used to merely *prefer* such cells and then top the list up with
+   * whatever was left, which is how a player ends up staring at a build site
+   * whose own tooltip says "no tower is close enough to use it yet". The reach
+   * here is the same constant the buff is granted with, so the offer and the
+   * effect can never disagree; if a board cannot supply enough usable cells it
+   * offers fewer ramparts, because dead content is worse than less content.
    */
   const nearPlot = (c: number, r: number) =>
-    level.plots.some(([pc, pr]) => Math.hypot(pc - c, pr - r) <= 2)
+    level.plots.some(([pc, pr]) => Math.hypot(pc - c, pr - r) <= RAMPART_REACH)
   // spread across the board instead of clustering wherever the scan started
   const spread = <T>(arr: T[], n: number): T[] => {
     if (arr.length <= n) return arr
@@ -205,10 +209,7 @@ export function deriveEarthworkSpots(
     return Array.from({ length: n }, (_, i) => arr[Math.floor(i * step + step / 2)] ?? arr[arr.length - 1])
   }
   const useful = ramparts.filter(([c, r]) => nearPlot(c, r))
-  const rest = ramparts.filter(([c, r]) => !nearPlot(c, r))
-  const chosen = [...spread(useful, limit.rampart)]
-  for (const cell of spread(rest, limit.rampart - chosen.length)) chosen.push(cell)
-  for (const cell of chosen) out.push({ cell, kind: 'rampart' })
+  for (const cell of spread(useful, limit.rampart)) out.push({ cell, kind: 'rampart' })
   for (const cell of spread(cuttings, limit.cutting)) out.push({ cell, kind: 'cutting' })
   return out
 }
