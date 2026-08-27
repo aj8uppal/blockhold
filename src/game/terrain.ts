@@ -58,7 +58,35 @@ export const THEMES: Record<ThemeId, ThemeColors> = {
     skyTop: 0x181228, skyBottom: 0x6f4a8f, fog: 0x584a70,
     sunColor: 0xd8c9ff, sunIntensity: 1.9, hemiSky: 0x8f7ab8, hemiGround: 0x453e58, ambient: 0.36,
   },
+  // cold cliff country: pale stone terraces over dark pine, lit hard from a
+  // low sun so the height difference casts and reads
+  highland: {
+    // cold stone country, not another meadow: the ground is lichen over rock,
+    // so the terraces read as cut cliff rather than a green step
+    grass: 0x7d8a6a, grassAlt: 0x6d7a5c, dirt: 0x6b6154, road: 0xbfc0b0, roadAlt: 0xb0b2a2,
+    waterDeep: 0x2f6a86, waterShallow: 0x5fa3bd, waterGlow: 0,
+    skyTop: 0x3f79ad, skyBottom: 0xdfe9ea, fog: 0xc4d2d6,
+    sunColor: 0xfff2dc, sunIntensity: 2.6, hemiSky: 0xb4cade, hemiGround: 0x545a4a, ambient: 0.28,
+  },
+  // burnt ground under a lit sky: everything reads warm so the firestorm has
+  // to be hotter than its own world to stand out
+  ashfall: {
+    grass: 0x6b5a4a, grassAlt: 0x5e4e40, dirt: 0x463a30, road: 0x9c8a72, roadAlt: 0x8f7a63,
+    waterDeep: 0xd8401a, waterShallow: 0xff8a3c, waterGlow: 1,
+    skyTop: 0x3f1c14, skyBottom: 0xd8703c, fog: 0x8a4a30,
+    sunColor: 0xffb070, sunIntensity: 2.3, hemiSky: 0xd8905a, hemiGround: 0x4a382c, ambient: 0.38,
+  },
+  // a drowned coast, where the roads themselves are the thing that changes
+  tidal: {
+    grass: 0x5f8f7a, grassAlt: 0x527f6c, dirt: 0x4a5c52, road: 0xc8b98f, roadAlt: 0xb9aa80,
+    waterDeep: 0x1d5a6e, waterShallow: 0x3f97a8, waterGlow: 0,
+    skyTop: 0x2c5f74, skyBottom: 0xbfe0e0, fog: 0x9cc4c4,
+    sunColor: 0xe8f4e0, sunIntensity: 2.1, hemiSky: 0x9fd0cf, hemiGround: 0x445048, ambient: 0.34,
+  },
 }
+
+/** how far above its own footing a tower can still shoot over */
+export const SIGHT_CLEARANCE = 0.55
 
 export interface PlotInfo {
   index: number
@@ -179,6 +207,33 @@ export class Terrain {
       if (c >= c0 && c <= c1 && r >= r0 && r <= r1) best = Math.max(best, h)
     }
     return best
+  }
+
+  /**
+   * Does raised ground stand between these two points?
+   *
+   * A tower shoots from its own ground level, so a ridge only blocks it if the
+   * ridge is meaningfully higher than the ground the tower is standing on. That
+   * one rule gives the terraces their whole meaning - a gun on the shelf sees
+   * over everything, a gun in the hollow behind it cannot reach the far road -
+   * and it costs nothing on a flat board, where there is no raised ground to
+   * find and the walk exits immediately.
+   */
+  sightBlocked(fromX: number, fromZ: number, fromY: number, toX: number, toZ: number): boolean {
+    if (!(this.level.plateaus ?? []).length) return false
+    const dx = toX - fromX, dz = toZ - fromZ
+    const dist = Math.hypot(dx, dz)
+    if (dist < 1.2) return false
+    const steps = Math.min(14, Math.max(3, Math.round(dist)))
+    const clear = fromY + SIGHT_CLEARANCE
+    // skip the muzzle and the target's own cell; a ridge you stand on, or one
+    // the target is stood against, is not what blocks the shot
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps
+      const [c, r] = this.worldToCell(fromX + dx * t, fromZ + dz * t)
+      if (this.plateauAt(c, r) > clear) return true
+    }
+    return false
   }
 
   /** height of the ground a unit standing at this world point rests on */

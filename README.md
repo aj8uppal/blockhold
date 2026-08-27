@@ -24,7 +24,7 @@ npm test           # vitest unit/regression suite
 
 ## The campaign
 
-Seven maps, each with its own theme, roster, and shape of pressure:
+Ten maps, each with its own theme, roster, and shape of pressure:
 
 1. **Greenhollow** — the meadow road. Learn the trade.
 2. **Frostmere Pass** — two frozen roads, one gate.
@@ -32,9 +32,12 @@ Seven maps, each with its own theme, roster, and shape of pressure:
 4. **Mistfen Crossing** — a drowned fen where Mistwalkers phase in and out of reach.
 5. **The Shattered Crown** — three converging warpaths and the flying Veilqueen.
 6. **Cinderwake Caldera** — three roads through the glassfire, hunted by phasing Riftwings.
-7. **Veilscar Confluence** — the 28-wave finale, where Rift Heralds sing reinforcements into being and the Veil Regent walks.
+7. **Veilscar Confluence** — three roads into the last wound, where Rift Heralds sing reinforcements into being and the Veil Regent walks.
+8. **Sunderfall Terraces** — four roads at four heights. A tower shoots from its own footing, so a ridge taller than the ground you stand on blocks the shot: the mesa sees everything, the hollow behind it sees one road.
+9. **Emberwind Reach** — a firestorm that *follows your hero*. Lead it into the horde; it burns him too, and towers caught inside it fire slower.
+10. **Tidereach Causeway** — the widest board in the game, where the tide closes causeways and opens others mid-battle. Traffic reroutes to whatever is still standing, so the defense you paid for is not the one you keep.
 
-Three difficulties per map (Veteran adds elite-affix enemies), three stars per victory, all progress saved locally.
+Three difficulties per map (Veteran adds elite-affix enemies), three stars per victory, all progress saved locally. The last three are post-finale: their median wave pressure runs roughly twice the first seven's.
 
 ## What makes it Blockhold
 

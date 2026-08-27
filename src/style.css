@@ -375,6 +375,13 @@ button:disabled { cursor: not-allowed; }
   100% { opacity: 0; transform: translateX(-50%) translateY(-16px) scale(0.98); }
 }
 
+/* The level intro and the onboarding coach mark are both bottom-centred and
+   sat 20px apart, so a three-line intro drew straight through the coach mark.
+   The toast steps up out of the way whenever a coach mark is on screen. */
+#hud:has(.coach-mark:not(.hidden)) .toast { bottom: 166px; }
+@media (max-height: 560px) {
+  #hud:has(.coach-mark:not(.hidden)) .toast { bottom: 138px; }
+}
 .toast {
   position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%);
   max-width: 520px;
@@ -850,6 +857,46 @@ button:focus-visible {
   .menu-hero { padding: 32px 30px; }
 }
 
+/*
+ * Phone landscape: the tower panel has to leave the board playable.
+ *
+ * At the tablet sizing it ran 460px of an 844px screen and 58vh of a 390px
+ * one - over half the view, with the right of the board behind it - so
+ * selecting a tower meant losing sight of the lane you selected it for. It
+ * becomes a narrow column here: two stat chips a row at a smaller size,
+ * tighter padding, and its own scroll.
+ */
+@media (pointer: coarse) and (max-height: 430px), (max-height: 430px) and (min-width: 700px) {
+  .tower-panel {
+    width: min(300px, 40vw);
+    max-height: calc(100vh - 96px - env(safe-area-inset-bottom));
+    bottom: calc(70px + env(safe-area-inset-bottom));
+    padding: 8px;
+    border-radius: 12px;
+  }
+  .tp-head { margin-bottom: 5px; gap: 7px; }
+  .tp-icon { font-size: 19px; }
+  .tp-name { font-size: 13px; }
+  .tp-level { font-size: 10.5px; }
+  .tp-close { min-width: 32px; min-height: 32px; }
+  .stat-chips { gap: 4px; margin: 5px 0 2px; }
+  .chip { padding: 3px 6px 4px; border-radius: 7px; }
+  .chip-label { font-size: 8.5px; }
+  .chip-value { font-size: 11.5px; }
+  .tp-traits, .tp-stats { font-size: 10.5px; line-height: 1.35; }
+  .tp-actions { gap: 4px; }
+  .btn.upgrade { padding: 6px 8px; }
+  .u-name { font-size: 11.5px; }
+  .u-cost { font-size: 11px; }
+  .u-desc { font-size: 10px; line-height: 1.3; }
+  .btn.small { padding: 6px 7px; font-size: 11px; min-height: 34px; }
+  .btn { min-height: 34px; }
+  /* the coach mark is centre-bottom and the panel is right-bottom; on a short
+     wide screen they meet, so the mark yields the corner the panel needs */
+  #hud:has(.tower-panel:not(.hidden)) .coach-mark { left: 34%; max-width: 46vw; }
+  #hud:has(.tower-panel:not(.hidden)) .toast { left: 34%; max-width: 46vw; }
+}
+
 /* short landscape phones: compress the pre-battle picker so it fits */
 @media (max-height: 560px) {
   .help-card { max-height: 92vh; padding: 14px 18px; gap: 8px; overflow-y: auto; }
@@ -1069,9 +1116,15 @@ button:focus-visible {
   .info-dot { width: 34px; height: 34px; font-size: 15px; }
 }
 
-/* an ability button that has been tapped once shows what it does before firing */
-.ability.armed {
+/* a button being held down is being read, not pressed */
+.ability.armed, .build-option.armed, .btn.upgrade.armed {
   box-shadow: 0 0 0 2px var(--gold-bright), 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+/* the three spends that cannot be undone ask once, and look like it */
+.btn.confirming {
+  background: linear-gradient(180deg, #8f2f2f, #6a2020);
+  border-color: #e8955f;
+  color: #ffe4c8;
 }
 .ability-tip {
   position: absolute;

@@ -22,9 +22,10 @@ describe('armory', () => {
     const save = mkSave()
     expect(buyTier(save, 'coffers')).toBe(true)   // costs 1
     expect(buyTier(save, 'coffers')).toBe(true)   // costs 2
-    expect(buyTier(save, 'coffers')).toBe(false)  // maxed
-    expect(starsSpent(save)).toBe(3)
-    expect(starsAvailable(save)).toBe(6)
+    expect(buyTier(save, 'coffers')).toBe(true)   // costs 3
+    expect(buyTier(save, 'coffers')).toBe(false)  // maxed at three tiers
+    expect(starsSpent(save)).toBe(6)
+    expect(starsAvailable(save)).toBe(3)
   })
 
   it('refuses purchases beyond available stars', () => {

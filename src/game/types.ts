@@ -122,7 +122,7 @@ export interface WaveDef {
   surge?: boolean
 }
 
-export type ThemeId = 'forest' | 'winter' | 'ember' | 'swamp' | 'void'
+export type ThemeId = 'forest' | 'winter' | 'ember' | 'swamp' | 'void' | 'highland' | 'ashfall' | 'tidal'
 
 /** large scenery that breaks the horizon and gives a board its character */
 export type LandmarkKind =
@@ -133,7 +133,7 @@ export type LandmarkKind =
   | 'greatTree'
 
 /** map signature mechanics — opportunity windows, never chores */
-export type HazardId = 'deepchill' | 'eruption' | 'witchlights' | 'riftlight'
+export type HazardId = 'deepchill' | 'eruption' | 'witchlights' | 'riftlight' | 'emberwind' | 'shiftingroads'
 
 // ---------------- road traps ----------------
 

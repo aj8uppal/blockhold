@@ -723,7 +723,7 @@ export class Game implements World {
     this.abilities.reinforce.cooldown = 0
     this.waves = new WaveManager(
       level,
-      (id, lane) => this.spawnEnemyAt(id, lane, 0, {
+      (id, lane) => this.spawnEnemyAt(id, this.liveLane(lane), 0, {
         surged: level.waves[this.waves!.waveIndex]?.surge ?? false,
         eliteRoll: true,
         waveTag: this.waves!.waveIndex,
@@ -1523,6 +1523,7 @@ export class Game implements World {
       this.firstBuildAt = this.time
       telemetry.track({ type: 'first_build_delay', seconds: Math.round(this.time) })
     }
+    this.teachSightline(tower)
     this.particles.buildDust(plot.pos.x, plot.pos.y + 0.1, plot.pos.z)
     this.sfx('build')
     this.clearSelection()
@@ -1602,7 +1603,57 @@ export class Game implements World {
         w => w.kind === 'rampart' && w.group.position.distanceTo(t.pos) <= RAMPART_REACH,
       )
       t.onHighGround = nearRampart || this.terrain?.isOnHill(t.plot.cell[0], t.plot.cell[1]) === true
+      // what it shoots from, so it can see over anything shorter than its footing
+      t.footing = this.terrain?.cellTop(t.plot.cell[0], t.plot.cell[1]) ?? 0
     }
+  }
+
+  /**
+   * Roads the tide has taken. A wave still says which road it wants; if that
+   * road is shut, its traffic comes up the nearest one that is open, so a
+   * closed road never silently swallows a wave.
+   */
+  closedLanes = new Set<number>()
+
+  liveLane(lane: number): number {
+    if (!this.closedLanes.has(lane) || !this.lanes.length) return lane
+    let best = lane, bestD = Infinity
+    for (let i = 0; i < this.lanes.length; i++) {
+      if (this.closedLanes.has(i)) continue
+      const d = Math.abs(i - lane)
+      if (d < bestD) { bestD = d; best = i }
+    }
+    return best
+  }
+
+  private taughtSightline = false
+
+  /**
+   * Terrain that blocks a shot is the one mechanic a player cannot see the
+   * rules of by looking - a tower simply does nothing and reads as broken. So
+   * it is taught the first time it actually costs the player something: on the
+   * build that lands behind a ridge, naming the fix rather than the rule.
+   */
+  private teachSightline(tower: Tower): void {
+    if (this.taughtSightline || !this.terrain) return
+    if (!(this.level?.plateaus ?? []).length) return
+    let blocked = 0, total = 0
+    for (const lane of this.lanes) {
+      for (let d = 0; d < lane.length; d += 1.2) {
+        const s = lane.sample(d)
+        if (Math.hypot(s.x - tower.pos.x, s.z - tower.pos.z) > tower.range) continue
+        total++
+        if (this.terrain.sightBlocked(tower.pos.x, tower.pos.z, tower.footing, s.x, s.z)) blocked++
+      }
+    }
+    if (total === 0 || blocked / total < 0.25) return
+    this.taughtSightline = true
+    this.hud.showToast('That ridge blocks the shot — this tower cannot see past it. Build on the high ground to shoot over the terraces.', 7)
+  }
+
+  /** is raised ground standing between a tower and its target? */
+  sightBlocked(fromX: number, fromZ: number, fromY: number, toX: number, toZ: number): boolean {
+    return this.terrain?.sightBlocked(fromX, fromZ, fromY, toX, toZ) ?? false
   }
 
   /** ground height under a world point, so a unit rests on raised ground */

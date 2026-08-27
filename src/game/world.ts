@@ -55,6 +55,8 @@ export interface World {
   readonly isBellfoundry: boolean
   /** height of the ground under a world point, so units stand on raised shelves */
   groundY(x: number, z: number): number
+  /** is a ridge standing between a tower and what it is shooting at? */
+  sightBlocked(fromX: number, fromZ: number, fromY: number, toX: number, toZ: number): boolean
   /** is this point inside a player-dug cutting? */
   cuttingAt(x: number, z: number): boolean
   shake(strength: number): void

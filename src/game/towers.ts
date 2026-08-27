@@ -32,6 +32,8 @@ import { onBeat, BEAT_BONUS } from './beat.ts'
  * while staying selective; see tests/towers.test.ts.
  */
 export const REACTION_RADIUS = 3.1
+/** how fast a tower works while a hazard is sitting on top of it */
+export const SUPPRESSED_RATE = 0.55
 
 export type ReactionId = 'enchanted' | 'runic' | 'ranging' | 'shieldwall'
 
@@ -137,6 +139,10 @@ export class Tower {
   targetPolicy: TargetPolicy = 'first'
   /** standing beside a rampart: further sight, heavier shots */
   onHighGround = false
+  /** the height this tower shoots from: it sees over anything not above this */
+  footing = 0
+  /** inside a hazard that slows its crew; cleared when the hazard moves on */
+  suppressed = false
   /** an echo of a previous watch: it fights, but faintly, and cannot be touched */
   isGhost = false
   rallyFlag: THREE.Group | null = null
@@ -462,11 +468,23 @@ export class Tower {
    * comparator is the whole decision, so letting the player pick it is very
    * nearly free - and it is real tactical expression rather than more breadth.
    */
+  /**
+   * Can this tower actually see that enemy?
+   *
+   * A flyer is above the terrain and always visible; a ground enemy behind a
+   * ridge taller than the tower's own footing is not. This is what makes a
+   * terrace worth paying for and a hollow worth avoiding.
+   */
+  private canSee(e: Enemy, world: World): boolean {
+    if (e.def.flying) return true
+    return !world.sightBlocked(this.pos.x, this.pos.z, this.footing, e.pos.x, e.pos.z)
+  }
+
   private acquireTarget(world: World): void {
     if (this.target) {
       const t = this.target
       const inRange = t.targetable && Math.hypot(t.pos.x - this.pos.x, t.pos.z - this.pos.z) <= this.range + t.radius
-      if (!inRange) this.target = null
+      if (!inRange || !this.canSee(t, world)) this.target = null
     }
     if (this.target) return
     let best: Enemy | null = null
@@ -477,6 +495,7 @@ export class Tower {
       if (this.def.airOnly && !e.def.flying) continue
       const d = Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z)
       if (d > this.range + e.radius) continue
+      if (!this.canSee(e, world)) continue
       const score = targetScore(this.targetPolicy, e)
       if (score < bestScore) { bestScore = score; best = e }
     }
@@ -582,9 +601,10 @@ export class Tower {
       if (this.cooldown <= 0 && aimDiff < 0.35) {
         this.stallT = 0
         // overcharge and riftlight don't stack — the stronger boost wins
-        const rate = 1 + Math.max(
+        const rate = (1 + Math.max(
           this.isOvercharged(world) ? OVERCHARGE_RATE_BONUS : 0,
-          world.time < this.riftUntil ? 0.4 : 0)
+          world.time < this.riftUntil ? 0.4 : 0))
+          * (this.suppressed ? SUPPRESSED_RATE : 1)
         this.cooldown = this.def.attackInterval! / rate
         this.fire(t, world)
         this.recoil = 1

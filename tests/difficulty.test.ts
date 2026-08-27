@@ -77,7 +77,9 @@ describe('multi-lane pressure', () => {
    * credits no hero, Meteor Storm, trap or Overcharge, which are exactly what
    * a boss is answered with - but not without limit.
    */
-  const BOSS_HP = 2000
+  // The Hollowking is 1150: a single unit that size is a boss encounter, and
+  // classing it as ordinary asked its waves to meet the ordinary cap.
+  const BOSS_HP = 1000
   const isBoss = (w: { groups: { enemy: string }[] }) =>
     w.groups.some(g => enemyDef(g.enemy).hp >= BOSS_HP)
 
