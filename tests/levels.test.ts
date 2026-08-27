@@ -326,3 +326,28 @@ describe('raised ground', () => {
     }
   })
 })
+
+describe('lane coverage', () => {
+  /**
+   * Every road has to be defensible. A lane with only a handful of plots in
+   * reach cannot be held however well the player plays, and growing the boards
+   * is exactly the kind of change that could quietly starve one - Veilscar has
+   * three roads and twenty foundations, but they are not evenly shared.
+   */
+  it('gives every lane enough foundations to hold it', () => {
+    const REACH = 3.6   // a mid-tier tower
+    for (const lvl of levels) {
+      const paths = buildPaths(lvl)
+      const perLane = paths.lanes.map(() => 0)
+      for (const [c, r] of lvl.plots) {
+        const [x, z] = gridToWorld(c, r, lvl.width, lvl.height)
+        paths.lanes.forEach((lane, i) => {
+          if (lane.distanceToPath(x, z) <= REACH) perLane[i]++
+        })
+      }
+      perLane.forEach((n, i) => {
+        expect(n, `${lvl.id} lane ${i} has only ${n} plots in reach`).toBeGreaterThanOrEqual(6)
+      })
+    }
+  })
+})
