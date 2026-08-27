@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, test } from 'vitest'
 import { enemyDef } from '../src/game/enemyDefs.ts'
 import { levels } from '../src/game/levels.ts'
+import { campaignScale } from '../src/game/balanceModel.ts'
 import { towerTrees } from '../src/game/towerDefs.ts'
 import {
   ASCEND_GOLD_COST,
@@ -80,24 +81,33 @@ function averageTierOneToThreeDpsPerGold(): number {
   return rates.reduce((sum, rate) => sum + rate, 0) / rates.length
 }
 
-function hpForGroup(wave: WaveDef, groupIndex: number): number {
+/**
+ * Campaign hardening is real HP, not a modelling choice: `Game.campaignHpScale`
+ * multiplies it at spawn. Leaving it out here understated the back half of every
+ * map by up to 2.1x and drew the report's "no capacity flags" conclusion from
+ * numbers the game never actually spawns.
+ */
+function hpForGroup(wave: WaveDef, groupIndex: number, waveIndex: number, totalWaves: number): number {
   const group = wave.groups[groupIndex]
   return enemyDef(group.enemy).hp * DIFFICULTIES.normal.enemyHp * group.count
+    * campaignScale(waveIndex, totalWaves)
 }
 
 function analyzeLevel(level: LevelDef, dpsPerGold: number): LevelAnalysis {
   let priorIncome = 0
   const waves: WaveMetrics[] = level.waves.map((wave, waveIndex) => {
-    const hp = wave.groups.reduce((sum, _, groupIndex) => sum + hpForGroup(wave, groupIndex), 0)
+    const scale = campaignScale(waveIndex, level.waves.length)
+    const hp = wave.groups.reduce(
+      (sum, _, groupIndex) => sum + hpForGroup(wave, groupIndex, waveIndex, level.waves.length), 0)
     const income = wave.groups.reduce((sum, group) => {
       return sum + enemyDef(group.enemy).bounty * DIFFICULTIES.normal.bounty * group.count
     }, 0)
     const arrivalHpPerSecond = wave.groups.reduce((sum, group) => {
       const def = enemyDef(group.enemy)
-      return sum + def.hp * DIFFICULTIES.normal.enemyHp * group.count / group.interval
+      return sum + def.hp * DIFFICULTIES.normal.enemyHp * scale * group.count / group.interval
     }, 0)
     const hpMatching = (predicate: (enemyId: string) => boolean) => wave.groups.reduce((sum, group) => {
-      return sum + (predicate(group.enemy) ? enemyDef(group.enemy).hp * group.count : 0)
+      return sum + (predicate(group.enemy) ? enemyDef(group.enemy).hp * scale * group.count : 0)
     }, 0)
     const flyingHp = hpMatching(enemyId => enemyDef(enemyId).flying === true)
     const highArmorHp = hpMatching(enemyId => enemyDef(enemyId).armor >= HIGH_ARMOR)
