@@ -109,6 +109,26 @@ export class Terrain {
     return 'grass'
   }
 
+  /**
+   * Make the buildable pads obvious. A newcomer has no reason to know a grey
+   * square is a foundation, so the guided first battle lights them.
+   */
+  pulsePlots(on: boolean): void {
+    if (on === this.plotsPulsing) return
+    this.plotsPulsing = on
+    for (const p of this.plots) {
+      p.mesh.traverse(o => {
+        if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
+          if (o.material.userData.shared) return
+          o.material.emissive.setHex(on ? 0xffd24a : 0x000000)
+          o.material.emissiveIntensity = on ? 0.5 : 0
+        }
+      })
+    }
+  }
+
+  private plotsPulsing = false
+
   /** is this cell part of the map's own raised ground? */
   isOnHill(c: number, r: number): boolean {
     return inRects(c, r, this.level.hills)
@@ -359,7 +379,7 @@ export class Terrain {
     const { level } = this
     level.plots.forEach(([c, r], i) => {
       const [x, z] = gridToWorld(c, r, level.width, level.height)
-      const mesh = buildModel(plotVox(), 'plot', { castShadow: false, receiveShadow: true })
+      const mesh = buildModel(plotVox(), 'plot', { castShadow: false, receiveShadow: true, cloneMaterials: true })
       mesh.position.set(x, 0, z)
       this.group.add(mesh)
       this.plots.push({ index: i, cell: [c, r], pos: new THREE.Vector3(x, 0.1, z), occupied: false, mesh })

@@ -1067,3 +1067,37 @@ button:focus-visible {
   border: 1px solid rgba(232, 178, 60, 0.45);
   border-radius: 999px; padding: 1px 6px; margin-left: 4px;
 }
+
+/* ---------- the guided first battle ---------- */
+
+.coach-mark {
+  position: absolute;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(90px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 10px;
+  max-width: min(460px, 92vw);
+  background: rgba(20, 14, 9, 0.95);
+  border: 1px solid rgba(232, 178, 60, 0.55);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+  animation: coach-in 0.28s ease both;
+}
+.coach-mark.hidden { display: none; }
+.coach-text { font-size: 13.5px; line-height: 1.45; color: var(--parchment); }
+.coach-skip {
+  flex: none;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: rgba(244, 232, 207, 0.6);
+  background: transparent; border: 1px solid rgba(244, 232, 207, 0.25);
+  border-radius: 999px; padding: 5px 10px; cursor: pointer;
+}
+.coach-skip:hover { color: var(--parchment); border-color: rgba(244, 232, 207, 0.5); }
+@keyframes coach-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+@media (max-height: 480px) {
+  .coach-mark { bottom: calc(76px + env(safe-area-inset-bottom)); padding: 7px 10px; }
+  .coach-text { font-size: 12px; }
+}

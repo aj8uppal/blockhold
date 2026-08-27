@@ -17,6 +17,7 @@ import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
 import { holdModel, holdPieces, holdCacheKey } from './hold.ts'
 import { isNotable } from './dossier.ts'
 import { campaignScale } from './balanceModel.ts'
+import { OnboardingDirector } from './onboarding.ts'
 import { HERO_RANK_MAX, heroRankCost } from './hero.ts'
 import { levels, generateEndlessWaves } from './levels.ts'
 import { Terrain, PlotInfo, THEMES } from './terrain.ts'
@@ -372,6 +373,9 @@ export class Game implements World {
    */
   private checkpointT = 0
   private firstBuildAt = -1
+  /** true once the player has issued a hero move order, for onboarding */
+  heroHasMoved = false
+  private onboarding: OnboardingDirector | null = null
   /** per-wave result, in order, for the shareable daily block */
   waveOutcomes: ('held' | 'leaked')[] = []
   isDaily = false
@@ -438,6 +442,28 @@ export class Game implements World {
       livesRatio: maxLives > 0 ? this.lives / maxLives : 1,
       phase: this.phase,
     })
+  }
+
+  private updateOnboarding(dt: number): void {
+    const o = this.onboarding
+    if (!o) return
+    if (o.finished) {
+      this.onboarding = null
+      this.save.taughtBasics = true
+      writeSave(this.save)
+      this.hud.setCoachMark(null)
+      this.terrain?.pulsePlots(false)
+      return
+    }
+    const prompt = o.update(this, dt)
+    this.hud.setCoachMark(prompt)
+    this.terrain?.pulsePlots(!!prompt && !!o.current?.pulsePlots)
+  }
+
+  /** the player gave up on being taught */
+  skipOnboarding(): void {
+    this.onboarding?.skip()
+    this.updateOnboarding(0)
   }
 
   get surgeActive(): boolean {
@@ -713,6 +739,10 @@ export class Game implements World {
       seed: this.runSeed, resumed: !!resume,
     })
     this.firstBuildAt = -1
+    this.heroHasMoved = false
+    // the guided opening runs once, on a player's very first battle
+    this.onboarding = (!this.save.taughtBasics && !this.isDaily && !this.isWatches)
+      ? new OnboardingDirector() : null
     if (this.isWatches) this.raiseGhosts()
     if (resume) this.applyCheckpoint(resume)
     else if (level.intro) this.hud.showToast(level.intro, 5)
@@ -1226,6 +1256,7 @@ export class Game implements World {
     if (enemy) {
       if (this.heroSelected && this.hero && !this.hero.dead) {
         this.hero.orderMove(enemy.pos.clone(), this)   // attack-move onto the target
+        this.heroHasMoved = true
       } else {
         this.hud.showEnemyTip(enemy, sx, sy)           // tap-to-inspect (touch has no hover)
       }
@@ -1235,6 +1266,7 @@ export class Game implements World {
       const g = this.groundPoint(sx, sy)
       if (g) {
         if (!this.hero.orderMove(g, this)) this.sfx('error')
+        else this.heroHasMoved = true
         return
       }
     }
@@ -1834,6 +1866,7 @@ export class Game implements World {
         this.checkpointT = 0
         this.maybeCheckpoint()
         this.updateMusicState()
+        this.updateOnboarding(1)
       }
     }
 
