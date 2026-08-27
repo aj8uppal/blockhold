@@ -86,6 +86,30 @@ export function flowers(rng: () => number): VoxModel {
  * taller than a tree. These are deliberately oversized - they are meant to be
  * seen from across the map and to sit behind the fight rather than in it.
  */
+/**
+ * How big a set-piece stands.
+ *
+ * Every kind used to ship at 0.1, which put a spire at barely three units -
+ * shorter than the towers around it, so at play distance the "big things on
+ * the horizon" read as litter. These are sized per kind so each one is
+ * monumental while its footprint stays well inside the 2.6-cell clearance the
+ * placement rules keep between a landmark and the nearest road.
+ */
+const LANDMARK_SCALE: Record<string, number> = {
+  spire: 0.2, monolith: 0.2, greatTree: 0.18, arch: 0.16, ruin: 0.16,
+}
+
+/** how tall each kind stands once built, so the camera can leave room for it */
+export const LANDMARK_HEIGHT: Record<string, number> = {
+  spire: 34 * 0.2, monolith: 26 * 0.2, greatTree: 24 * 0.18,
+  arch: 23 * 0.16, ruin: 13 * 0.16,
+}
+
+/** the tallest set-piece a board carries, in world units */
+export function tallestLandmark(kinds: string[]): number {
+  return kinds.reduce((m, k) => Math.max(m, LANDMARK_HEIGHT[k] ?? 0), 0)
+}
+
 export function landmark(kind: string, rng: () => number, theme: string): VoxModel {
   // These sit against the map's own ambient grade, and the ember and void
   // themes are dark enough that an unlit stone reads as a black cut-out. The
@@ -107,7 +131,7 @@ export function landmark(kind: string, rng: () => number, theme: string): VoxMod
       // broken crown: the top course is snapped off on one side
       body.push(box(-1.0, 32, -0.6, 2.4, 2.2, 2.4, stone))
       body.push(box(0, 0.8, 0, 7.2, 1.6, 7.2, dark))
-      return { parts: { body }, scale: 0.1 }
+      return { parts: { body }, scale: LANDMARK_SCALE[kind] ?? 0.16 }
     }
     case 'arch': {
       const body: VoxBox[] = [
@@ -118,7 +142,7 @@ export function landmark(kind: string, rng: () => number, theme: string): VoxMod
         box(-6.5, 0.9, 0, 4.6, 1.8, 4.8, dark),
         box(6.5, 0.9, 0, 4.6, 1.8, 4.8, dark),
       ]
-      return { parts: { body }, scale: 0.1 }
+      return { parts: { body }, scale: LANDMARK_SCALE[kind] ?? 0.16 }
     }
     case 'monolith': {
       const body: VoxBox[] = [
@@ -127,7 +151,7 @@ export function landmark(kind: string, rng: () => number, theme: string): VoxMod
         box(0, 1, 0, 6, 2, 5, dark),
         box(0, 15, 1.3, 1.4, 6, 0.3, accent, true),
       ]
-      return { parts: { body }, scale: 0.1 }
+      return { parts: { body }, scale: LANDMARK_SCALE[kind] ?? 0.16 }
     }
     case 'ruin': {
       const body: VoxBox[] = [
@@ -137,7 +161,7 @@ export function landmark(kind: string, rng: () => number, theme: string): VoxMod
         box(-6.5, 1.6, -1.2, 3, 3.2, 3, dark),
         box(0, 0.7, 0, 15, 1.4, 5, dark),
       ]
-      return { parts: { body }, scale: 0.1 }
+      return { parts: { body }, scale: LANDMARK_SCALE[kind] ?? 0.16 }
     }
     default: {
       // a great tree: trunk plus stacked canopy, three times a normal one
@@ -150,7 +174,7 @@ export function landmark(kind: string, rng: () => number, theme: string): VoxMod
         box(0, 22.5, 0, 6.4, 3.2, 6.4, leaf),
         box(0, 0.8, 0, 6, 1.6, 6, 0x5a3f26),
       ]
-      return { parts: { body }, scale: 0.1 }
+      return { parts: { body }, scale: LANDMARK_SCALE[kind] ?? 0.16 }
     }
   }
 }

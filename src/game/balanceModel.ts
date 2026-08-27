@@ -1,4 +1,5 @@
 import { enemyDef } from './enemyDefs.ts'
+import { buildPaths } from './path.ts'
 import { towerTrees } from './towerDefs.ts'
 import { DIFFICULTIES, type Difficulty, type LevelDef, type TowerLevelDef, type WaveDef } from './types.ts'
 
@@ -31,8 +32,29 @@ const LANE_COVERAGE = 0.55
 const ANTI_AIR_SHARE = 0.55
 /** gold a player commits to towers rather than traps, abilities and reserve */
 const TOWER_SPEND_SHARE = 0.85
-/** the reference lane length: all seven maps sit close to this */
-const LANE_LENGTH = 22
+/**
+ * Lane lengths are measured from the map, not assumed.
+ *
+ * An earlier version used a flat 22 for every board. Real lanes run from 14.7
+ * to 35.4, and a group walks one specific lane - so the model was calling
+ * Greenhollow harder than it is and Veilscar's short middle lane far easier.
+ * Transit time is most of the answer in a tower defense; guessing it is not a
+ * model, it is a coin flip.
+ */
+const laneCache = new Map<string, number[]>()
+
+function laneLengths(level: LevelDef): number[] {
+  const hit = laneCache.get(level.id)
+  if (hit) return hit
+  const lens = buildPaths(level).lanes.map(l => l.length)
+  laneCache.set(level.id, lens)
+  return lens
+}
+
+function laneLengthFor(level: LevelDef, laneIndex: number): number {
+  const lens = laneLengths(level)
+  return lens[laneIndex] ?? lens[0] ?? 22
+}
 
 export interface WaveVerdict {
   wave: number
@@ -44,8 +66,16 @@ export interface WaveVerdict {
   concurrent: number
 }
 
-/** the best sustained single-target DPS a given gold pile can buy */
-export function affordableDps(gold: number): number {
+/**
+ * The best sustained single-target DPS a given gold pile can buy.
+ *
+ * `plots` is not decoration: a board has 13-20 foundations, and an earlier
+ * version let gold alone decide the tower count. Late-campaign piles then
+ * bought imaginary 40-tower defenses, which is precisely why every map looked
+ * like it decayed into nothing. Gold stops mattering once the board is full;
+ * past that point the only way up is upgrading what is already standing.
+ */
+export function affordableDps(gold: number, plots = 14): number {
   const budget = gold * TOWER_SPEND_SHARE
   let best = 0
   for (const tree of Object.values(towerTrees)) {
@@ -60,7 +90,7 @@ export function affordableDps(gold: number): number {
     for (const rung of rungs) {
       if (!rung.def.damage || !rung.def.attackInterval) continue
       const dps = (rung.def.damage[0] + rung.def.damage[1]) / 2 / rung.def.attackInterval
-      const count = Math.floor(budget / rung.cost)
+      const count = Math.min(plots, Math.floor(budget / rung.cost))
       best = Math.max(best, dps * count)
     }
   }
@@ -91,7 +121,7 @@ export function judgeWave(
 ): WaveVerdict {
   const mods = DIFFICULTIES[difficulty]
   const gold = goldByWave(level, waveIndex, difficulty)
-  const dps = affordableDps(gold)
+  const dps = affordableDps(gold, level.plots.length)
   const surge = wave.surge ? 1.3 : 1
 
   /**
@@ -109,7 +139,7 @@ export function judgeWave(
   for (const g of wave.groups) {
     const d = enemyDef(g.enemy)
     const speed = d.speed * (wave.surge ? 1.12 : 1)
-    const transit = LANE_LENGTH / speed
+    const transit = laneLengthFor(level, g.lane ?? 0) / speed
     slowestTransit = Math.max(slowestTransit, transit)
     spawnSpan = Math.max(spawnSpan, g.delay + g.interval * Math.max(0, g.count - 1))
 
@@ -166,9 +196,14 @@ export function campaignScale(waveIndex: number, totalWaves: number): number {
   return 1 + Math.pow(progress, ESCALATION_CURVE) * depth
 }
 
-/** tuned against the model: flattens per-map decay from ~0.4x to ~0.9x */
-const ESCALATION_BASE = 1.2
-const ESCALATION_CURVE = 1.6
+/**
+ * Tuned against the model with the plot cap in place: flattens per-map decay
+ * to ~0.93x with no wave falling below the trivial line. The earlier 1.2/1.6
+ * was compensating for the uncapped-tower bug, so it over-scaled once that was
+ * fixed and pushed four waves past the gate.
+ */
+const ESCALATION_BASE = 0.9
+const ESCALATION_CURVE = 2.0
 
 /**
  * A campaign should feel like a curve, not a plateau. These are the bounds a

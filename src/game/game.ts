@@ -11,6 +11,7 @@ import { Earthwork, EARTHWORK_DEFS, RAMPART_REACH, type EarthworkSpot } from './
 import { Hazard, createHazard } from './hazards.ts'
 import { enemyDef } from './enemyDefs.ts'
 import { towerTrees, SELL_REFUND } from './towerDefs.ts'
+import { tallestLandmark } from '../voxel/models_env.ts'
 import { reactionFor, REACTION_RADIUS } from './towers.ts'
 import { buildPaths, LanePath } from './path.ts'
 import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
@@ -706,7 +707,8 @@ export class Game implements World {
     this.engine.scene.add(this.particles.group)
     this.engine.scene.add(this.rangeRing, this.upgradeRing, this.selectRing, this.targetRing, this.heroRing, this.heroGuardRing)
     this.engine.applyTheme(THEMES[level.theme], level.width, level.height)
-    this.engine.resetView(level.width, level.height)
+    this.engine.resetView(level.width, level.height,
+      tallestLandmark((level.landmarks ?? []).map(([, , k]) => k)))
 
     this.gold = level.startGold + 40 * armoryTier(this.save, 'coffers')
     this.shards = (level.startShards ?? 2) + 3 * armoryTier(this.save, 'prospector')

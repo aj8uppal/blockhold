@@ -48,7 +48,7 @@ export const EARTHWORK_DEFS: Record<EarthworkKind, EarthworkDef> = {
 }
 
 /** how far a rampart's high ground reaches */
-export const RAMPART_REACH = 1.7
+export const RAMPART_REACH = 2.0
 export const RAMPART_RANGE_BONUS = 0.15
 export const RAMPART_DAMAGE_BONUS = 0.10
 export const CUTTING_SLOW = 0.65
@@ -189,13 +189,26 @@ export function deriveEarthworkSpots(
       else if (k === 'road' && !isTrapSpot(c, r)) cuttings.push([c, r])
     }
   }
+
+  /**
+   * A rampart only pays if a tower can stand beside it, so prefer the cells
+   * that are actually near a foundation. Without this, bigger boards spread
+   * the candidates out and most ramparts end up helping nothing - which is
+   * how the mechanic dies quietly as maps grow.
+   */
+  const nearPlot = (c: number, r: number) =>
+    level.plots.some(([pc, pr]) => Math.hypot(pc - c, pr - r) <= 2)
   // spread across the board instead of clustering wherever the scan started
   const spread = <T>(arr: T[], n: number): T[] => {
     if (arr.length <= n) return arr
     const step = arr.length / n
     return Array.from({ length: n }, (_, i) => arr[Math.floor(i * step + step / 2)] ?? arr[arr.length - 1])
   }
-  for (const cell of spread(ramparts, limit.rampart)) out.push({ cell, kind: 'rampart' })
+  const useful = ramparts.filter(([c, r]) => nearPlot(c, r))
+  const rest = ramparts.filter(([c, r]) => !nearPlot(c, r))
+  const chosen = [...spread(useful, limit.rampart)]
+  for (const cell of spread(rest, limit.rampart - chosen.length)) chosen.push(cell)
+  for (const cell of chosen) out.push({ cell, kind: 'rampart' })
   for (const cell of spread(cuttings, limit.cutting)) out.push({ cell, kind: 'cutting' })
   return out
 }

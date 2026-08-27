@@ -231,8 +231,9 @@ export class Engine {
     this.renderer.setSize(w, h)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
-    // orientation change re-derives the zoom ceiling (portrait needs more headroom)
-    this.maxZoomOut = this.camera.aspect < 1 ? 34 : 22
+    // orientation change re-derives the zoom ceiling (portrait needs more
+    // headroom, and a big board needs more than either default)
+    this.maxZoomOut = this.zoomCeiling(this.board.w, this.board.h, this.liftFor(this.tallest))
     this.distGoal = Math.min(this.distGoal, this.maxZoomOut)
     this.dist = Math.min(this.dist, this.maxZoomOut)
   }
@@ -352,7 +353,41 @@ export class Engine {
     this.camTargetGoal.z = clamp(z, -this.bounds.z, this.bounds.z)
   }
 
-  resetView(mapW = 24, mapH = 14): void {
+  /** the board this camera is framing, so a resize can re-fit it */
+  private board = { w: 24, h: 14 }
+
+  /**
+   * How far back the camera may pull.
+   *
+   * This used to be a flat 22 (34 in portrait), which silently became a bug the
+   * moment the later boards grew: Veilscar needs about 25 to fit, so the map
+   * ran off all four edges and no amount of zooming could show it. The ceiling
+   * is now whatever the board actually needs, plus room to breathe. It uses the
+   * roomier desktop margins on purpose: a ceiling only has to be generous
+   * enough never to clamp the fit below what `resetView` asked for.
+   */
+  private zoomCeiling(mapW: number, mapH: number, lift = 0): number {
+    const base = this.camera.aspect < 1 ? 34 : 22
+    const t = Math.tan((this.camera.fov * Math.PI / 180) / 2)
+    const need = Math.max((mapH * 0.62 + lift) / t, (mapW * 0.56) / t / this.camera.aspect)
+    return Math.max(base, need * 1.12)
+  }
+
+  /** how much extra depth the tallest set-piece asks the fit to allow for */
+  private liftFor(tallest: number): number { return Math.min(tallest, 7) * 0.22 }
+
+  private tallest = 0
+
+  /**
+   * @param tallest height of the biggest set-piece on the board, in world
+   *   units. The camera looks down, so anything standing on the far rows
+   *   projects upward in frame: fitting to the flat board alone sheared the
+   *   tops off Mistfen's monoliths. The fit treats the board as deeper by
+   *   that height, so a monolith on the back row still reads whole.
+   */
+  resetView(mapW = 24, mapH = 14, tallest = 0): void {
+    this.board = { w: mapW, h: mapH }
+    this.tallest = tallest
     this.camTargetGoal.set(0, 0, 0.5)
     this.yawGoal = 0
     this.pitchGoal = 0.98
@@ -362,9 +397,12 @@ export class Engine {
     const tight = window.innerHeight <= 500 || window.matchMedia('(pointer: coarse)').matches
     const mh = tight ? 0.545 : 0.62
     const mw = tight ? 0.50 : 0.56
-    const fitH = (mapH * mh) / Math.tan((this.camera.fov * Math.PI / 180) / 2)
+    // a set-piece on the far rows projects upward, so the board is framed as
+    // if it were deeper by a share of the tallest thing standing on it
+    const lift = this.liftFor(tallest)
+    const fitH = (mapH * mh + lift) / Math.tan((this.camera.fov * Math.PI / 180) / 2)
     const fitW = (mapW * mw) / Math.tan((this.camera.fov * Math.PI / 180) / 2) / this.camera.aspect
-    const maxDist = this.camera.aspect < 1 ? 34 : 22
+    const maxDist = this.zoomCeiling(mapW, mapH, lift)
     this.maxZoomOut = maxDist
     this.distGoal = clamp(Math.max(fitH, fitW), 10, maxDist)
     this.dist = this.distGoal
