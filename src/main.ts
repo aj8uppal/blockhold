@@ -1,3 +1,12 @@
+import { requestDurableStorage, writeSave } from './core/save.ts'
+import { cloud } from './core/cloud.ts'
+import { readCheckpoint } from './game/checkpoint.ts'
+import { telemetry } from './core/telemetry.ts'
+import { acquisitionSource, isEmbedded } from './core/platform.ts'
+import { dailySeed, dailyNumber, newRunSeed } from './game/ruleset.ts'
+import { dailyLevel } from './game/levels.ts'
+import { readChallengeSeed } from './game/share.ts'
+import { canRecordTape, downloadTape, tapeFileExtension } from './core/capture.ts'
 import { Game } from './game/game.ts'
 import { HUD } from './ui/hud.ts'
 import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
@@ -60,25 +69,104 @@ screens.onPlayLevel = (id, difficulty, hero, mode) => {
     mode ?? (game.isEndless ? 'endless' : 'campaign'),
   )
 }
+// a challenge link drops the visitor straight onto the sender's exact board
+const challengeSeed = readChallengeSeed()
+
+screens.onPlayDaily = () => {
+  const seed = challengeSeed ?? dailySeed()
+  hud.reset()
+  hud.setChrome(true)
+  screens.show('none')
+  screens.dailySeedForShare = seed
+  game.startLevel(dailyLevel(seed), 'normal', (game.save.lastHero as never) ?? 'aldric', 'campaign',
+    { seed, daily: dailyNumber() })
+}
+screens.onShared = (kind) => telemetry.track({ type: 'share_copied', kind })
+screens.onRestore = (restored) => {
+  Object.assign(game.save, restored)
+  writeSave(game.save)
+  game.showMenuBackdrop()
+  screens.show('menu')
+  hud.showToast('Progress restored', 3)
+}
+
+screens.canRecordTape = () => canRecordTape()
+screens.onRecordTape = async () => {
+  const blob = await game.recordSiegeTape()
+  if (!blob) return false
+  const stamp = game.level?.id ?? 'blockhold'
+  downloadTape(blob, `blockhold-${stamp}.${tapeFileExtension(blob.type)}`)
+  telemetry.track({ type: 'share_copied', kind: 'siege_tape' })
+  return true
+}
+screens.onPlayBellfoundry = () => {
+  const seed = newRunSeed()
+  hud.reset()
+  hud.setChrome(true)
+  screens.show('none')
+  game.startLevel(dailyLevel(seed), 'normal', (game.save.lastHero as never) ?? 'aldric', 'campaign',
+    { seed, bellfoundry: true })
+}
+screens.onPlayWatches = () => {
+  const seed = newRunSeed()
+  game.resetWatches()
+  hud.reset()
+  hud.setChrome(true)
+  screens.show('none')
+  screens.watchesRemaining = 2
+  game.startLevel(dailyLevel(seed), 'normal', (game.save.lastHero as never) ?? 'aldric', 'campaign',
+    { seed, watches: true })
+  watchSeed = seed
+}
+let watchSeed = 0
+screens.onNextWatch = () => {
+  if (!game.advanceWatch()) return
+  hud.reset()
+  hud.setChrome(true)
+  screens.show('none')
+  screens.watchesRemaining = 2 - game.watchIndex
+  game.startLevel(dailyLevel(watchSeed), 'normal', (game.save.lastHero as never) ?? 'aldric', 'campaign',
+    { seed: watchSeed, watches: true })
+}
+screens.onResume = () => {
+  const cp = readCheckpoint()
+  if (!cp) return
+  hud.reset()
+  hud.setChrome(true)
+  screens.show('none')
+  game.startLevel(levelById(cp.levelId), cp.difficulty, cp.heroId, cp.endless ? 'endless' : 'campaign', { resume: cp })
+}
 screens.onMenu = () => {
+  screens.watchesRemaining = 0
+  game.resetWatches()
   game.showMenuBackdrop()
   hud.reset()
   hud.setChrome(false)
 }
 hud.onHome = () => {
+  if (game.phase === 'playing') {
+    telemetry.track({ type: 'quit_to_menu', level: game.level?.id ?? '', wave: (game.waves?.waveIndex ?? 0) + 1 })
+  }
   game.showMenuBackdrop()
   hud.reset()
   hud.setChrome(false)
   screens.show('levels')
 }
 game.onPhaseChange = (phase, stars) => {
+  // a finished run is exactly when progress is worth getting off this device
+  if (phase === 'victory' || phase === 'defeat') syncNow()
   if (phase === 'victory') screens.show('victory', { stars, levelId: game.level!.id, stats: game.battleStats() })
   else if (phase === 'defeat') screens.show('defeat', { levelId: game.level!.id, stats: game.battleStats() })
 }
 
-screens.show('menu')
-game.showMenuBackdrop()
-hud.setChrome(false)
+if (challengeSeed !== null) {
+  // arriving from someone else's link: play their board, skip the menu
+  screens.onPlayDaily()
+} else {
+  screens.show('menu')
+  game.showMenuBackdrop()
+  hud.setChrome(false)
+}
 
 // dev/testing handle
 ;(window as unknown as Record<string, unknown>).vg = { game, hud, screens }
@@ -217,6 +305,31 @@ canvas.addEventListener('wheel', (e) => {
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
+// Backgrounding a tab should not cost the player a run: a phone call, a tab
+// switch or a lock screen now pauses the battle instead of letting it run on.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && game.phase === 'playing' && !game.paused) game.togglePause()
+})
+
+// best-effort storage really is evicted; ask to keep the campaign
+void requestDurableStorage()
+
+telemetry.track({ type: 'session_start', firstRun: !localStorage.getItem('blockhold.save.v1'), source: acquisitionSource(), embedded: isEmbedded() })
+
+// Cloud saves are best-effort and never block play: if the service is off,
+// unreachable or disabled at build time, this is a no-op and the game runs
+// exactly as it did before.
+function syncNow(): void {
+  void cloud.sync(game.save).then(merged => {
+    if (!merged) return
+    Object.assign(game.save, merged)
+    writeSave(game.save)
+  })
+}
+if (cloud.signedIn) syncNow()
+window.addEventListener('error', (e) => telemetry.track({ type: 'error', message: String(e.message).slice(0, 200) }))
+window.addEventListener('pagehide', () => telemetry.flush())
+
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return
   keys.add(e.code)
@@ -233,6 +346,7 @@ window.addEventListener('keydown', (e) => {
     case 'KeyH': game.selectHero(true); break
     case 'Digit1': game.setTargetMode(game.targetMode === 'meteor' ? null : 'meteor'); break
     case 'Digit2': game.setTargetMode(game.targetMode === 'reinforce' ? null : 'reinforce'); break
+    case 'Digit3': game.castHeroSignature(); break
     case 'KeyC': game.engine.resetView(game.level?.width, game.level?.height); break
     case 'Escape':
       if (game.targetMode) game.setTargetMode(null)

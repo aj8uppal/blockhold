@@ -5,6 +5,11 @@ import { ARMORY_TRACKS, starsAvailable, starsEarned, buyTier, respec, armoryTier
 import { writeSave } from '../core/save.ts'
 import type { SaveData } from '../core/save.ts'
 import { icon } from './icons.ts'
+import { readCheckpoint } from '../game/checkpoint.ts'
+import { dailyNumber } from '../game/ruleset.ts'
+import { holdPieces, holdSummary } from '../game/hold.ts'
+import { cloud, applyCloud } from '../core/cloud.ts'
+import { dailyShareText, challengeUrl, type DailyResult } from '../game/share.ts'
 
 export type ScreenName = 'menu' | 'levels' | 'victory' | 'defeat' | 'none'
 
@@ -34,9 +39,15 @@ export interface BattleStats {
   lastLeak: { name: string, wave: number } | null,
   topKiller: { name: string, kills: number } | null,
   heroKills: number,
+  daily?: DailyResult,
 }
 
 const fmtTime = (sec: number) => `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`
+
+/** nobody has played yet: no stars anywhere and nothing unlocked past the first map */
+function isFirstRun(save: SaveData): boolean {
+  return save.unlocked <= 1 && Object.values(save.stars).every(s => !s)
+}
 
 /** iPadOS masquerades as macOS but is the only "Mac" with a touchscreen */
 export function isIPadOS(): boolean {
@@ -61,6 +72,11 @@ export class Screens {
   root: HTMLElement
   onPlayLevel: (levelId: string, difficulty?: Difficulty, hero?: HeroId, mode?: GameMode) => void = () => {}
   onMenu: () => void = () => {}
+  onResume: () => void = () => {}
+  onPlayDaily: () => void = () => {}
+  onPlayWatches: () => void = () => {}
+  onPlayBellfoundry: () => void = () => {}
+  onNextWatch: () => void = () => {}
 
   constructor(private save: () => SaveData) {
     this.root = document.getElementById('screens')!
@@ -79,24 +95,70 @@ export class Screens {
   }
 
   private renderMenu(): void {
+    const save = this.save()
     const wrap = el('div', 'screen menu-screen', this.root)
     const card = el('div', 'menu-hero', wrap)
     // painted key art under a dark scrim; inline so the URL resolves at runtime
+    // lighter than it was: the player's Hold stands behind this card and is
+    // meant to be seen, not covered up
     card.style.background =
-      'linear-gradient(180deg, rgba(28, 19, 12, 0.82), rgba(22, 15, 10, 0.9) 62%, rgba(20, 14, 9, 0.96)), ' +
+      'linear-gradient(180deg, rgba(24, 16, 10, 0.72), rgba(20, 14, 9, 0.82) 62%, rgba(18, 12, 8, 0.9)), ' +
       'url(art/title.webp) center / cover'
     el('div', 'menu-crest', card, icon('castle', 'gilded'))
     el('h1', 'game-title', card, 'BLOCKHOLD')
     el('div', 'game-tagline', card, 'Hold the line, block by block.')
-    const play = el('button', 'btn primary big', card, `${icon('swords')} &nbsp;To Battle`) as HTMLButtonElement
-    play.onclick = () => this.show('levels')
+    // A newcomer has nothing to choose between yet, and a link-shared game has
+    // about ten seconds. Drop them straight into the first battle; the level
+    // select, heroes and difficulty appear once they have played one.
+    const fresh = isFirstRun(save)
+    const play = el('button', 'btn primary big', card,
+      `${icon('swords')} &nbsp;${fresh ? 'Play' : 'To Battle'}`) as HTMLButtonElement
+    play.onclick = () => {
+      if (fresh) this.onPlayLevel(levels[0].id, 'normal', 'aldric', 'campaign')
+      else this.show('levels')
+    }
+    // a battle interrupted mid-campaign is worth more than a fresh one
+    const cp = readCheckpoint()
+    if (cp) {
+      const lvl = levels.find(l => l.id === cp.levelId)
+      const resume = el('button', 'btn primary', card,
+        `${icon('respawn')} Resume ${lvl?.name ?? 'battle'} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
+      resume.onclick = () => this.onResume()
+    }
+    // one battle, the same one for everyone in the world today
+    const day = dailyNumber()
+    const done = save.dailyBest?.day === day
+    const daily = el('button', 'btn ghost', card,
+      `${icon('moon')} Daily Hold #${day}${done ? ` · wave ${save.dailyBest!.wave}` : ''}`) as HTMLButtonElement
+    daily.onclick = () => this.onPlayDaily()
+    this.infoButton(card, daily, {
+      tagline: 'One battle a day, the same for everyone.',
+      body: 'Twelve waves on a board built from today\'s date, identical for every player in the world. It resets at midnight UTC.',
+      skill: 'When it ends you get a result bar you can copy, and a link that drops a friend onto the exact same board.',
+    })
+    this.modeRow(card, 'music', 'The Bellfoundry', () => this.onPlayBellfoundry(), {
+      tagline: 'The battle keeps time.',
+      body: 'One siege scored to its own soundtrack. Towers always fire the moment they are ready - but a shot that lands on the beat rings out and hits 40% harder. A meter shows where in the bar you are.',
+      skill: 'The skill is arranging a defense whose rhythms fall on the beat more often than not.',
+    })
+    this.modeRow(card, 'respawn', 'The Three Watches', () => this.onPlayWatches(), {
+      tagline: 'Fight beside your earlier self.',
+      body: 'One short siege, fought three times over. Each watch, the defense you built last time returns as translucent echoes that still fight - faintly, and untouchable.',
+      skill: 'By the third watch you are standing behind two earlier versions of your own plan, building the layer they could not.',
+    })
+    if (cloud.enabled) {
+      const st = cloud.status()
+      const acct = el('button', 'btn ghost', card,
+        `${icon('chest')} ${st.signedIn ? 'Your progress is saved' : 'Save my progress'}`) as HTMLButtonElement
+      acct.onclick = () => this.renderAccount()
+    }
     const how = el('button', 'btn ghost', card, 'How to play') as HTMLButtonElement
     how.onclick = () => this.renderHelp()
     if (needsInstallGuide()) {
       const install = el('button', 'btn ghost', card, `${icon('fullscreen')} Play fullscreen`) as HTMLButtonElement
       install.onclick = () => this.renderInstallGuide()
     }
-    el('div', 'menu-footer', wrap, 'A voxel tower defense · Built for the browser')
+    el('div', 'menu-footer', wrap, holdSummary(holdPieces(save)))
   }
 
   /** iOS has no fullscreen API — walk the player through installing instead */
@@ -159,6 +221,49 @@ export class Screens {
     })
   }
 
+  /**
+   * The daily's whole job is to become an object somebody can hand to a
+   * friend, so the result is a spoiler-free block they can copy and a link
+   * that drops that friend onto the exact same board.
+   */
+  private renderDailyResult(card: HTMLElement, r: DailyResult, won: boolean): void {
+    el('div', 'end-emoji', card, icon('moon'))
+    el('h2', 'end-title', card, `Daily Hold #${r.day}`)
+    el('div', 'end-sub', card, won
+      ? `Held all ${r.totalWaves} waves — ${r.lives} ${r.lives === 1 ? 'life' : 'lives'} left`
+      : `Wave ${r.wavesReached} of ${r.totalWaves}`)
+
+    const url = challengeUrl(this.dailySeedForShare)
+    const text = dailyShareText(r, url)
+    el('pre', 'daily-blocks', card, text.split('\n').slice(2, 3).join(''))
+
+    const row = el('div', 'end-actions', card)
+    const copy = el('button', 'btn primary', row, 'Copy result') as HTMLButtonElement
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(text)
+        copy.textContent = 'Copied'
+        this.onShared('daily')
+      } catch {
+        // clipboard can be blocked; show the text so it can still be taken
+        const box = el('textarea', 'daily-fallback', card) as HTMLTextAreaElement
+        box.value = text
+        box.readOnly = true
+        box.select()
+        copy.textContent = 'Select and copy'
+      }
+      setTimeout(() => { copy.textContent = 'Copy result' }, 2500)
+    }
+    const again = el('button', 'btn ghost', row, 'Play again') as HTMLButtonElement
+    again.onclick = () => this.onPlayDaily()
+    const menu = el('button', 'btn ghost', row, 'Menu') as HTMLButtonElement
+    menu.onclick = () => { this.show('menu'); this.onMenu() }
+  }
+
+  /** the seed the daily just played, so the share link points at that board */
+  dailySeedForShare = 0
+  onShared: (kind: string) => void = () => {}
+
   private showDifficultyPicker(levelId: string, levelName: string): void {
     const save = this.save()
     let hero: HeroId = (save.lastHero in HERO_DEFS ? save.lastHero : 'aldric') as HeroId
@@ -219,8 +324,10 @@ export class Screens {
     const idx = levels.findIndex(l => l.id === levelId)
     const endless = stats?.endless ?? false
     const hasNext = won && !endless && idx >= 0 && idx < levels.length - 1
+    const daily = stats?.daily
     const wrap = el('div', 'screen end-screen', this.root)
     const card = el('div', `end-card ${won ? 'won' : 'lost'}`, wrap)
+    if (daily) { this.renderDailyResult(card, daily, won); return }
     el('div', 'end-emoji', card, icon(endless ? 'moon' : won ? 'trophy' : 'skull'))
     el('h2', 'end-title', card, endless ? 'The Long Night ends' : won ? 'Victory!' : 'The gate has fallen')
     if (endless && stats) {
@@ -264,9 +371,178 @@ export class Screens {
     }
     const retry = el('button', `btn ${won && !endless ? '' : 'primary'}`, row, endless ? 'Descend again' : won ? 'Replay' : 'Try again') as HTMLButtonElement
     retry.onclick = () => this.onPlayLevel(levelId, undefined, undefined, endless ? 'endless' : 'campaign')
+    if (this.watchesRemaining > 0) {
+      const nextWatch = el('button', 'btn primary', row,
+        `Stand the next watch (${4 - this.watchesRemaining} of 3)`) as HTMLButtonElement
+      nextWatch.onclick = () => this.onNextWatch()
+    }
     const menu = el('button', 'btn ghost', row, 'Level select') as HTMLButtonElement
     menu.onclick = () => { this.onMenu(); this.show('levels') }
+
+    // a result card is a claim; a clip is evidence
+    if (this.canRecordTape()) {
+      const tape = el('button', 'btn ghost', row, `${icon('share')} Siege Tape`) as HTMLButtonElement
+      tape.title = 'Record your defense assembling itself, as a video you can share'
+      tape.onclick = async () => {
+        tape.disabled = true
+        tape.textContent = 'Recording…'
+        try {
+          const ok = await this.onRecordTape()
+          tape.textContent = ok ? 'Saved' : 'Nothing to record'
+        } catch {
+          tape.textContent = 'Recording failed'
+        }
+        setTimeout(() => {
+          tape.disabled = false
+          tape.innerHTML = `${icon('share')} Siege Tape`
+        }, 2600)
+      }
+    }
   }
+
+  /**
+   * A mode button with an info affordance beside it.
+   *
+   * `title` tooltips do not exist on touch, so the three alternate modes were
+   * unexplained on exactly the platform the game targets. The (i) opens a
+   * panel that reads the same on a phone as on a desktop.
+   */
+  private modeRow(
+    parent: HTMLElement, ico: string, label: string, play: () => void,
+    info: { tagline: string, body: string, skill: string },
+  ): void {
+    const row = el('div', 'mode-row', parent)
+    const btn = el('button', 'btn ghost mode-btn', row, `${icon(ico)} ${label}`) as HTMLButtonElement
+    btn.onclick = play
+    this.infoButton(row, btn, info, label)
+  }
+
+  private infoButton(
+    parent: HTMLElement, near: HTMLElement,
+    info: { tagline: string, body: string, skill: string },
+    label?: string,
+  ): void {
+    const name = label ?? near.textContent?.trim() ?? ''
+    const b = el('button', 'info-dot', parent, 'i') as HTMLButtonElement
+    b.setAttribute('aria-label', `What is ${name}?`)
+    b.title = info.tagline
+    b.onclick = (e) => { e.stopPropagation(); this.showModeInfo(name, info) }
+  }
+
+  private showModeInfo(name: string, info: { tagline: string, body: string, skill: string }): void {
+    const overlay = el('div', 'help-overlay', this.root)
+    const card = el('div', 'help-card mode-info', overlay)
+    el('h2', '', card, name)
+    el('div', 'mode-tagline', card, info.tagline)
+    el('p', 'mode-body', card, info.body)
+    el('p', 'mode-skill', card, info.skill)
+    const close = el('button', 'btn primary', card, 'Got it') as HTMLButtonElement
+    close.onclick = () => overlay.remove()
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove() }
+  }
+
+  /**
+   * Cloud saves, in the player's language.
+   *
+   * There is no sign-up, no email and no password - so this screen's whole
+   * job is to explain that a code *is* the account, and to make that code
+   * easy to move to another device.
+   */
+  renderAccount(): void {
+    const overlay = el('div', 'help-overlay', this.root)
+    const card = el('div', 'help-card account-card', overlay)
+    const draw = () => {
+      card.innerHTML = ''
+      const st = cloud.status()
+      el('h2', '', card, `${icon('chest')} Your progress`)
+
+      if (!st.signedIn) {
+        el('p', 'account-body', card,
+          'Right now your campaign lives only in this browser. Clearing site data, a private window, or a new phone would lose it.')
+        el('p', 'account-body', card,
+          'Saving gives you a short code. No email, no password, nothing about you - the code is the account. Type it on another device and your progress follows.')
+        const go = el('button', 'btn primary', card, 'Save my progress') as HTMLButtonElement
+        go.onclick = async () => {
+          go.disabled = true
+          go.textContent = 'Saving…'
+          await cloud.createAccount(this.save())
+          draw()
+        }
+        const have = el('button', 'btn ghost', card, 'I already have a code') as HTMLButtonElement
+        have.onclick = () => this.renderLinkEntry(overlay, draw)
+      } else {
+        el('p', 'account-body', card, 'Your progress is saved. Keep this code somewhere safe - it is the only way back to it.')
+        const codeBox = el('div', 'account-code', card, st.linkCode ?? '••••-••••')
+        // a device that joined with a code holds the token but not the code
+        // itself, so fetch it rather than showing the player dots
+        if (!st.linkCode) {
+          void cloud.refreshLinkCode().then(c => { if (c) codeBox.textContent = c })
+        }
+        const copy = el('button', 'btn primary', card, 'Copy code') as HTMLButtonElement
+        copy.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(st.linkCode ?? '')
+            copy.textContent = 'Copied'
+          } catch {
+            // clipboard can be blocked; the code is on screen either way
+            codeBox.classList.add('flash')
+            copy.textContent = 'Select it above'
+          }
+          setTimeout(() => { copy.textContent = 'Copy code' }, 2200)
+        }
+        const rotate = el('button', 'btn ghost', card, 'Replace this code') as HTMLButtonElement
+        rotate.title = 'Invalidates the old code, in case you shared it'
+        rotate.onclick = async () => { rotate.disabled = true; await cloud.rotateLinkCode(); draw() }
+        const out = el('button', 'btn ghost', card, 'Stop saving on this device') as HTMLButtonElement
+        out.onclick = () => { cloud.signOut(); draw() }
+        if (st.lastError) el('div', 'account-warn', card, st.lastError)
+      }
+      const close = el('button', 'btn ghost', card, 'Back') as HTMLButtonElement
+      close.onclick = () => { overlay.remove(); this.show('menu') }
+    }
+    draw()
+    overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); this.show('menu') } }
+  }
+
+  private renderLinkEntry(overlay: HTMLElement, back: () => void): void {
+    const card = overlay.querySelector('.account-card') as HTMLElement
+    card.innerHTML = ''
+    el('h2', '', card, 'Enter your code')
+    el('p', 'account-body', card, 'Type the code from your other device. Anything you have already earned here is kept and merged in.')
+    const input = el('input', 'account-input', card) as HTMLInputElement
+    input.placeholder = 'ABCD-EFGH'
+    input.autocapitalize = 'characters'
+    input.spellcheck = false
+    input.maxLength = 12
+    const warn = el('div', 'account-warn', card, '')
+    const go = el('button', 'btn primary', card, 'Restore') as HTMLButtonElement
+    go.onclick = async () => {
+      go.disabled = true
+      warn.textContent = ''
+      const res = await cloud.linkDevice(input.value)
+      if (!res.ok || !res.save) {
+        warn.textContent = res.error ?? 'That did not work.'
+        go.disabled = false
+        return
+      }
+      const merged = applyCloud(this.save(), res.save)
+      this.onRestore(merged)
+      back()
+    }
+    const cancel = el('button', 'btn ghost', card, 'Back') as HTMLButtonElement
+    cancel.onclick = back
+    setTimeout(() => input.focus(), 40)
+  }
+
+  /** hands a restored save back to the game */
+  onRestore: (save: SaveData) => void = () => {}
+
+  /** how many watches are still to come; 0 outside the mode */
+  watchesRemaining = 0
+
+  /** wired by main so screens never import the capture layer directly */
+  canRecordTape: () => boolean = () => false
+  onRecordTape: () => Promise<boolean> = async () => false
 
   private renderArmory(): void {
     const save = this.save()

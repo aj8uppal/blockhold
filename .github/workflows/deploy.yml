@@ -28,6 +28,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # cloud saves are disabled unless this is set, so the deployed game
+          # is the only build that talks to the sync service
+          VITE_SYNC_URL: https://blockhold-sync.fly.dev
       - run: npm test
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

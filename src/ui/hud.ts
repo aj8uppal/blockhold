@@ -9,6 +9,14 @@ import {
   OVERCHARGE_SHARD_COST, OVERCHARGE_DURATION, ASCEND_SHARD_COST, ASCEND_GOLD_COST,
 } from '../game/types.ts'
 import { towerTrees } from '../game/towerDefs.ts'
+import { TARGET_POLICY_LABEL, REACTIONS } from '../game/towers.ts'
+import { isCoarsePointer } from '../core/utils.ts'
+import { isPortalMode } from '../core/platform.ts'
+import { EARTHWORK_DEFS, type EarthworkSpot, type Earthwork } from '../game/earthworks.ts'
+import { beatIndex, BEATS_PER_BAR } from '../game/beat.ts'
+import { traitsOf, counterFor } from '../game/dossier.ts'
+import { HERO_RANK_MAX, heroRankCost } from '../game/hero.ts'
+import type { EnemyDef } from '../game/types.ts'
 import { icon, BOSS_ART } from './icons.ts'
 
 function chip(label: string, value: string, cls = ''): string {
@@ -41,6 +49,11 @@ export class HUD {
   private musicBtn!: HTMLButtonElement
   private waveBtn!: HTMLButtonElement
   private wavePreviewEl!: HTMLElement
+  private lastWavePreviewHtml = ''
+  private beatEl!: HTMLElement
+  private lastBeat = -1
+  /** coarse pointers arm a build option on first tap and commit on the second */
+  private armedBuild: string | null = null
   private abilityBtns: Record<'meteor' | 'reinforce', HTMLButtonElement> = {} as never
   private buildMenu!: HTMLElement
   private towerPanel!: HTMLElement
@@ -93,6 +106,9 @@ export class HUD {
     this.bannerEl = el('div', 'banner hidden', this.root)
     this.toastEl = el('div', 'toast hidden', this.root)
     this.modeHint = el('div', 'mode-hint hidden', this.root)
+    this.abilityTip = el('div', 'ability-tip hidden', this.root)
+    this.beatEl = el('div', 'beat-meter hidden', this.root)
+    this.beatEl.innerHTML = Array.from({ length: BEATS_PER_BAR }, () => '<i></i>').join('')
     this.buildPauseOverlay()
     game.hud = this
   }
@@ -108,33 +124,15 @@ export class HUD {
     const right = el('div', 'topbar-group', bar)
     this.speedBtn = el('button', 'icon-btn', right, '1×') as HTMLButtonElement
     this.speedBtn.title = 'Game speed (F)'
+    this.speedBtn.setAttribute('aria-label', 'Game speed')
     this.speedBtn.onclick = () => this.game.toggleSpeed()
     this.pauseBtn = el('button', 'icon-btn', right, icon('pause', 'plain')) as HTMLButtonElement
     this.pauseBtn.title = 'Pause (P)'
+    this.pauseBtn.setAttribute('aria-label', 'Pause')
     this.pauseBtn.onclick = () => this.game.togglePause()
-    const sfxIcon = () => icon(this.game.save.sfxMuted ? 'soundOff' : 'soundOn', 'plain')
-    this.sfxBtn = el('button', 'icon-btn', right, sfxIcon()) as HTMLButtonElement
-    this.sfxBtn.title = 'Sound effects'
-    this.sfxBtn.onclick = () => { this.game.toggleSfx(); this.sfxBtn.innerHTML = sfxIcon() }
-    this.musicBtn = el('button', 'icon-btn', right, icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')) as HTMLButtonElement
-    this.musicBtn.title = 'Music'
-    this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
-    this.musicBtn.onclick = () => {
-      this.game.toggleMusic()
-      this.musicBtn.innerHTML = icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')
-      this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
-    }
-    const doc = document as Document & { webkitFullscreenEnabled?: boolean }
-    if (doc.fullscreenEnabled || doc.webkitFullscreenEnabled) {
-      const fs = el('button', 'icon-btn', right, icon('fullscreen', 'plain')) as HTMLButtonElement
-      fs.title = 'Fullscreen'
-      fs.onclick = () => this.onFullscreen()
-      document.addEventListener('fullscreenchange', () => {
-        fs.classList.toggle('fast', !!document.fullscreenElement)
-      })
-    }
     const home = el('button', 'icon-btn', right, icon('castle', 'plain')) as HTMLButtonElement
     home.title = 'Back to castle (menu)'
+    home.setAttribute('aria-label', 'Back to the menu')
     home.onclick = () => this.onHome()
   }
 
@@ -142,15 +140,25 @@ export class HUD {
     const wrap = el('div', 'wave-call-wrap', this.root)
     this.waveBtn = el('button', 'wave-call hidden', wrap) as HTMLButtonElement
     this.waveBtn.onclick = () => this.game.callWave()
+    // The roster used to be hover-only, which made it unreachable on touch:
+    // a tap on this button calls the wave, so there is no hover to gate on.
+    // It is now always on screen while a wave is pending, for every pointer.
     this.wavePreviewEl = el('div', 'wave-preview hidden', wrap)
-    this.waveBtn.onmouseenter = () => {
-      const preview = this.game.waves?.nextWavePreview()
-      if (preview) {
-        this.wavePreviewEl.innerHTML = '<b>Incoming:</b> ' + preview.map(p => `${p.count}× ${p.name}`).join(', ')
-        this.wavePreviewEl.classList.remove('hidden')
-      }
-    }
-    this.waveBtn.onmouseleave = () => this.wavePreviewEl.classList.add('hidden')
+  }
+
+  /** roster + decisive counters for the pending wave; empty string when none */
+  private wavePreviewHtml(): string {
+    const w = this.game.waves
+    const preview = w?.nextWavePreview()
+    if (!preview || !preview.length) return ''
+    const roster = preview
+      .map(p => `<span class="wp-unit${p.boss ? ' boss' : ''}">${p.count}× ${p.name}</span>`)
+      .join('')
+    const threats = w!.nextWaveThreats()
+    const tags = threats.length
+      ? `<span class="wp-threats">${threats.map(t => `<span class="wp-tag">${t}</span>`).join('')}</span>`
+      : ''
+    return `<span class="wp-label">Incoming</span>${roster}${tags}`
   }
 
   private heroBtn!: HTMLButtonElement
@@ -162,24 +170,115 @@ export class HUD {
       `<span class="ability-icon"><img class="hero-face" src="art/hero-aldric.webp" alt=""></span><span class="cd-sweep"></span>` +
       '<span class="hero-level">1</span><span class="hero-hp"><span class="hero-hp-fill"></span></span>'
     this.heroBtn.title = 'Sir Aldric — select the hero, click the ground to move him. Hotkey H.'
+    this.heroBtn.setAttribute('aria-label', 'Select your hero')
     this.heroBtn.onclick = () => this.game.selectHero(true)
     const mk = (key: 'meteor' | 'reinforce', ico: string, name: string, hotkey: string, desc: string) => {
       const btn = el('button', 'ability', bar) as HTMLButtonElement
       btn.innerHTML = `<span class="ability-icon">${icon(ico)}</span><span class="cd-sweep"></span><span class="hotkey">${hotkey}</span>`
       btn.title = `${name} — ${desc}`
-      btn.onclick = () => this.game.setTargetMode(this.game.targetMode === key ? null : key)
+      btn.setAttribute('aria-label', name)
+      // title tooltips do not exist on touch, so the abilities were unlabelled
+      // on the platform this game targets: first tap explains, second commits
+      btn.onmouseenter = () => this.showAbilityTip(name, desc)
+      btn.onmouseleave = () => this.hideAbilityTip()
+      btn.onclick = () => {
+        if (isCoarsePointer() && this.armedAbility !== key) {
+          this.armedAbility = key
+          for (const b of Object.values(this.abilityBtns)) b.classList.remove('armed')
+          btn.classList.add('armed')
+          this.showAbilityTip(name, desc)
+          return
+        }
+        this.armedAbility = null
+        btn.classList.remove('armed')
+        this.hideAbilityTip()
+        this.game.setTargetMode(this.game.targetMode === key ? null : key)
+      }
       this.abilityBtns[key] = btn
     }
     mk('meteor', 'meteor', 'Meteor Storm', '1', 'Rain three meteors on a target area (true damage + stun). Hotkey 1.')
     mk('reinforce', 'shield', 'Reinforcements', '2', 'Summon two militia anywhere on the road for 14s. Hotkey 2.')
+    // the hero's signature used to fire itself; it is the player's to spend now
+    this.signatureBtn = el('button', 'ability', bar) as HTMLButtonElement
+    this.signatureBtn.innerHTML =
+      `<span class="ability-icon">${icon('quake')}</span><span class="cd-sweep"></span><span class="hotkey">3</span>`
+    this.signatureBtn.setAttribute('aria-label', 'Hero signature ability')
+    this.signatureBtn.onmouseenter = () => {
+      const h = this.game.hero
+      if (h) this.showAbilityTip(h.heroDef.ability.name, h.heroDef.ability.blurb)
+    }
+    this.signatureBtn.onmouseleave = () => this.hideAbilityTip()
+    this.signatureBtn.onclick = () => {
+      const h = this.game.hero
+      if (isCoarsePointer() && this.armedAbility !== 'signature' && h) {
+        this.armedAbility = 'signature'
+        this.signatureBtn.classList.add('armed')
+        this.showAbilityTip(h.heroDef.ability.name, h.heroDef.ability.blurb)
+        return
+      }
+      this.armedAbility = null
+      this.signatureBtn.classList.remove('armed')
+      this.hideAbilityTip()
+      this.game.castHeroSignature()
+    }
   }
 
+  private signatureBtn!: HTMLButtonElement
+  private lastSignatureId = ''
+  private armedAbility: string | null = null
+  private abilityTip!: HTMLElement
+
+  private showAbilityTip(name: string, desc: string): void {
+    this.abilityTip.innerHTML = `<b>${name}</b> — ${desc}`
+    this.abilityTip.classList.remove('hidden')
+  }
+
+  private hideAbilityTip(): void {
+    if (this.armedAbility) return
+    this.abilityTip.classList.add('hidden')
+  }
+
+  private static readonly SIGNATURE_ICON: Record<string, string> = {
+    slam: 'quake', volley: 'bow', nova: 'lightning',
+  }
+
+  /**
+   * Sound, music, fullscreen and home used to sit in the combat bar, so four
+   * of its six buttons were configuration competing with tactical information
+   * on the smallest screens the game supports. They live behind pause now,
+   * which is also what portals ask for: CrazyGames provides its own
+   * fullscreen control and asks games not to ship one.
+   */
   private buildPauseOverlay(): void {
     this.pauseOverlay = el('div', 'pause-overlay hidden', this.root)
     const card = el('div', 'pause-card', this.pauseOverlay)
     el('h2', '', card, 'Paused')
     const resume = el('button', 'btn primary', card, 'Resume') as HTMLButtonElement
     resume.onclick = () => this.game.togglePause()
+
+    const settings = el('div', 'pause-settings', card)
+    const sfxIcon = () => icon(this.game.save.sfxMuted ? 'soundOff' : 'soundOn', 'plain')
+    this.sfxBtn = el('button', 'icon-btn', settings, sfxIcon()) as HTMLButtonElement
+    this.sfxBtn.title = 'Sound effects'
+    this.sfxBtn.setAttribute('aria-label', 'Toggle sound effects')
+    this.sfxBtn.onclick = () => { this.game.toggleSfx(); this.sfxBtn.innerHTML = sfxIcon() }
+    this.musicBtn = el('button', 'icon-btn', settings, icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')) as HTMLButtonElement
+    this.musicBtn.title = 'Music'
+    this.musicBtn.setAttribute('aria-label', 'Toggle music')
+    this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
+    this.musicBtn.onclick = () => {
+      this.game.toggleMusic()
+      this.musicBtn.innerHTML = icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')
+      this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
+    }
+    const doc = document as Document & { webkitFullscreenEnabled?: boolean }
+    if ((doc.fullscreenEnabled || doc.webkitFullscreenEnabled) && !isPortalMode()) {
+      const fs = el('button', 'icon-btn', settings, icon('fullscreen', 'plain')) as HTMLButtonElement
+      fs.title = 'Fullscreen'
+      fs.setAttribute('aria-label', 'Toggle fullscreen')
+      fs.onclick = () => this.onFullscreen()
+    }
+
     const quit = el('button', 'btn', card, 'Abandon mission') as HTMLButtonElement
     quit.onclick = () => { this.game.togglePause(); this.onHome() }
   }
@@ -230,6 +329,16 @@ export class HUD {
         } else {
           this.waveBtn.classList.add('hidden')
           this.wavePreviewEl.classList.add('hidden')
+          this.lastWavePreviewHtml = ''
+        }
+      }
+      // the roster rides with the button, so it is never hover-gated
+      if (btnText) {
+        const html = this.wavePreviewHtml()
+        if (html !== this.lastWavePreviewHtml) {
+          this.lastWavePreviewHtml = html
+          this.wavePreviewEl.innerHTML = html
+          this.wavePreviewEl.classList.toggle('hidden', !html)
         }
       }
     }
@@ -275,6 +384,37 @@ export class HUD {
       sweep.style.setProperty('--p', `${frac * 100}%`)
       btn.classList.toggle('ready', st.cooldown <= 0)
       btn.classList.toggle('active', game.targetMode === key)
+    }
+    // hero signature button: icon follows the chosen hero, sweep follows its cooldown
+    if (game.hero) {
+      const h = game.hero
+      if (this.lastSignatureId !== h.heroDef.id) {
+        this.lastSignatureId = h.heroDef.id
+        const ico = HUD.SIGNATURE_ICON[h.heroDef.ability.kind] ?? 'sparkle'
+        const slot = this.signatureBtn.querySelector('.ability-icon') as HTMLElement
+        if (slot) slot.innerHTML = icon(ico)
+        this.signatureBtn.title = `${h.heroDef.ability.name} — ${h.heroDef.ability.blurb} Hotkey 3.`
+      }
+      const sweep = this.signatureBtn.querySelector('.cd-sweep') as HTMLElement
+      sweep.style.setProperty('--p', `${h.abilityFraction * 100}%`)
+      this.signatureBtn.classList.toggle('ready', h.signatureReady)
+      this.signatureBtn.classList.toggle('downed', h.dead)
+    }
+    // the beat meter: only in the Bellfoundry, and only while a battle runs
+    if (game.isBellfoundry && game.phase === 'playing') {
+      this.beatEl.classList.remove('hidden')
+      const b = beatIndex(game.time)
+      if (b !== this.lastBeat) {
+        this.lastBeat = b
+        const pips = this.beatEl.children
+        for (let i = 0; i < pips.length; i++) {
+          pips[i].classList.toggle('on', i === b)
+          pips[i].classList.toggle('downbeat', i === 0)
+        }
+      }
+    } else if (!this.beatEl.classList.contains('hidden')) {
+      this.beatEl.classList.add('hidden')
+      this.lastBeat = -1
     }
     this.refreshHeroPanel()
     // live kill tally on the open tower/trap/hero panel
@@ -327,6 +467,7 @@ export class HUD {
   // ---------------- build menu ----------------
 
   openBuildMenu(plot: PlotInfo, x: number, y: number): void {
+    this.armedBuild = null
     this.buildMenu.innerHTML = ''
     const kinds: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks']
     for (const kind of kinds) {
@@ -334,12 +475,19 @@ export class HUD {
       const btn = el('button', 'build-option', this.buildMenu) as HTMLButtonElement
       btn.dataset.cost = `${def.cost}`
       btn.innerHTML = `<span class="b-icon">${icon(TOWER_ICONS[kind])}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
-      btn.onclick = this.menuGuard(() => this.game.buildTower(kind))
+      btn.onclick = this.menuGuard(() => this.commitBuild(kind, btn, () => {
+        this.game.previewRange(kind)
+        this.showBuildTooltip(def, kind)
+      }, () => this.game.buildTower(kind)))
       btn.onmouseenter = () => {
         this.game.previewRange(kind)
         this.showBuildTooltip(def, kind)
       }
-      btn.onmouseleave = () => { this.game.previewRange(null); this.hideBuildTooltip() }
+      btn.onmouseleave = () => {
+        if (this.armedBuild) return   // keep an armed touch selection visible
+        this.game.previewRange(null)
+        this.hideBuildTooltip()
+      }
       btn.classList.toggle('poor', this.game.gold < def.cost)
     }
     const tip = el('div', 'build-tooltip hidden', this.buildMenu)
@@ -368,6 +516,30 @@ export class HUD {
     }
   }
 
+  /**
+   * Touch has no hover, so a single tap used to spend gold before the player
+   * could read a single stat. On coarse pointers the first tap arms the option
+   * (showing its stats and range ring) and only the second tap builds.
+   * Fine pointers keep one-tap building, since hover already showed them.
+   */
+  private commitBuild(key: string, btn: HTMLButtonElement, inspect: () => void, build: () => void): void {
+    if (!isCoarsePointer()) { build(); return }
+    if (this.armedBuild === key) {
+      this.armedBuild = null
+      build()
+      return
+    }
+    this.armedBuild = key
+    for (const b of this.buildMenu.querySelectorAll('.build-option')) b.classList.remove('armed')
+    btn.classList.add('armed')
+    inspect()
+  }
+
+  private clearArmedBuild(): void {
+    this.armedBuild = null
+    for (const b of this.buildMenu.querySelectorAll('.build-option')) b.classList.remove('armed')
+  }
+
   private showBuildTooltip(def: TowerLevelDef, kind: TowerKind): void {
     const tip = document.getElementById('build-tip')
     if (!tip) return
@@ -380,27 +552,85 @@ export class HUD {
   }
 
   closeBuildMenu(): void {
+    this.clearArmedBuild()
     this.buildMenu.classList.add('hidden')
+  }
+
+  /** one option: this ground can take exactly one kind of work */
+  openEarthworkMenu(spot: EarthworkSpot, x: number, y: number): void {
+    this.armedBuild = null
+    this.buildMenu.innerHTML = ''
+    const def = EARTHWORK_DEFS[spot.kind]
+    const btn = el('button', 'build-option trap-option', this.buildMenu) as HTMLButtonElement
+    btn.dataset.cost = `${def.cost}`
+    btn.innerHTML = `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
+    const showTip = () => {
+      const tip = document.getElementById('build-tip')
+      if (tip) {
+        tip.innerHTML = `<b>${def.name}</b><br>${def.description}`
+        tip.classList.remove('hidden')
+      }
+    }
+    btn.onclick = this.menuGuard(() => this.commitBuild(
+      `earth:${spot.kind}`, btn, showTip, () => this.game.buildEarthwork(),
+    ))
+    btn.onmouseenter = showTip
+    btn.onmouseleave = () => { if (!this.armedBuild) this.hideBuildTooltip() }
+    btn.classList.toggle('poor', this.game.gold < def.cost)
+    const tip = el('div', 'build-tooltip hidden', this.buildMenu)
+    tip.id = 'build-tip'
+    this.placeMenu(x, y)
+  }
+
+  /** what an existing earthwork is doing, and what it is doing it to */
+  openEarthworkPanel(work: Earthwork, towersHelped: number): void {
+    this.closeTowerPanel()
+    this.currentTower = null
+    const p = this.towerPanel
+    p.innerHTML = ''
+    p.classList.remove('hidden')
+    this.currentTrap = null
+    this.currentHero = null
+    this.menuOpenedAt = performance.now()
+    const head = el('div', 'tp-head', p)
+    el('div', 'tp-icon', head, icon(work.def.icon))
+    const t = el('div', 'tp-title', head)
+    el('div', 'tp-name', t, work.def.name)
+    el('div', 'tp-level', t, work.kind === 'rampart' ? 'High ground' : 'Sunken road')
+    const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    close.setAttribute('aria-label', 'Close')
+    close.onclick = () => this.game.clearSelection()
+
+    el('div', 'tp-traits', p, work.def.description)
+    if (work.kind === 'rampart') {
+      el('div', 'tp-traits', p, towersHelped > 0
+        ? `${icon('range')} Lifting <b>${towersHelped}</b> tower${towersHelped === 1 ? '' : 's'} onto the high ground.`
+        : `${icon('range')} No tower is close enough to use it yet — build inside the ring.`)
+    }
   }
 
   // ---------------- trap menu & panel ----------------
 
   openTrapMenu(spot: TrapSpotInfo, x: number, y: number): void {
+    this.armedBuild = null
     this.buildMenu.innerHTML = ''
     for (const kind of ['spike', 'frost', 'blast'] as TrapKind[]) {
       const def = TRAP_DEFS[kind]
       const btn = el('button', 'build-option trap-option', this.buildMenu) as HTMLButtonElement
       btn.dataset.cost = `${def.cost}`
       btn.innerHTML = `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
-      btn.onclick = this.menuGuard(() => this.game.buildTrap(kind))
-      btn.onmouseenter = () => {
+      const showTrapTip = () => {
         const tip = document.getElementById('build-tip')
         if (tip) {
           tip.innerHTML = `<b>${def.name}</b><br>${def.description}`
           tip.classList.remove('hidden')
         }
       }
-      btn.onmouseleave = () => this.hideBuildTooltip()
+      btn.onclick = this.menuGuard(() => this.commitBuild(
+        `trap:${kind}`, btn, showTrapTip, () => this.game.buildTrap(kind),
+      ))
+      btn.onmouseenter = showTrapTip
+      btn.onmouseleave = () => { if (!this.armedBuild) this.hideBuildTooltip() }
       btn.classList.toggle('poor', this.game.gold < def.cost)
     }
     const tip = el('div', 'build-tooltip hidden', this.buildMenu)
@@ -423,6 +653,7 @@ export class HUD {
     el('div', 'tp-name', title, trap.def.name)
     el('div', 'tp-level', title, `Road trap<span class="tp-kills" title="Enemies slain by this trap"> · ${icon('skull')} <span class="tp-kill-n">${trap.kills}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
     el('div', 'tp-stats', p, trap.def.description)
     const actions = el('div', 'tp-actions', p)
@@ -449,6 +680,7 @@ export class HUD {
       + `Tier ${tower.level}/5`
       + `<span class="tp-kills" title="Enemies slain by this building"> · ${icon('skull')} <span class="tp-kill-n">${tower.kills}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
 
     // labeled stat chips read faster than an inline icon run
@@ -482,14 +714,14 @@ export class HUD {
       const tree = towerTrees[tower.kind]
       const steps: string[] = tree.levels.slice(0, Math.min(tower.level, 3)).map(l => l.name)
       if (tower.level >= 4 && tower.branch !== null) steps.push(`★ ${tree.branches[tower.branch].name}`)
-      if (tower.level >= 5) steps.push(`✦ ${tree.capstone.name}`)
+      if (tower.level >= 5 && tower.branch !== null) steps.push(`✦ ${tree.capstones[tower.branch].name}`)
       if (tower.perk) steps.push(`${icon(tower.perk.icon)} ${tower.perk.name}`)
       el('div', 'tp-lineage', p, steps.join(' <span class="dim">→</span> '))
     }
 
     const extras: string[] = []
-    if (tower.resonance > 0) {
-      extras.push(`${icon('link')} Resonance ×${tower.resonance}: +${tower.resonance * (tower.isBarracks ? 8 : 6)}% ${tower.isBarracks ? 'soldier health' : 'damage'}`)
+    for (const r of REACTIONS) {
+      if (tower.has(r.id)) extras.push(`${icon(r.icon)} <b>${r.name}</b> — ${r.description}`)
     }
     if (tower.perk) extras.push(`${icon(tower.perk.icon)} ${tower.perk.name} — ${tower.perk.description}`)
     if (extras.length) el('div', 'tp-traits', p, extras.join('<br>'))
@@ -499,7 +731,17 @@ export class HUD {
       const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, actions) as HTMLButtonElement
       btn.dataset.cost = `${opt.cost}`
       btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span><span class="u-desc">${opt.description}</span>`
-      btn.onclick = this.menuGuard(() => this.game.upgradeTower(tower, i))
+      // show what the upgrade actually buys in range terms, on both pointers:
+      // hover for a mouse, and the first tap for touch (which arms before it
+      // commits, so the preview is visible before any gold is spent)
+      const preview = () => this.game.previewUpgradeRange(tower, opt)
+      const clearPreview = () => { if (!this.armedBuild) this.game.previewUpgradeRange(tower, null) }
+      btn.onmouseenter = preview
+      btn.onmouseleave = clearPreview
+      btn.onclick = this.menuGuard(() => this.commitBuild(
+        `upgrade:${tower.plot.index}:${i}`, btn, preview,
+        () => { this.game.previewUpgradeRange(tower, null); this.game.upgradeTower(tower, i) },
+      ))
       btn.disabled = this.game.gold < opt.cost
     })
     // ascension: tier-4+ towers pick one of two shard-bought perks
@@ -523,6 +765,14 @@ export class HUD {
     if (tower.isBarracks) {
       const rally = el('button', 'btn small', row, `${icon('flag')} Rally point`) as HTMLButtonElement
       rally.onclick = this.menuGuard(() => this.game.setTargetMode('rally'))
+    } else {
+      const tgt = el('button', 'btn small', row,
+        `${icon('target')} ${TARGET_POLICY_LABEL[tower.targetPolicy]}`) as HTMLButtonElement
+      tgt.title = 'Which enemy this tower shoots: closest to the gate, furthest from it, the toughest, or the weakest'
+      tgt.onclick = this.menuGuard(() => {
+        const next = tower.cycleTargetPolicy()
+        tgt.innerHTML = `${icon('target')} ${TARGET_POLICY_LABEL[next]}`
+      })
     }
     const sell = el('button', 'btn small sell', row, `Sell ${icon('coin')}${tower.sellValue}`) as HTMLButtonElement
     sell.onclick = this.menuGuard(() => this.game.sellTower(tower))
@@ -559,6 +809,7 @@ export class HUD {
     el('div', 'tp-level', title, `${hero.heroDef.title} · Level <span class="hp-lvl">${hero.level}</span>`
       + `<span class="tp-kills" title="Foes slain by the hero"> · ${icon('skull')} <span class="tp-kill-n">${hero.kills}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
 
     const bars = el('div', 'stat-bars', p)
@@ -576,7 +827,17 @@ export class HUD {
         : chip('Guards', `${icon('range')} r ${hero.guardRange}`)))
 
     el('div', 'tp-traits', p,
-      `✦ <b>${hero.heroDef.ability.name}</b> — ${hero.heroDef.ability.blurb} <span class="ability-cd-num"></span>`)
+      `✦ <b>${hero.heroDef.ability.name}</b>${hero.signatureRank > 0 ? ` <span class="hero-rank">rank ${hero.signatureRank}</span>` : ''}`
+      + ` — ${hero.heroDef.ability.blurb} <span class="ability-cd-num"></span>`)
+    if (hero.signatureRank < HERO_RANK_MAX) {
+      const cost = heroRankCost(hero.signatureRank)
+      const up = el('button', 'btn upgrade', p,
+        `<span class="u-name">✦ Sharpen ${hero.heroDef.ability.name}</span>`
+        + `<span class="u-cost">${icon('gem')}${cost}</span>`
+        + `<span class="u-desc">Rank ${hero.signatureRank + 1}: +28% effect, +18% reach, 12% faster recharge.</span>`) as HTMLButtonElement
+      up.onclick = this.menuGuard(() => this.game.upgradeHeroSignature())
+      up.classList.toggle('poor', this.game.shards < cost)
+    }
     el('div', 'tp-lineage', p, hero.ranged
       ? 'Holds her ground where she stands. Click the ground to reposition her.'
       : 'Fights whatever enters the ring around his post. Click the ground to move the post.')
@@ -666,6 +927,45 @@ export class HUD {
 
   // ---------------- transient messaging ----------------
 
+  /**
+   * Introduce an enemy the player has not met. The battle is paused behind
+   * this, so it is a card to read rather than something to dismiss in a
+   * hurry - and it is DOM, so it works the same on a phone as on a desktop.
+   */
+  showDossier(def: EnemyDef, onClose: () => void): void {
+    const overlay = el('div', 'help-overlay dossier-overlay', this.root)
+    const card = el('div', 'help-card dossier-card', overlay)
+    el('div', 'dossier-eyebrow', card, def.boss ? 'A boss walks the road' : 'Something new is coming')
+
+    const head = el('div', 'dossier-head', card)
+    if (BOSS_ART.has(def.id)) {
+      const art = el('div', 'dossier-art', head)
+      art.style.backgroundImage = `url(art/boss-${def.id}.webp)`
+    }
+    const title = el('div', 'dossier-title', head)
+    el('h2', '', title, def.name)
+    el('div', 'dossier-blurb', title, def.description)
+
+    const traits = traitsOf(def)
+    if (traits.length) {
+      const list = el('div', 'dossier-traits', card)
+      for (const t of traits) {
+        const row = el('div', 'dossier-trait', list)
+        el('span', 'dt-label', row, t.label)
+        el('span', 'dt-detail', row, t.detail)
+      }
+    }
+
+    const counter = el('div', 'dossier-counter', card)
+    el('span', 'dc-label', counter, 'How to beat it')
+    el('span', 'dc-text', counter, counterFor(def))
+
+    const go = el('button', 'btn primary', card, 'Understood') as HTMLButtonElement
+    go.onclick = () => { overlay.remove(); onClose() }
+    // a stray tap on the backdrop should not skip the one explanation there is
+    setTimeout(() => go.focus?.(), 40)
+  }
+
   showBanner(text: string, cls = ''): void {
     this.bannerEl.textContent = text
     this.bannerEl.className = `banner ${cls}`
@@ -735,8 +1035,12 @@ export class HUD {
 
   /** show/hide the battle chrome (topbar, abilities, wave button) */
   setChrome(visible: boolean): void {
+    this.chromeVisible = visible
     this.root.classList.toggle('chrome-hidden', !visible)
   }
+
+  /** so a Siege Tape can hide the interface and put it back exactly as it was */
+  chromeVisible = true
 
   /** hide everything level-specific (used when returning to menu) */
   reset(): void {

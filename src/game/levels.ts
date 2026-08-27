@@ -14,13 +14,13 @@ const greenhollowWaves: WaveDef[] = [
   { surge: true, groups: [g('shield', 8, 1.8), g('husk', 10, 1.0, 6), g('sprinter', 5, 1.4, 12)] },
   { groups: [g('gargoyle', 8, 1.4), g('shield', 5, 2.0, 4), g('sprinter', 6, 1.2, 10)] },
   { groups: [g('husk', 16, 0.8), g('sprinter', 10, 1.0, 8), g('shield', 6, 1.8, 12), g('shardback', 2, 6, 14)] },
-  { groups: [g('brute', 2, 8, 2), g('husk', 12, 1.0, 4), g('gargoyle', 8, 1.4, 10)] },
+  { groups: [g('hollowking', 1, 1, 6), g('husk', 12, 1.0, 0), g('gargoyle', 6, 1.4, 12)], breakAfter: 30 },
   { groups: [g('shield', 8, 1.6), g('sprinter', 10, 1.0, 5), g('shardback', 2, 5, 9)] },
   { surge: true, groups: [g('husk', 18, 0.7), g('gargoyle', 8, 1.3, 6), g('shield', 6, 1.7, 10)] },
   { groups: [g('brute', 2, 8), g('sprinter', 12, 0.9, 4), g('shardback', 2, 5, 10)] },
   { groups: [g('gargoyle', 12, 1.1), g('shield', 8, 1.5, 5), g('husk', 12, 0.9, 9)] },
   { surge: true, groups: [g('sprinter', 14, 0.8), g('shield', 9, 1.5, 4), g('gargoyle', 8, 1.2, 10), g('shardback', 2, 5, 13)] },
-  { groups: [g('brute', 3, 7), g('husk', 20, 0.65, 3), g('gargoyle', 10, 1.1, 8), g('shield', 8, 1.4, 12)] },
+  { groups: [g('hollowking', 1, 1, 8), g('brute', 2, 7), g('husk', 20, 0.65, 3), g('gargoyle', 10, 1.1, 8), g('shield', 8, 1.4, 12)] },
 ]
 
 const frostmereWaves: WaveDef[] = [
@@ -41,7 +41,7 @@ const frostmereWaves: WaveDef[] = [
   { groups: [g('broodmother', 2, 10), g('spiderling', 18, 0.5, 4, 1), g('shield', 7, 1.6, 8)] },
   { groups: [g('brute', 2, 8, 0, 1), g('acolyte', 6, 1.9, 3), g('gargoyle', 10, 1.1, 7, 1), g('shardback', 2, 5, 11)] },
   { surge: true, groups: [g('warlock', 6, 2.2), g('shield', 10, 1.4, 2, 1), g('sprinter', 12, 0.8, 6), g('spiderling', 14, 0.5, 10, 1)] },
-  { groups: [g('brute', 3, 7), g('broodmother', 2, 9, 3, 1), g('warlock', 5, 2.2, 6), g('shield', 10, 1.3, 10, 1)] },
+  { groups: [g('hollowking', 1, 1, 10), g('brute', 2, 7), g('broodmother', 2, 9, 3, 1), g('warlock', 5, 2.2, 6), g('shield', 10, 1.3, 10, 1)] },
 ]
 
 const emberwastesWaves: WaveDef[] = [
@@ -372,9 +372,43 @@ export function levelById(id: string): LevelDef {
  * escalating. Deterministic per level seed. Enemy HP additionally scales in
  * Game via the wave index; here we just author ever-larger compositions.
  */
-export function generateEndlessWaves(level: LevelDef, count = 999): WaveDef[] {
-  // deterministic PRNG (mulberry32) seeded off the level
-  let s = (level.seed * 7919 + 12345) >>> 0
+/**
+ * The Long Night. `seed` defaults to the level so the shape is stable, but a
+ * run passes its own seed: otherwise every endless attempt on a map replays
+ * the identical 999 waves, which is the opposite of what the mode promises.
+ * Length matches the 200 waves the campaign actually advertises.
+ */
+/**
+ * The Daily Hold: one short battle that is the same for everybody in the
+ * world on a given UTC day, built entirely from the date so it needs no
+ * server to agree on.
+ *
+ * It starts partway up the endless ramp rather than at wave one - a daily
+ * has to bite immediately, because its whole job is to be finished and
+ * talked about in one sitting.
+ */
+export const DAILY_WAVES = 12
+const DAILY_RAMP_SKIP = 7
+
+export function dailyLevel(seed: number): LevelDef {
+  const base = levels[seed % levels.length]
+  const waves = generateEndlessWaves(base, DAILY_WAVES + DAILY_RAMP_SKIP, seed).slice(DAILY_RAMP_SKIP)
+  return {
+    ...base,
+    id: 'daily',
+    name: 'The Daily Hold',
+    subtitle: 'One battle. Everyone gets the same one.',
+    waves,
+    startGold: base.startGold + 120,
+    startLives: 15,
+    startShards: 4,
+    intro: undefined,
+  }
+}
+
+export function generateEndlessWaves(level: LevelDef, count = 200, seed = level.seed): WaveDef[] {
+  // deterministic PRNG (mulberry32)
+  let s = (seed * 7919 + 12345) >>> 0
   const rand = () => {
     s |= 0; s = (s + 0x6d2b79f5) | 0
     let t = Math.imul(s ^ (s >>> 15), 1 | s)

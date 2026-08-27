@@ -111,6 +111,8 @@ const P = {
   bruteSkin: 0x6f8f3f, bruteDark: 0x55702e, brutePants: 0x6d4c28,
   spider: 0x3d3348, spiderDark: 0x2a2233, spiderRed: 0xd8452f,
   jugArmor: 0x3f434f, jugTrim: 0x8f2f2f, jugGlow: 0xff5a3c,
+  kingFlesh: 0x9ab86a, kingDark: 0x6b8347, kingCrown: 0xe8b23c,
+  kingBanner: 0x7a2f3f, kingBone: 0xe8e2cc,
 }
 
 export function huskModel(): VoxModel {
@@ -246,6 +248,55 @@ export function bruteModel(): VoxModel {
     pivots: {
       head: [0, 5.1, 0], legL: [-1.0, 2.0, 0], legR: [1.0, 2.0, 0],
       armL: [-2.7, 4.6, 0], armR: [2.7, 4.6, 0],
+    },
+  }
+}
+
+/**
+ * The Hollow King - Greenhollow's boss. Deliberately not a recoloured Brute:
+ * the crown and the tall back-banner give it its own silhouette at the
+ * distance this game is actually played at, which is the only scale where
+ * a boss reads.
+ */
+export function hollowKingModel(): VoxModel {
+  const body: VoxBox[] = [
+    box(0, 3.7, 0, 4.6, 3.2, 3.0, P.kingFlesh),
+    box(0, 2.4, 0.35, 4.0, 1.5, 2.7, P.kingDark),        // girdle
+    box(0, 5.1, 0, 5.4, 0.8, 2.8, P.kingDark),           // broad shoulders
+    box(-2.4, 5.6, 0, 1.1, 0.7, 1.6, P.kingBone),        // pauldron bone
+    box(2.4, 5.6, 0, 1.1, 0.7, 1.6, P.kingBone),
+    // the banner: a tall pole and rag that break the horizon line
+    box(0, 6.4, -1.5, 0.28, 6.0, 0.28, 0x5a4326),
+    box(0, 8.2, -1.85, 2.4, 3.0, 0.16, P.kingBanner),
+    box(0, 6.6, -1.85, 2.4, 0.5, 0.18, P.kingCrown),
+  ]
+  const head: VoxBox[] = [
+    box(0, 6.4, 0.3, 2.3, 2.0, 2.1, P.kingFlesh),
+    box(-0.52, 6.6, 1.4, 0.34, 0.34, 0.14, 0xffd24a),    // lit eyes
+    box(0.52, 6.6, 1.4, 0.34, 0.34, 0.14, 0xffd24a),
+    box(0, 5.85, 1.3, 1.3, 0.55, 0.32, P.kingDark),      // jaw
+    // crown
+    box(0, 7.6, 0.3, 2.5, 0.5, 2.2, P.kingCrown),
+    box(-0.9, 8.1, 0.3, 0.4, 0.7, 0.4, P.kingCrown),
+    box(0, 8.3, 0.3, 0.4, 1.0, 0.4, P.kingCrown),
+    box(0.9, 8.1, 0.3, 0.4, 0.7, 0.4, P.kingCrown),
+  ]
+  const legL: VoxBox[] = [box(-1.1, 1.0, 0, 1.6, 2.1, 1.7, P.kingDark)]
+  const legR: VoxBox[] = [box(1.1, 1.0, 0, 1.6, 2.1, 1.7, P.kingDark)]
+  const armL: VoxBox[] = [
+    box(-2.9, 3.5, 0, 1.3, 3.0, 1.4, P.kingFlesh),
+    box(-2.9, 1.9, 0, 1.2, 0.8, 1.3, P.kingDark),
+  ]
+  const armR: VoxBox[] = [
+    box(2.9, 3.5, 0, 1.3, 3.0, 1.4, P.kingFlesh),
+    box(2.9, 2.6, 1.1, 0.4, 3.4, 0.4, 0x5a4326),         // cleaver haft
+    box(2.9, 0.9, 1.1, 1.9, 1.9, 0.5, P.kingBone),       // cleaver blade
+  ]
+  return {
+    parts: { body, head, legL, legR, armL, armR },
+    pivots: {
+      head: [0, 5.4, 0], legL: [-1.1, 2.1, 0], legR: [1.1, 2.1, 0],
+      armL: [-2.9, 4.8, 0], armR: [2.9, 4.8, 0],
     },
   }
 }

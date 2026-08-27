@@ -131,10 +131,27 @@ button:disabled { cursor: not-allowed; }
   color: var(--parchment);
   border-radius: 10px;
   font-size: 12.5px; font-weight: 600;
-  padding: 7px 12px;
-  max-width: 340px; text-align: center;
+  padding: 6px 10px;
+  max-width: min(420px, 92vw);
+  display: flex; flex-wrap: wrap; gap: 4px 7px;
+  align-items: center; justify-content: center;
 }
 .wave-preview b { color: var(--gold-bright); }
+.wp-label {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--gold-bright); opacity: 0.85;
+}
+.wp-unit { white-space: nowrap; }
+.wp-unit.boss { color: var(--danger); font-weight: 800; }
+.wp-threats { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.wp-tag {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 999px;
+  background: rgba(232, 178, 60, 0.16);
+  border: 1px solid rgba(232, 178, 60, 0.45);
+  color: var(--gold-bright);
+  white-space: nowrap;
+}
 
 /* ---------- abilities ---------- */
 
@@ -234,6 +251,15 @@ button:disabled { cursor: not-allowed; }
 .build-option .b-icon { font-size: 22px; }
 .build-option .b-name { font-size: 12px; font-weight: 800; }
 .build-option .b-cost { font-size: 11.5px; font-weight: 800; color: var(--gold-bright); }
+.build-option.armed {
+  background: rgba(232, 178, 60, 0.24);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(232, 178, 60, 0.35);
+}
+.build-option.armed .b-cost::after {
+  content: ' · tap again';
+  font-size: 9.5px; font-weight: 700; opacity: 0.8; letter-spacing: 0.02em;
+}
 .build-option.poor { opacity: 0.45; }
 .build-option.poor .b-cost { color: var(--danger); }
 .build-tooltip {
@@ -473,6 +499,8 @@ button:disabled { cursor: not-allowed; }
 
 .levels-head { display: flex; align-items: center; gap: 18px; width: min(920px, 92vw); }
 .levels-head .spacer { width: 86px; }
+/* the header buttons must not share the title's flex growth, or the title wraps */
+.levels-head .btn.small { flex: 0 0 auto; }
 .levels-title { font-family: 'Cinzel', serif; color: var(--parchment); font-size: 30px; flex: 1; text-align: center; }
 .levels-grid { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
 .level-card {
@@ -837,4 +865,205 @@ button:focus-visible {
   .menu-hero { padding: 20px 34px; gap: 8px; }
   .menu-crest { font-size: 40px; }
   .game-title { font-size: 34px; letter-spacing: 6px; }
+}
+
+/* very short landscape (phone landscape, 800x450 portal iframes): the level
+   grid has to fit two rows of cards without clipping the second one */
+@media (max-height: 480px) {
+  .levels-head { gap: 8px; }
+  .levels-title { font-size: 17px; }
+  .levels-grid { gap: 8px; }
+  .level-card { width: 156px; padding: 6px 7px 7px; gap: 2px; border-radius: 14px; border-width: 1px; }
+  .level-art { height: 46px; font-size: 22px; border-radius: 7px; margin-bottom: 3px; }
+  .level-name { font-size: 12.5px; }
+  .level-meta { font-size: 9.5px; }
+  .level-stars { font-size: 13px; letter-spacing: 2px; margin-top: 0; }
+  .level-goal { font-size: 9.5px; }
+}
+
+/* ---------- the daily result: block art you can copy ---------- */
+
+.daily-blocks {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: clamp(20px, 5vw, 34px);
+  line-height: 1.1;
+  letter-spacing: 2px;
+  margin: 10px 0 4px;
+  color: var(--gold-bright);
+  white-space: pre;
+  overflow-x: auto;
+  max-width: 100%;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+}
+.daily-fallback {
+  width: 100%;
+  min-height: 90px;
+  margin-top: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: rgba(10, 6, 3, 0.6);
+  color: var(--parchment);
+  border: 1px solid rgba(232, 178, 60, 0.35);
+  border-radius: 8px;
+  padding: 8px;
+  resize: none;
+}
+.end-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
+
+/* settings live behind pause now, not in the combat bar */
+.pause-settings { display: flex; gap: 10px; justify-content: center; margin: 4px 0 2px; }
+
+/* ---------- the Bellfoundry beat meter ---------- */
+
+.beat-meter {
+  position: absolute;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  display: flex; gap: 6px;
+  padding: 7px 12px;
+  background: rgba(20, 14, 9, 0.85);
+  border: 1px solid rgba(232, 178, 60, 0.35);
+  border-radius: 999px;
+  pointer-events: none;
+}
+.beat-meter i {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: rgba(244, 232, 207, 0.22);
+  transition: background 0.06s linear, transform 0.06s linear;
+}
+.beat-meter i.downbeat { box-shadow: 0 0 0 1px rgba(232, 178, 60, 0.5); }
+.beat-meter i.on { background: var(--gold-bright); transform: scale(1.45); }
+
+/* ---------- enemy dossier: shown once, the first time you meet something ---------- */
+
+.dossier-card { max-width: min(520px, 92vw); gap: 10px; }
+.dossier-eyebrow {
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--gold-bright); opacity: 0.85;
+}
+.dossier-head { display: flex; gap: 14px; align-items: flex-start; text-align: left; }
+.dossier-art {
+  width: 84px; height: 84px; flex: none;
+  border-radius: 12px; background-size: cover; background-position: center;
+  border: 1px solid rgba(232, 178, 60, 0.4);
+}
+.dossier-title { flex: 1; }
+.dossier-title h2 { margin: 0 0 4px; font-size: 22px; }
+.dossier-blurb { font-size: 13px; font-style: italic; color: rgba(244, 232, 207, 0.8); line-height: 1.45; }
+.dossier-traits { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.dossier-trait {
+  display: flex; gap: 9px; align-items: baseline; text-align: left;
+  background: rgba(10, 6, 3, 0.45); border-radius: 8px; padding: 6px 9px;
+}
+.dt-label {
+  flex: none; font-size: 11px; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--gold-bright);
+}
+.dt-detail { font-size: 12.5px; color: rgba(244, 232, 207, 0.86); line-height: 1.4; }
+.dossier-counter {
+  display: flex; flex-direction: column; gap: 3px; text-align: left; width: 100%;
+  background: rgba(127, 212, 255, 0.1);
+  border: 1px solid rgba(127, 212, 255, 0.3);
+  border-radius: 9px; padding: 8px 10px;
+}
+.dc-label {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #8fdfff;
+}
+.dc-text { font-size: 13px; color: var(--parchment); line-height: 1.45; }
+
+@media (max-height: 480px) {
+  .dossier-card { gap: 6px; padding: 12px 16px; }
+  .dossier-art { width: 56px; height: 56px; }
+  .dossier-title h2 { font-size: 17px; }
+  .dossier-blurb { display: none; }
+  .dt-detail { font-size: 11.5px; }
+}
+
+/* ---------- mode info + account ---------- */
+
+.mode-row { display: flex; align-items: center; gap: 8px; }
+.mode-row .mode-btn { flex: 1; }
+.info-dot {
+  flex: none;
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid rgba(232, 178, 60, 0.5);
+  background: rgba(232, 178, 60, 0.1);
+  color: var(--gold-bright);
+  font-family: 'Cinzel', serif; font-weight: 700; font-size: 13px;
+  line-height: 1; cursor: pointer;
+  display: grid; place-items: center;
+}
+.info-dot:hover { background: rgba(232, 178, 60, 0.24); }
+.mode-info { max-width: min(460px, 92vw); text-align: left; }
+.mode-info h2 { text-align: center; }
+.mode-tagline { text-align: center; font-style: italic; color: var(--gold-bright); font-size: 14px; }
+.mode-body, .mode-skill { font-size: 13.5px; line-height: 1.55; color: rgba(244, 232, 207, 0.88); margin: 0; }
+.mode-skill { color: #8fdfff; }
+
+.account-card { max-width: min(440px, 92vw); }
+.account-body { font-size: 13.5px; line-height: 1.55; color: rgba(244, 232, 207, 0.86); margin: 0; text-align: left; }
+.account-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: clamp(22px, 6vw, 30px); letter-spacing: 3px; font-weight: 700;
+  color: var(--gold-bright);
+  background: rgba(10, 6, 3, 0.5);
+  border: 1px solid rgba(232, 178, 60, 0.4);
+  border-radius: 10px; padding: 10px 14px;
+  user-select: all;
+}
+.account-code.flash { animation: call-glow 0.6s ease 2; }
+.account-input {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 20px; letter-spacing: 3px; text-align: center; text-transform: uppercase;
+  padding: 10px; border-radius: 10px;
+  background: rgba(10, 6, 3, 0.5);
+  border: 1px solid rgba(232, 178, 60, 0.4);
+  color: var(--parchment);
+}
+.account-warn { font-size: 12.5px; color: var(--danger); min-height: 16px; }
+
+/* ---------- touch: panels need real dismiss targets ---------- */
+
+@media (pointer: coarse) {
+  /* the ✕ was a mouse-sized target on a panel that fills half a phone screen */
+  .tp-close {
+    width: 40px; height: 40px;
+    font-size: 20px;
+    display: grid; place-items: center;
+    margin: -6px -6px 0 0;
+  }
+  /* a wider strip of the panel header is draggable-free dead space, so taps
+     near the title do not get swallowed by a control */
+  .tp-head { padding-bottom: 4px; }
+  .info-dot { width: 34px; height: 34px; font-size: 15px; }
+}
+
+/* an ability button that has been tapped once shows what it does before firing */
+.ability.armed {
+  box-shadow: 0 0 0 2px var(--gold-bright), 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.ability-tip {
+  position: absolute;
+  bottom: calc(78px + env(safe-area-inset-bottom));
+  left: calc(10px + env(safe-area-inset-left));
+  max-width: min(300px, 78vw);
+  background: rgba(20, 14, 9, 0.95);
+  border: 1px solid rgba(232, 178, 60, 0.4);
+  border-radius: 10px;
+  padding: 8px 11px;
+  font-size: 12.5px; line-height: 1.45;
+  color: var(--parchment);
+  pointer-events: none;
+}
+.ability-tip b { color: var(--gold-bright); }
+.ability-tip.hidden { display: none; }
+
+.hero-rank {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--gold-bright);
+  background: rgba(232, 178, 60, 0.16);
+  border: 1px solid rgba(232, 178, 60, 0.45);
+  border-radius: 999px; padding: 1px 6px; margin-left: 4px;
 }

@@ -10,7 +10,96 @@ import { Enemy, Soldier } from './units.ts'
 import { PlotInfo } from './terrain.ts'
 import { buildModel, getPart, disposeClonedMaterials } from '../voxel/builder.ts'
 import { towerModel, muzzleHeights, rallyFlagModel } from '../voxel/models_towers.ts'
-import { randRange, lerpAngle, clamp } from '../core/utils.ts'
+import { randRange, lerpAngle, clamp, simChance } from '../core/utils.ts'
+import { RAMPART_RANGE_BONUS, RAMPART_DAMAGE_BONUS } from './earthworks.ts'
+import { onBeat, BEAT_BONUS } from './beat.ts'
+
+/**
+ * Cross-family reactions replace the old same-family resonance.
+ *
+ * The previous rule gave +6% damage per adjacent tower of the *same* family,
+ * capped at two. It was invisible at the numbers involved and it rewarded
+ * building four of the same thing in a clump - the opposite of a placement
+ * decision. Reactions pay for mixing families instead, and each one does
+ * something nameable rather than nudging a percentage.
+ */
+/**
+ * How close two towers must stand to react.
+ *
+ * The old resonance used 2.3, which was shorter than the plot spacing on
+ * Greenhollow and Emberwastes (3.0) - the mechanic was literally unreachable
+ * on the tutorial map and on map three. 3.1 makes it reachable on every map
+ * while staying selective; see tests/towers.test.ts.
+ */
+export const REACTION_RADIUS = 3.1
+
+export type ReactionId = 'enchanted' | 'runic' | 'ranging' | 'shieldwall'
+
+export interface ReactionDef {
+  id: ReactionId
+  name: string
+  icon: string
+  pair: [TowerKind, TowerKind]
+  description: string
+}
+
+export const REACTIONS: ReactionDef[] = [
+  { id: 'enchanted', name: 'Enchanted Shafts', icon: 'sparkle', pair: ['arrow', 'mage'],
+    description: 'Arrows ignore 30% of armor.' },
+  { id: 'runic', name: 'Runic Shells', icon: 'rune', pair: ['cannon', 'mage'],
+    description: 'Cannon blasts leave survivors slowed for 1.5s.' },
+  { id: 'ranging', name: 'Ranging Crews', icon: 'range', pair: ['arrow', 'cannon'],
+    description: 'Both towers gain +12% range.' },
+  { id: 'shieldwall', name: 'Shield Wall', icon: 'shield', pair: ['barracks', 'barracks'],
+    description: 'Soldiers guarded by a neighbouring tower gain +18% health.' },
+]
+
+/** the reaction a pair of adjacent families produces, if any */
+export function reactionFor(a: TowerKind, b: TowerKind): ReactionDef | null {
+  if (a === b) return null
+  for (const r of REACTIONS) {
+    if (r.id === 'shieldwall') continue
+    if ((r.pair[0] === a && r.pair[1] === b) || (r.pair[0] === b && r.pair[1] === a)) return r
+  }
+  return null
+}
+
+/** how hard an echo of a past watch hits, relative to a live tower */
+export const GHOST_POWER = 0.55
+
+/** wash a model out so it reads as a memory rather than a tower */
+export function applyGhostLook(model: THREE.Object3D): void {
+  model.traverse(o => {
+    if (!(o instanceof THREE.Mesh)) return
+    const mats = Array.isArray(o.material) ? o.material : [o.material]
+    for (const m of mats) {
+      if (m.userData.shared) continue
+      m.transparent = true
+      m.opacity = 0.42
+      m.depthWrite = false
+      if (m instanceof THREE.MeshStandardMaterial) {
+        m.emissive.setHex(0x6fb8ff)
+        m.emissiveIntensity = 0.25
+      }
+    }
+  })
+}
+
+export type TargetPolicy = 'first' | 'last' | 'strong' | 'weak'
+export const TARGET_POLICY_LABEL: Record<TargetPolicy, string> = {
+  first: 'First', last: 'Last', strong: 'Strongest', weak: 'Weakest',
+}
+export const TARGET_POLICY_ORDER: TargetPolicy[] = ['first', 'last', 'strong', 'weak']
+
+/** lower wins. Pure so the policies can be tested without a scene. */
+export function targetScore(policy: TargetPolicy, e: { remaining: number, hp: number }): number {
+  switch (policy) {
+    case 'last': return -e.remaining
+    case 'strong': return -e.hp
+    case 'weak': return e.hp
+    default: return e.remaining
+  }
+}
 
 const boltColors: Record<string, number> = {
   mage1: 0x8f5aff, mage2: 0x7a6aff, mage3: 0x5aa0ff, mage4a: 0xb37aff, mage4b: 0x9fe8ff,
@@ -39,13 +128,23 @@ export class Tower {
   private signatureCount = 0
   /** capstone: Last Muster cooldown gate */
   private musterReadyAt = 0
+  /** Emberthrone's second shell, queued during the first */
+  private pendingTwin: THREE.Vector3 | null = null
   cooldown = 0
   target: Enemy | null = null
   soldiers: Soldier[] = []
   rallyPoint = new THREE.Vector3()
+  targetPolicy: TargetPolicy = 'first'
+  /** standing beside a rampart: further sight, heavier shots */
+  onHighGround = false
+  /** an echo of a previous watch: it fights, but faintly, and cannot be touched */
+  isGhost = false
   rallyFlag: THREE.Group | null = null
   /** count of same-family neighbors (0-2), set by Game.recomputeResonance */
   resonance = 0
+  /** cross-family reactions currently active on this tower */
+  reactions = new Set<ReactionId>()
+  has(r: ReactionId): boolean { return this.reactions.has(r) }
   /** enemies this building (and its soldiers) has slain */
   kills = 0
   perk: PerkDef | null = null
@@ -66,7 +165,7 @@ export class Tower {
   private stallT = 0
   private crystalT = Math.random() * 10
 
-  constructor(readonly kind: TowerKind, readonly plot: PlotInfo, world: World) {
+  constructor(readonly kind: TowerKind, readonly plot: PlotInfo, private readonly world: World) {
     this.group = new THREE.Group()
     this.group.position.copy(plot.pos)
     this.applyLevel(towerTrees[kind].levels[0], world, true)
@@ -75,14 +174,51 @@ export class Tower {
   get pos(): THREE.Vector3 { return this.group.position }
   get isBarracks(): boolean { return this.kind === 'barracks' }
 
-  /** effective range including perks */
-  get range(): number {
-    return this.def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0)
+  /**
+   * Tier presence. Tiers 1-3 were distinguished only by model and a little
+   * scale, so an expensive board did not look expensive. From tier 4 the
+   * stonework catches light, and a capstone wears a slow halo - visible at the
+   * distance the game is actually played at, without adding a draw call.
+   */
+  private tierHalo: THREE.Mesh | null = null
+
+  private applyTierPresence(): void {
+    if (!this.model) return
+    const lit = this.level >= 4
+    if (lit) {
+      const glow = this.level >= 5 ? 0.34 : 0.16
+      const hue = this.level >= 5 ? 0xffd98f : 0xffc76a
+      this.model.traverse(o => {
+        if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
+          if (o.material.userData.shared) return
+          o.material.emissive.setHex(hue)
+          o.material.emissiveIntensity = glow
+        }
+      })
+    }
+    if (this.level >= 5 && !this.tierHalo) {
+      const geo = new THREE.RingGeometry(0.46, 0.6, 40)
+      geo.rotateX(-Math.PI / 2)
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xffd98f, transparent: true, opacity: 0.5, toneMapped: false, depthWrite: false,
+      })
+      this.tierHalo = new THREE.Mesh(geo, mat)
+      this.tierHalo.position.y = 0.07
+      this.tierHalo.renderOrder = 3
+      this.group.add(this.tierHalo)
+    }
   }
 
-  /** resonance damage bonus from same-family neighbors */
+  /** effective range including perks */
+  get range(): number {
+    return (this.def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0))
+      * (this.has('ranging') ? 1.12 : 1)
+      * (this.onHighGround ? 1 + RAMPART_RANGE_BONUS : 1)
+  }
+
+  /** retained so capstone specials keep a single damage scalar to multiply by */
   get resonanceMult(): number {
-    return 1 + 0.06 * this.resonance
+    return 1
   }
 
   /** where a hexling sits when it silences this tower */
@@ -136,16 +272,25 @@ export class Tower {
   }
 
   get sellValue(): number {
-    return Math.round(investedGold(this.kind, this.level, this.branch) * SELL_REFUND)
+    return Math.round(investedGold(this.kind, this.level, this.branch) * this.world.sellRefund)
   }
 
   private applyLevel(def: TowerLevelDef, world: World, initial = false): void {
-    if (this.model) this.group.remove(this.model)
+    if (this.model) {
+      this.group.remove(this.model)
+      disposeClonedMaterials(this.model)
+    }
+    if (this.tierHalo) { this.group.remove(this.tierHalo); this.tierHalo = null }
     this.def = def
-    this.model = buildModel(towerModel(def.model), `tower:${def.model}`)
+    // Every tower gets its own materials. Tier glow and the ghost wash are
+    // per-tower effects, and writing either onto a cached shared material
+    // would change every tower built from the same model.
+    this.model = buildModel(towerModel(def.model), `tower:${def.model}`, { cloneMaterials: true })
+    if (this.isGhost) applyGhostLook(this.model)
     this.group.add(this.model)
     this.sizeMult = TIER_SCALE[this.level - 1]
     this.buildT = 0
+    this.applyTierPresence()
     if (this.isBarracks) {
       if (initial) this.pickDefaultRally(world)
       this.respawnAllSoldiers(world)
@@ -208,7 +353,7 @@ export class Tower {
     const base = this.def.soldier
     const hpMult = world.soldierHpMult()
       * (this.perk?.id === 'vanguard' ? 1.25 : 1)
-      * (1 + 0.08 * this.resonance)
+      * (this.has('shieldwall') ? 1.18 : 1)
     const newMax = Math.round(base.hp * hpMult)
     for (const s of this.soldiers) {
       if (s.maxHp === newMax) continue
@@ -281,7 +426,7 @@ export class Tower {
     const base = this.def.soldier!
     const hpMult = world.soldierHpMult()
       * (this.perk?.id === 'vanguard' ? 1.25 : 1)
-      * (1 + 0.08 * this.resonance)
+      * (this.has('shieldwall') ? 1.18 : 1)
     const dmgMult = this.perk?.id === 'whetstone' ? 1.25 : 1
     const def = {
       ...base,
@@ -311,6 +456,12 @@ export class Tower {
     return this.pos.clone().add(new THREE.Vector3(0, muzzleHeights[this.def.model] * this.sizeMult, 0))
   }
 
+  /**
+   * Targeting was a single hardcoded sort on remaining distance, so every
+   * tower in the game always shot whatever was closest to the gate. The
+   * comparator is the whole decision, so letting the player pick it is very
+   * nearly free - and it is real tactical expression rather than more breadth.
+   */
   private acquireTarget(world: World): void {
     if (this.target) {
       const t = this.target
@@ -319,15 +470,24 @@ export class Tower {
     }
     if (this.target) return
     let best: Enemy | null = null
-    let bestRemaining = Infinity
+    let bestScore = Infinity
     for (const e of world.enemies) {
       if (!e.targetable) continue
       if (e.def.flying && !this.def.flying) continue
+      if (this.def.airOnly && !e.def.flying) continue
       const d = Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z)
       if (d > this.range + e.radius) continue
-      if (e.remaining < bestRemaining) { bestRemaining = e.remaining; best = e }
+      const score = targetScore(this.targetPolicy, e)
+      if (score < bestScore) { bestScore = score; best = e }
     }
     this.target = best
+  }
+
+  cycleTargetPolicy(): TargetPolicy {
+    const order = TARGET_POLICY_ORDER
+    this.targetPolicy = order[(order.indexOf(this.targetPolicy) + 1) % order.length]
+    this.target = null      // re-acquire under the new rule immediately
+    return this.targetPolicy
   }
 
   update(dt: number, world: World): void {
@@ -365,7 +525,9 @@ export class Tower {
 
     if (this.isBarracks) {
       this.updateBarracks(dt, world)
-      return
+      // Stormhowl Warcamp keeps going: its soldiers hold the road while the
+      // camp itself throws. Every other barracks stops here.
+      if (!this.def.damage) return
     }
 
     // hexed: the perched imp silences the tower until dislodged
@@ -436,32 +598,72 @@ export class Tower {
     }
   }
 
+  /** the foe standing directly behind a target, for Kingsreach's pass-through */
+  private behind(target: Enemy, world: World): Enemy | null {
+    let best: Enemy | null = null
+    let bestGap = Infinity
+    for (const e of world.enemies) {
+      if (e === target || !e.targetable) continue
+      if (e.laneIndex !== target.laneIndex) continue
+      const gap = e.dist - target.dist          // further from the gate = behind
+      if (gap <= 0 || gap > 1.6) continue
+      if (gap < bestGap) { bestGap = gap; best = e }
+    }
+    return best
+  }
+
   /** one arrow with this tree's crit/poison rolls applied per-arrow */
-  private fireArrowAt(target: Enemy, dmg: number, from: THREE.Vector3, world: World): void {
+  private fireArrowAt(target: Enemy, dmg: number, from: THREE.Vector3, world: World, allowPierce = true): void {
     const def = this.def
     let damage = dmg
     let crit = false
-    if (def.special?.kind === 'crit' && Math.random() < def.special.chance) {
+    if (def.special?.kind === 'crit' && simChance(def.special.chance)) {
       damage *= def.special.mult
       crit = true
     }
-    const poison = def.special?.kind === 'poison' && Math.random() < def.special.chance
+    // Kingsreach: a critical arrow does not stop at the first body
+    if (crit && allowPierce && def.signature === 'passThrough') {
+      const next = this.behind(target, world)
+      if (next) this.fireArrowAt(next, dmg, from, world, false)
+    }
+    const poison = def.special?.kind === 'poison' && simChance(def.special.chance)
       ? { dps: def.special.dps, duration: def.special.duration }
       : undefined
-    world.fireProjectile({ kind: 'arrow', from, target, damage, crit, poison, credit: this, world })
+    world.fireProjectile({ kind: 'arrow', from, target, damage, crit, poison, credit: this, world,
+      armorPierce: this.has('enchanted') ? 0.3 : undefined })
   }
 
   private fire(target: Enemy, world: World, isEcho = false): void {
     const def = this.def
+    // the Bellfoundry never withholds a shot; it rewards the ones that land
+    // on the beat, so a defense can be arranged to ring rather than clatter
+    const rang = world.isBellfoundry && onBeat(world.time)
     let dmg = randRange(...def.damage!) * world.towerDamageMult(this.kind) * this.resonanceMult
+      * (this.onHighGround ? 1 + RAMPART_DAMAGE_BONUS : 1)
+      * (this.isGhost ? GHOST_POWER : 1)
+      * (rang ? 1 + BEAT_BONUS : 1)
+    if (rang) {
+      world.sfx('crit', 0.28)
+      world.particles.hitSpark(this.pos.x, this.pos.y + 0.9, this.pos.z, 0xffd24a)
+    }
     if (this.perk?.id === 'serrated') dmg *= 1.2
     const from = this.muzzle()
     switch (this.kind) {
+      case 'barracks': {
+        // Stormhowl Warcamp: the only barracks that answers the sky
+        world.fireProjectile({
+          kind: 'arrow', from, target, damage: dmg, crit: false, credit: this, world,
+          armorPierce: this.has('enchanted') ? 0.3 : undefined,
+        })
+        world.sfx('arrow', 0.8)
+        world.particles.hitSpark(from.x, from.y, from.z, 0xd8452f)
+        break
+      }
       case 'arrow': {
         this.fireArrowAt(target, dmg, from, world)
         world.sfx('arrow', 0.7)
         // Crown Volley: every fifth attack showers up to 5 more foes at 65%
-        if (this.level === 5 && ++this.signatureCount >= 5) {
+        if (def.signature === 'crownVolley' && ++this.signatureCount >= 5) {
           this.signatureCount = 0
           const extras: Enemy[] = []
           for (const e of world.enemies) {
@@ -489,17 +691,25 @@ export class Tower {
           })
         } else {
           const shred = def.special?.kind === 'armorShred' ? def.special.amount : undefined
-          world.fireProjectile({ kind: 'bolt', from, target, damage: dmg, color: boltColors[def.model] ?? 0x8f5aff, armorShred: shred, mrPierce, credit: this, world })
+          // The Unmaking: what it hits stops resisting anything, and a target
+          // already stripped bare takes the full weight of it
+          let boltDamage = dmg
+          let resistShred: number | undefined
+          if (def.signature === 'unmaking') {
+            resistShred = shred
+            if (target.armor <= 0.001 && target.magicResistNow <= 0.001) boltDamage *= 1.3
+          }
+          world.fireProjectile({ kind: 'bolt', from, target, damage: boltDamage, color: boltColors[def.model] ?? 0x8f5aff, armorShred: shred, resistShred, mrPierce, credit: this, world })
           world.sfx('magic', 0.7)
         }
         world.particles.magicImpact(from.x, from.y, from.z, boltColors[def.model] ?? 0x8f5aff)
         // Convergence Rune: every fifth cast anchors a pulsing rune (echoes don't count)
-        if (this.level === 5 && !isEcho && ++this.signatureCount >= 5) {
+        if (def.signature === 'convergenceRune' && !isEcho && ++this.signatureCount >= 5) {
           this.signatureCount = 0
           addConvergenceRune(world, target.pos.x, target.pos.z, this)
         }
         // Echo Casting: chance to immediately cast again
-        if (!isEcho && this.perk?.id === 'echo' && Math.random() < 0.18) {
+        if (!isEcho && this.perk?.id === 'echo' && simChance(0.18)) {
           this.fire(target, world, true)
         }
         break
@@ -512,15 +722,24 @@ export class Tower {
           target.offset,
         )
         const at = new THREE.Vector3(predicted.x, 0.02, predicted.z)
+        // Emberthrone: a second shell lands a stride further down the lane, so
+        // the pair leaves one long burning scar instead of a single crater
+        if (def.signature === 'twinShells') {
+          const second = target.lane.sample(
+            Math.max(0, Math.min(target.lane.length - 0.01, target.dist - 0.9)),
+            target.offset,
+          )
+          this.pendingTwin = new THREE.Vector3(second.x, 0.02, second.z)
+        }
         const cluster = def.special?.kind === 'cluster' ? def.special : undefined
         const burn = def.special?.kind === 'burnGround' ? def.special : undefined
         const splashMult = world.splashMult() * (this.perk?.id === 'napalm' ? 1.3 : 1)
         world.fireProjectile({
-          kind: 'bomb', from, at, damage: dmg, splash: def.splash! * splashMult,
+          kind: 'bomb', from, at, damage: dmg, splash: def.splash! * splashMult, slow: this.has('runic'),
           cluster: cluster ? { count: cluster.count, damage: cluster.damage, radius: cluster.radius * splashMult } : undefined,
           burn: burn ? { dps: burn.dps, duration: burn.duration, radius: burn.radius * splashMult } : undefined,
           // Faultline Arsenal: every shell buries a seismic charge in the crater
-          mine: this.level === 5 ? {
+          mine: def.signature === 'seismicCharge' ? {
             damage: [52 * this.resonanceMult, 78 * this.resonanceMult], radius: 0.95 * splashMult, trigger: 0.65,
             armTime: 1, life: 10, maxActive: 3,
             stunChance: this.perk?.id === 'tremor' ? 0.3 : 0,
@@ -530,6 +749,17 @@ export class Tower {
           credit: this,
           world,
         })
+        if (this.pendingTwin) {
+          const twinAt = this.pendingTwin
+          this.pendingTwin = null
+          world.fireProjectile({
+            kind: 'bomb', from, at: twinAt, damage: dmg, splash: def.splash! * splashMult, slow: this.has('runic'),
+            burn: burn ? { dps: burn.dps, duration: burn.duration, radius: burn.radius * splashMult } : undefined,
+            stunChance: this.perk?.id === 'tremor' ? 0.3 : undefined,
+            credit: this,
+            world,
+          })
+        }
         world.sfx('cannon', 0.85)
         world.particles.explosion(from.x + Math.sin(this.turretYaw) * 0.3, from.y + 0.12, from.z + Math.cos(this.turretYaw) * 0.3, 0.35)
         break
@@ -543,7 +773,7 @@ export class Tower {
         // Last Muster: a fallen veteran rallies two short-lived retainers
         if (!s.musterConsumed) {
           s.musterConsumed = true
-          if (this.level === 5 && world.time >= this.musterReadyAt) {
+          if (this.def.signature === 'lastMuster' && world.time >= this.musterReadyAt) {
             this.musterReadyAt = world.time + MUSTER_COOLDOWN
             this.lastMuster(world)
           }
@@ -561,7 +791,7 @@ export class Tower {
     // retainers honor the same soldier bonuses the panel advertises
     const hpMult = world.soldierHpMult()
       * (this.perk?.id === 'vanguard' ? 1.25 : 1)
-      * (1 + 0.08 * this.resonance)
+      * (this.has('shieldwall') ? 1.18 : 1)
     const dmgMult = this.perk?.id === 'whetstone' ? 1.25 : 1
     const def = {
       ...RETAINER,

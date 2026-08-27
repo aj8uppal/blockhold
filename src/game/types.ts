@@ -37,11 +37,26 @@ export interface EnemyDef {
 
 export type TowerKind = 'arrow' | 'mage' | 'cannon' | 'barracks'
 
+/** the signature mechanic a tier-5 tower brings; one per capstone */
+export type CapstoneSignature =
+  | 'crownVolley'      // every fifth attack sprays the lane
+  | 'passThrough'      // a critical punches through to the enemy behind
+  | 'convergenceRune'  // every fifth cast anchors a pulsing rune
+  | 'unmaking'         // strips magic resistance as well as armor
+  | 'seismicCharge'    // buries a mine in every crater
+  | 'twinShells'       // fires two shells per attack
+  | 'lastMuster'       // retainers rush from the gate when a soldier falls
+  | 'skyAxes'          // the camp itself hurls axes at flyers
+
 export interface TowerLevelDef {
   name: string
   cost: number
   model: TowerModelId
   range: number
+  /** tier-5 only: what makes this capstone itself */
+  signature?: CapstoneSignature
+  /** only engages flying enemies (its soldiers hold the ground) */
+  airOnly?: boolean
   // attackers
   damage?: [number, number]
   damageType?: DamageType
@@ -79,24 +94,17 @@ export interface SoldierDef {
   scale?: number
 }
 
-/**
- * Tier-5 capstone: one per tree, buyable after either tier-4 branch.
- * Per-branch model/special preserve the chosen branch identity; the
- * capstone's signature mechanic lives in Tower/projectile logic.
- */
-export interface CapstoneDef extends Omit<TowerLevelDef, 'model' | 'special'> {
-  models: [TowerModelId, TowerModelId]                   // per tier-4 branch
-  specials?: [TowerSpecial | undefined, TowerSpecial | undefined]
-  /** barracks: per-branch veteran soldiers and respawn cadence */
-  soldiers?: [SoldierDef, SoldierDef]
-  respawnTimes?: [number, number]
-}
-
 export interface TowerTree {
   kind: TowerKind
   levels: [TowerLevelDef, TowerLevelDef, TowerLevelDef]  // 1..3
   branches: [TowerLevelDef, TowerLevelDef]               // 4a, 4b
-  capstone: CapstoneDef                                  // 5
+  /**
+   * One capstone per tier-4 branch, not one shared crown with a swapped
+   * model. The branch you picked at tier 4 decides which tier-5 tower you
+   * are building toward, so the two halves of a tree end somewhere genuinely
+   * different rather than converging.
+   */
+  capstones: [TowerLevelDef, TowerLevelDef]              // 5a, 5b
 }
 
 export interface WaveGroup {

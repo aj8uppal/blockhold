@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { DeathFlavor } from './debris.ts'
 import type { LanePath } from './path.ts'
 import type { Particles } from './particles.ts'
 import type { Enemy, Soldier } from './units.ts'
@@ -46,13 +47,25 @@ export interface World {
   onEnemyLeaked(e: Enemy): void
   spawnEnemyAt(id: string, laneIndex: number, dist: number, opts?: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean }): void
   fireProjectile(p: ProjectileSpec): void
+  /** Second Wind: multiplier on hero respawn time (0.5 when bought) */
+  readonly heroReviveMult: number
+  /** fraction of invested gold returned on a sell (Full Salvage raises it to 1) */
+  readonly sellRefund: number
+  /** the Bellfoundry is keeping time this battle */
+  readonly isBellfoundry: boolean
+  /** is this point inside a player-dug cutting? */
+  cuttingAt(x: number, z: number): boolean
   shake(strength: number): void
+  /** hold the frame on a hit worth feeling */
+  impact(weight: 'light' | 'heavy' | 'elite' | 'boss'): void
+  /** break a dead unit's model into its authored blocks */
+  shatterUnit(group: THREE.Group, opts: { force?: number, flavor?: DeathFlavor, scale?: number }): void
 }
 
 export type ProjectileSpec =
-  | { kind: 'arrow', from: THREE.Vector3, target: Enemy, damage: number, crit: boolean, poison?: { dps: number, duration: number }, credit?: KillCredit, world: World }
-  | { kind: 'bolt', from: THREE.Vector3, target: Enemy, damage: number, color: number, armorShred?: number, mrPierce?: number, credit?: KillCredit, world: World }
-  | { kind: 'bomb', from: THREE.Vector3, at: THREE.Vector3, damage: number, splash: number, cluster?: { count: number, damage: [number, number], radius: number }, burn?: { dps: number, duration: number, radius: number }, mine?: MineSpec, stunChance?: number, credit?: KillCredit, world: World }
+  | { kind: 'arrow', from: THREE.Vector3, target: Enemy, damage: number, crit: boolean, poison?: { dps: number, duration: number }, armorPierce?: number, credit?: KillCredit, world: World }
+  | { kind: 'bolt', from: THREE.Vector3, target: Enemy, damage: number, color: number, armorShred?: number, resistShred?: number, mrPierce?: number, credit?: KillCredit, world: World }
+  | { kind: 'bomb', from: THREE.Vector3, at: THREE.Vector3, damage: number, splash: number, cluster?: { count: number, damage: [number, number], radius: number }, burn?: { dps: number, duration: number, radius: number }, mine?: MineSpec, stunChance?: number, slow?: boolean, submunition?: boolean, credit?: KillCredit, world: World }
   | { kind: 'chain', from: THREE.Vector3, first: Enemy, damage: number, targets: number, falloff: number, stunChance: number, stunDur: number, mrPierce?: number, credit?: KillCredit, world: World }
   | { kind: 'warlockBolt', from: THREE.Vector3, target: Soldier, damage: number, world: World }
   | { kind: 'meteor', at: THREE.Vector3, damage: number, world: World }

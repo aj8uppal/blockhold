@@ -1,0 +1,40 @@
+# Blockhold cloud saves. One small machine and a volume: the whole dataset is
+# a few KB of JSON per player.
+app = "blockhold-sync"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  DB_PATH = "/data/blockhold.db"
+  ALLOWED_ORIGINS = "https://aj8uppal.github.io,http://localhost:5173,http://localhost:4173"
+
+[[mounts]]
+  source = "blockhold_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  # SQLite on a single volume: never run two writers against one file
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 400
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

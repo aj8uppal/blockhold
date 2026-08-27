@@ -1,7 +1,8 @@
+import { deriveEarthworkSpots, RAMPART_REACH } from '../src/game/earthworks.ts'
 import { describe, expect, it } from 'vitest'
 import { enemyDefs } from '../src/game/enemyDefs.ts'
 import { levels } from '../src/game/levels.ts'
-import { buildPaths } from '../src/game/path.ts'
+import { buildPaths, gridToWorld } from '../src/game/path.ts'
 import type { Rect } from '../src/game/types.ts'
 
 function expectRectInBounds(rect: Rect, width: number, height: number): void {
@@ -119,6 +120,73 @@ describe('level data', () => {
       for (const [c, r] of level.plots) {
         expect(blocked.some(rect => rectContains(rect, c, r)), `${level.id} plot ${c},${r}`).toBe(false)
       }
+    }
+  })
+})
+
+describe('earthworks', () => {
+  /**
+   * Earthworks are derived from each map's own shape rather than authored, so
+   * a map that drifts could silently end up with nowhere to dig. Both verbs
+   * have to be available on every board or the mechanic is dead content -
+   * exactly what happened to tower adjacency with too small a radius.
+   */
+  it('offers both kinds of ground work on every map', () => {
+    for (const lvl of levels) {
+      const paths = buildPaths(lvl)
+      const road = paths.roadCells
+      const kindOf = (c: number, r: number): string => {
+        if (c < 0 || r < 0 || c >= lvl.width || r >= lvl.height) return 'void'
+        if (lvl.voids.some(([c0, r0, c1, r1]) => c >= c0 && c <= c1 && r >= r0 && r <= r1)) return 'void'
+        if (road.has(`${c},${r}`)) return 'road'
+        if (lvl.plots.some(([pc, pr]) => pc === c && pr === r)) return 'plot'
+        if (lvl.water.some(([c0, r0, c1, r1]) => c >= c0 && c <= c1 && r >= r0 && r <= r1)) return 'water'
+        if (lvl.hills.some(([c0, r0, c1, r1]) => c >= c0 && c <= c1 && r >= r0 && r <= r1)) return 'hill'
+        return 'grass'
+      }
+      const isTrap = (c: number, r: number) => (lvl.trapSpots ?? []).some(([tc, tr]) => tc === c && tr === r)
+      const spots = deriveEarthworkSpots(lvl, kindOf, isTrap)
+      expect(spots.some(s => s.kind === 'rampart'), `${lvl.id} has nowhere to raise a rampart`).toBe(true)
+      expect(spots.some(s => s.kind === 'cutting'), `${lvl.id} has nowhere to cut the road`).toBe(true)
+    }
+  })
+
+  /**
+   * A rampart only pays if a tower can stand beside it. Reach is 1.7, and if
+   * a map's ramparts all landed further than that from every plot the bonus
+   * would be unbuyable there - the same way tower adjacency was dead content
+   * on two maps for using a radius shorter than the plot spacing.
+   */
+  it('puts ramparts within reach of real tower plots on every map', () => {
+    for (const lvl of levels) {
+      const paths = buildPaths(lvl)
+      const kindOf = (c: number, r: number): string => {
+        if (c < 0 || r < 0 || c >= lvl.width || r >= lvl.height) return 'void'
+        if (paths.roadCells.has(`${c},${r}`)) return 'road'
+        if (lvl.plots.some(([pc, pr]) => pc === c && pr === r)) return 'plot'
+        if (lvl.water.some(([a, b, x, y]) => c >= a && c <= x && r >= b && r <= y)) return 'water'
+        if (lvl.voids.some(([a, b, x, y]) => c >= a && c <= x && r >= b && r <= y)) return 'void'
+        return 'grass'
+      }
+      const isTrap = (c: number, r: number) => (lvl.trapSpots ?? []).some(([tc, tr]) => tc === c && tr === r)
+      const plots = lvl.plots.map(([c, r]) => gridToWorld(c, r, lvl.width, lvl.height))
+      const inReach = deriveEarthworkSpots(lvl, kindOf, isTrap)
+        .filter(s => s.kind === 'rampart')
+        .filter(s => {
+          const [x, z] = gridToWorld(s.cell[0], s.cell[1], lvl.width, lvl.height)
+          return plots.some(p => Math.hypot(p[0] - x, p[1] - z) <= RAMPART_REACH)
+        })
+      expect(inReach.length, `${lvl.id} has no rampart a tower could use`).toBeGreaterThanOrEqual(2)
+    }
+  })
+
+  it('never puts a cutting where a trap already goes', () => {
+    const lvl = levels.find(l => (l.trapSpots ?? []).length > 0)!
+    const paths = buildPaths(lvl)
+    const isTrap = (c: number, r: number) => (lvl.trapSpots ?? []).some(([tc, tr]) => tc === c && tr === r)
+    const kindOf = (c: number, r: number) => paths.roadCells.has(`${c},${r}`) ? 'road' : 'grass'
+    for (const s of deriveEarthworkSpots(lvl, kindOf, isTrap)) {
+      if (s.kind === 'cutting') expect(isTrap(s.cell[0], s.cell[1])).toBe(false)
     }
   })
 })

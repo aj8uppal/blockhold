@@ -5,7 +5,12 @@ import { World, KillCredit } from './world.ts'
 import type { Tower } from './towers.ts'
 import { buildModel, setFlash, getPart, VoxModel } from '../voxel/builder.ts'
 import * as units from '../voxel/models_units.ts'
-import { clamp, lerpAngle, randRange } from '../core/utils.ts'
+import { clamp, lerpAngle, randRange, simRandom } from '../core/utils.ts'
+import { CUTTING_SLOW, CUTTING_VULN } from './earthworks.ts'
+import { HP_BAR_NAME } from './debris.ts'
+
+/** how often a boss throws its blockers off */
+export const BOSS_SWEEP_INTERVAL = 5.5
 
 export const enemyModelFactories: Record<string, () => VoxModel> = {
   husk: units.huskModel,
@@ -14,6 +19,7 @@ export const enemyModelFactories: Record<string, () => VoxModel> = {
   acolyte: units.acolyteModel,
   gargoyle: units.gargoyleModel,
   brute: units.bruteModel,
+  hollowking: units.hollowKingModel,
   spiderling: () => units.spiderModel(false),
   broodmother: () => units.spiderModel(true),
   warlock: units.warlockModel,
@@ -47,6 +53,21 @@ const barFgMatCrit = new THREE.MeshBasicMaterial({ color: 0xd8452f, transparent:
 // shared across every unit: must never be disposed with an instance
 for (const m of [barBgMat, barFgMat, barFgMatHurt, barFgMatCrit]) m.userData.shared = true
 const barGeo = new THREE.PlaneGeometry(1, 1)
+
+const _measureBox = new THREE.Box3()
+
+/**
+ * How high a health bar should float: the top of the model plus a small,
+ * scale-aware gap. Derived rather than authored, so a new model never ends up
+ * wearing its bar in the wrong place.
+ */
+export function measuredBarHeight(group: THREE.Object3D): number {
+  group.updateMatrixWorld(true)
+  _measureBox.setFromObject(group)
+  const top = _measureBox.max.y - group.position.y
+  if (!Number.isFinite(top) || top <= 0) return 0.75
+  return top + 0.14
+}
 
 export class HealthBar {
   group = new THREE.Group()
@@ -98,6 +119,8 @@ export interface EnemySpawnOpts {
   waveTag?: number
   /** summoned while the summoner lives: no bounty/shards/XP (anti-farming) */
   noReward?: boolean
+  /** deep-endless hardening added to armor and magic resistance */
+  toughness?: number
 }
 
 const ELITE_TINT = 0x9f3aff
@@ -107,6 +130,8 @@ export class Enemy {
   hp: number
   maxHp: number
   armor: number
+  /** magic resistance can be stripped, so it cannot live on the shared def */
+  magicResistNow: number
   dist: number
   offset: number
   state: EnemyState = 'walking'
@@ -126,6 +151,13 @@ export class Enemy {
   private attackTimer: number
   /** strike feedback: 1 at the moment damage lands, decays to 0 */
   private strikeT = 0
+  /** what last landed on this unit, so its debris carries that damage type */
+  private lastHitType: DamageType = 'physical'
+  private lastHitForce = 1
+  /** down inside a player-dug cutting */
+  private inCutting = false
+  /** bosses periodically clear whoever is holding them */
+  private sweepTimer = BOSS_SWEEP_INTERVAL
   private hitCount = 0
   /** hexling: the tower this imp is perched on, silencing */
   hexTarget: Tower | null = null
@@ -151,24 +183,38 @@ export class Enemy {
     this.speedMult = opts.speedMult ?? 1
     const hpMult = (opts.hpMult ?? 1) * (this.elite ? 1.9 : 1)
     this.hp = this.maxHp = Math.round(def.hp * hpMult)
-    this.armor = def.armor
+    // deep-endless hardening: the same creatures, but progressively harder to
+    // hurt, so one damage type stops being an answer forever
+    const tough = opts.toughness ?? 0
+    this.armor = Math.min(0.8, def.armor + tough)
+    this.magicResistNow = Math.min(0.8, def.magicResist + tough)
     this.dist = startDist
     this.offset = randRange(-0.27, 0.27)
-    this.attackTimer = def.attackInterval * Math.random()
+    this.attackTimer = def.attackInterval * simRandom()
     this.summonTimer = (def.summons?.interval ?? 0) * 0.6
     const factory = enemyModelFactories[def.model]
     this.group = buildModel(factory(), `enemy:${def.model}`, { cloneMaterials: true })
     const s = (def.scale ?? 1) * 1.12 * (this.elite ? 1.15 : 1)
     this.group.scale.setScalar(s)
     if (this.elite || this.surged || def.tint !== undefined) this.applyTint()
-    this.barY = (def.model === 'juggernaut' ? 1.35 : def.model === 'brute' ? 1.0 : 0.75) * s + (def.yOffset ?? 0)
+    // Sit the bar just above whatever this thing actually is, measured rather
+    // than guessed per model.
+    //
+    // The bar is a child of a group already scaled by `s`, and the old height
+    // was *also* multiplied by `s` - so bars floated at s-squared height and
+    // big units wore theirs absurdly high, which at close zoom pushed them off
+    // the top of the screen. Width had the same double-scaling, which is why
+    // boss bars were enormous. barY stays in world units for floaters; the
+    // bar's own transform is divided back out.
+    this.barY = measuredBarHeight(this.group) + (def.yOffset ?? 0)
     this.radius = 0.22 * s
     this.parts = {}
     for (const name of ['body', 'head', 'legL', 'legR', 'armL', 'armR', 'wingL', 'wingR', 'legsL', 'legsR', 'legFL', 'legFR', 'legBL', 'legBR']) {
       this.parts[name] = getPart(this.group, name)
     }
-    this.bar = new HealthBar(def.boss ? 0.9 : 0.5 * Math.max(1, s))
-    this.bar.group.position.y = this.barY
+    this.bar = new HealthBar((def.boss ? 0.85 : 0.5) / s)
+    this.bar.group.name = HP_BAR_NAME
+    this.bar.group.position.y = this.barY / s
     this.group.add(this.bar.group)
     const start = lane.sample(startDist, this.offset)
     this.group.position.set(start.x, def.yOffset ?? 0, start.z)
@@ -207,11 +253,11 @@ export class Enemy {
   }
 
   /** returns damage actually dealt */
-  takeDamage(amount: number, type: DamageType, world: World, opts: { crit?: boolean, silent?: boolean, mrPierce?: number, credit?: KillCredit } = {}): number {
+  takeDamage(amount: number, type: DamageType, world: World, opts: { crit?: boolean, silent?: boolean, mrPierce?: number, armorPierce?: number, credit?: KillCredit } = {}): number {
     if (!this.alive || this.phased) return 0
     let mult = 1
-    if (type === 'physical') mult = 1 - this.armor
-    else if (type === 'magic') mult = 1 - this.def.magicResist * (1 - (opts.mrPierce ?? 0))
+    if (type === 'physical') mult = 1 - this.armor * (1 - (opts.armorPierce ?? 0))
+    else if (type === 'magic') mult = 1 - this.magicResistNow * (1 - (opts.mrPierce ?? 0))
     // a wardbearer's banner half-shields the horde ahead of it
     if (world.time < this.wardedUntil) {
       mult *= 0.5
@@ -219,8 +265,11 @@ export class Enemy {
         world.particles.magicImpact(this.pos.x, this.pos.y + 0.45, this.pos.z, 0x8fdfff)
       }
     }
+    if (this.inCutting) mult *= 1 + CUTTING_VULN
     const dealt = Math.max(0, amount * mult)
     this.hp -= dealt
+    this.lastHitType = type
+    this.lastHitForce = Math.max(0.7, Math.min(2.4, dealt / Math.max(24, this.maxHp * 0.16)))
     if (!opts.silent) {
       this.flash = 0.16
       setFlash(this.group, 0.65)
@@ -261,6 +310,11 @@ export class Enemy {
     this.armor = Math.max(0, this.armor - amount)
   }
 
+  /** The Unmaking strips resistance as well as plate */
+  shredResist(amount: number): void {
+    this.magicResistNow = Math.max(0, this.magicResistNow - amount)
+  }
+
   heal(amount: number): void {
     if (!this.alive) return
     this.hp = Math.min(this.maxHp, this.hp + amount)
@@ -283,6 +337,12 @@ export class Enemy {
     }
     this.releaseBlockers()
     this.bar.group.visible = false
+    // come apart into the blocks this thing was built from
+    world.shatterUnit(this.group, {
+      force: this.lastHitForce * (this.def.boss ? 1.5 : 1),
+      flavor: this.lastHitType === 'magic' ? 'magic' : 'physical',
+      scale: this.def.scale ?? 1,
+    })
     world.onEnemyKilled(this)
   }
 
@@ -453,8 +513,31 @@ export class Enemy {
     }
 
     // combat with blockers
-    const engaged = this.blockers.some(s => s.alive && s.group.position.distanceTo(this.pos) < 0.62)
+    const engaged = this.blockers.some(s => s.alive && s.group.position.distanceTo(this.pos) < 0.72)
     this.blockers = this.blockers.filter(s => s.alive && s.target === this)
+
+    // A boss held forever by one blocker is not a fight, it is a lock. The
+    // Juggernaut could be soloed by a single Paladin because nothing it does
+    // ever breaks a block. Bosses now sweep: periodically they hurl their
+    // blockers clear and keep walking, so soldiers buy time rather than
+    // replacing the defense.
+    if (this.def.boss && engaged && !stunned) {
+      this.sweepTimer -= dt
+      if (this.sweepTimer <= 0) {
+        this.sweepTimer = BOSS_SWEEP_INTERVAL
+        for (const s of this.blockers) {
+          if (!s.alive) continue
+          s.takeDamage(randRange(this.def.attackDamage[0] * 1.6, this.def.attackDamage[1] * 1.8), world)
+          s.knockBack(this.pos, world)
+        }
+        this.releaseBlockers()
+        world.particles.explosion(this.pos.x, this.pos.y + 0.2, this.pos.z, 0.8)
+        world.shake(0.14)
+        world.impact('heavy')
+        world.floater(this.pos.x, this.pos.y + this.barY, this.pos.z, 'Swept aside!', 'crit')
+        return
+      }
+    }
 
     if (engaged && !stunned) {
       const target = this.blockers.find(s => s.alive)
@@ -497,7 +580,10 @@ export class Enemy {
         }
       }
       // walk
-      const speed = this.def.speed * this.speedMult * (world.time < this.slowUntil ? this.slowFactor : 1)
+      let speed = this.def.speed * this.speedMult * (world.time < this.slowUntil ? this.slowFactor : 1)
+      // a cutting is a killing ditch: slower going, and no cover down there
+      this.inCutting = !this.def.flying && world.cuttingAt(this.pos.x, this.pos.z)
+      if (this.inCutting) speed *= CUTTING_SLOW
       this.dist += speed * dt
       if (this.dist >= this.lane.length) {
         this.state = 'gone'
@@ -584,10 +670,13 @@ export class Enemy {
   }
 
   /** strike-synced combat: wind up as the attack timer runs, whip on the hit,
-   *  with per-creature character instead of one generic arm circle */
+   *  with per-creature character instead of one generic arm circle.
+   *  The snap peaks at strikeT = 1, which is the frame damage lands. Using a
+   *  full sine put the visible peak 111ms *after* the health dropped, so the
+   *  player saw the damage and then the weapon. */
   private animFight(_dt: number): void {
     const p = clamp(1 - this.attackTimer / this.def.attackInterval, 0, 1)
-    const snap = Math.sin(Math.min(1, this.strikeT) * Math.PI)
+    const snap = Math.sin(Math.min(1, this.strikeT) * Math.PI / 2)
     const P = this.parts
     const m = this.def.model
     if (m === 'spiderling' || m === 'broodmother' || m === 'shardback') {
@@ -658,6 +747,10 @@ export class Soldier {
   private strikeT = 0
   private hitCount = 0
   private healPulseTimer = 0
+  /** world time before which this soldier cannot take a new block */
+  reengageAt = 0
+  /** how much room this soldier takes up, so fighters do not stand inside each other */
+  readonly radius: number = 0.2
   private animT = Math.random() * 10
   private flash = 0
   private yaw = 0
@@ -671,6 +764,7 @@ export class Soldier {
     if (def.scale) this.group.scale.setScalar(def.scale)
     this.group.position.copy(spawnPos)
     this.bar = new HealthBar(0.45)
+    this.bar.group.name = HP_BAR_NAME
     this.bar.group.position.y = 0.72   // local; group scale applies
     this.group.add(this.bar.group)
   }
@@ -710,6 +804,19 @@ export class Soldier {
       this.target = null
     }
     this.group.visible = false
+  }
+
+  /** thrown clear by a boss sweep: pushed back, and briefly unable to re-block */
+  knockBack(from: THREE.Vector3, world: World): void {
+    if (!this.alive) return
+    const dx = this.group.position.x - from.x
+    const dz = this.group.position.z - from.z
+    const len = Math.hypot(dx, dz) || 1
+    this.group.position.x += (dx / len) * 0.9
+    this.group.position.z += (dz / len) * 0.9
+    this.target = null
+    this.reengageAt = world.time + 1.4
+    world.particles.hitSpark(this.group.position.x, this.group.position.y + 0.4, this.group.position.z, 0xffd24a)
   }
 
   revive(spawnPos: THREE.Vector3): void {
@@ -755,7 +862,13 @@ export class Soldier {
             healed = true
           }
         }
-        if (healed) world.sfx('heal', 0.5)
+        if (healed) {
+          world.sfx('heal', 0.5)
+          world.particles.healRing(
+            this.group.position.x, this.group.position.y, this.group.position.z,
+            this.def.healPulse.radius,
+          )
+        }
       }
     }
 
@@ -765,7 +878,9 @@ export class Soldier {
       if (bi >= 0) this.target.blockers.splice(bi, 1)
       this.target = null
     }
-    if (!this.target) {
+    // a soldier just thrown clear by a boss needs a beat before it can grab on
+    // again, or the sweep changes nothing
+    if (!this.target && world.time >= this.reengageAt) {
       let best: Enemy | null = null
       let bestScore = Infinity
       for (const e of world.enemies) {
@@ -785,13 +900,26 @@ export class Soldier {
 
     const pos = this.group.position
     if (this.target) {
-      // stand shoulder-to-shoulder around the enemy
+      /**
+       * Take a fixed slot in front of the enemy and hold it.
+       *
+       * The angle used to be derived from the soldier's own live position, so
+       * every frame it recomputed and every fighter slowly orbited its
+       * opponent - the endless circling that made melee look aimless. The
+       * slot is anchored to the enemy's facing instead, so soldiers plant
+       * themselves and actually stand and fight.
+       *
+       * The stand-off distance accounts for both bodies, so they line up
+       * against each other rather than standing inside one another.
+       */
       const idx = Math.max(0, this.target.blockers.indexOf(this))
-      const angle = Math.atan2(pos.x - this.target.pos.x, pos.z - this.target.pos.z) + (idx - 1) * 0.5
+      const facing = Math.atan2(this.target.pos.x - pos.x, this.target.pos.z - pos.z)
+      const angle = facing + Math.PI + (idx - 1) * 0.62
+      const standOff = 0.34 + this.target.radius + this.radius
       const standAt = new THREE.Vector3(
-        this.target.pos.x + Math.sin(angle) * 0.42,
+        this.target.pos.x + Math.sin(angle) * standOff,
         0,
-        this.target.pos.z + Math.cos(angle) * 0.42,
+        this.target.pos.z + Math.cos(angle) * standOff,
       )
       const d = pos.distanceTo(standAt)
       if (d > 0.1) {
@@ -801,7 +929,7 @@ export class Soldier {
         this.animWalk()
       }
       this.yaw = lerpAngle(this.yaw, Math.atan2(this.target.pos.x - pos.x, this.target.pos.z - pos.z), dt * 9)
-      if (pos.distanceTo(this.target.pos) < 0.68) {
+      if (pos.distanceTo(this.target.pos) < standOff + 0.22) {
         this.animFight(dt)
         this.attackTimer -= dt
         if (this.attackTimer <= 0) {
@@ -848,7 +976,7 @@ export class Soldier {
   /** strike-synced swings with per-soldier character */
   private animFight(_dt: number): void {
     const p = clamp(1 - this.attackTimer / this.def.attackInterval, 0, 1)
-    const snap = Math.sin(Math.min(1, this.strikeT) * Math.PI)
+    const snap = Math.sin(Math.min(1, this.strikeT) * Math.PI / 2)
     const armR = this.part('armR'), armL = this.part('armL'), body = this.part('body')
     const m = this.def.model
     if (m === 'berserker') {

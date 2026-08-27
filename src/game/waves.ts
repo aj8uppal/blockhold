@@ -4,6 +4,18 @@ import { enemyDef } from './enemyDefs.ts'
 
 interface QueuedSpawn { time: number, enemy: string, lane: number }
 
+export interface WavePreviewEntry {
+  name: string
+  count: number
+  flying: boolean
+  armored: boolean
+  warded: boolean
+  phasing: boolean
+  healer: boolean
+  summoner: boolean
+  boss: boolean
+}
+
 export type WavePhase = 'countdown' | 'spawning' | 'finished'
 
 /**
@@ -25,15 +37,59 @@ export class WaveManager {
   get isLastWaveStarted(): boolean { return this.waveIndex >= this.totalWaves - 1 }
   get allSpawned(): boolean { return this.isLastWaveStarted && this.queue.length === 0 }
 
-  /** what's coming, for the incoming-wave tooltip */
-  nextWavePreview(): { name: string, count: number }[] | null {
+  /**
+   * Resume a battle that was saved at a cleared-wave boundary: the field was
+   * empty, so there is no queue to rebuild - just the countdown to the wave
+   * the player had not yet faced.
+   */
+  resumeAt(nextWaveIndex: number): void {
+    this.waveIndex = nextWaveIndex - 1
+    this.phase = 'countdown'
+    this.countdown = WAVE_BREAK
+    this.queue = []
+  }
+
+  /**
+   * What's coming. Carries the traits that decide a build, not just names:
+   * the player must be able to read "air plus armored" without hovering,
+   * because hover does not exist on touch.
+   */
+  nextWavePreview(): WavePreviewEntry[] | null {
     const next = this.level.waves[this.waveIndex + 1]
     if (!next) return null
     const counts = new Map<string, number>()
     for (const g of next.groups) {
       counts.set(g.enemy, (counts.get(g.enemy) ?? 0) + g.count)
     }
-    return [...counts.entries()].map(([id, count]) => ({ name: enemyDef(id).name, count }))
+    return [...counts.entries()].map(([id, count]) => {
+      const d = enemyDef(id)
+      return {
+        name: d.name,
+        count,
+        flying: !!d.flying,
+        armored: d.armor >= 0.3,
+        warded: d.magicResist >= 0.3,
+        phasing: !!d.phasing,
+        healer: !!d.healAura,
+        summoner: !!(d.summons || d.spawnOnDeath),
+        boss: !!d.boss,
+      }
+    })
+  }
+
+  /** the two or three counters that actually decide this wave */
+  nextWaveThreats(): string[] {
+    const p = this.nextWavePreview()
+    if (!p) return []
+    const out: string[] = []
+    if (p.some(e => e.boss)) out.push('Boss')
+    if (p.some(e => e.flying)) out.push('Air')
+    if (p.some(e => e.armored)) out.push('Armored')
+    if (p.some(e => e.warded)) out.push('Warded')
+    if (p.some(e => e.phasing)) out.push('Phasing')
+    if (p.some(e => e.healer)) out.push('Healers')
+    if (p.some(e => e.summoner)) out.push('Spawns')
+    return out
   }
 
   nextWaveIsSurge(): boolean {

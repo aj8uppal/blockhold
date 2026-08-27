@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { HazardId } from './types.ts'
-import { randRange, pick } from '../core/utils.ts'
+import { randRange, pick, simRandom } from '../core/utils.ts'
 import type { Game } from './game.ts'
 
 /**
@@ -73,7 +73,7 @@ class Eruption implements Hazard {
     const t = game.time
     if (t >= this.nextAt) {
       this.nextAt = t + randRange(30, 42)
-      const count = 2 + Math.floor(Math.random() * 2)
+      const count = 2 + Math.floor(simRandom() * 2)
       for (let i = 0; i < count; i++) {
         const lane = pick(game.lanes)
         const s = lane.sample(randRange(lane.length * 0.15, lane.length * 0.85))

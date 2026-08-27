@@ -220,7 +220,23 @@ export class Particles {
   }
 
   healSparkle(x: number, y: number, z: number): void {
-    this.add.emit({ x, y, z, count: 10, color: [0xa8ffcf, 0xfff8c8], speed: 0.7, life: 0.7, size: 0.3, gravity: -1.2, dirY: 0.8 })
+    this.add.emit({ x, y, z, count: 10, color: [0xa8ffcf, 0xfff8c8], speed: 0.7, life: 0.7, size: 0.16, gravity: -1.2, dirY: 0.8 })
+  }
+
+  /**
+   * A heal pulse used to be a handful of soft round motes, which at close zoom
+   * looked like one unexplained pale orb sitting on the ground. A flat ring of
+   * small motes reads as "something healed here" instead.
+   */
+  healRing(x: number, y: number, z: number, radius: number): void {
+    const n = 16
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2
+      this.add.emit({
+        x: x + Math.cos(a) * radius * 0.9, y: y + 0.05, z: z + Math.sin(a) * radius * 0.9,
+        count: 1, color: [0xa8ffcf, 0xfff8c8], speed: 0.18, life: 0.55, size: 0.14, gravity: -0.5, dirY: 0.6,
+      })
+    }
   }
 
   trail(x: number, y: number, z: number, color: number, size = 0.3): void {

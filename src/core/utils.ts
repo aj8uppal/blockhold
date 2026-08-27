@@ -1,10 +1,38 @@
 import * as THREE from 'three'
 
+/** touch-class pointer: hover is not expressible, so info must never be hover-gated */
+export const isCoarsePointer = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t
-export const randRange = (a: number, b: number) => a + Math.random() * (b - a)
+
+/**
+ * The simulation RNG.
+ *
+ * Every roll that can change the outcome of a battle draws from here, so a
+ * run is reproducible from its seed: two players on the same seed see the
+ * same fight. Decoration and particles deliberately keep using Math.random
+ * directly — they must never consume from this stream, or a different
+ * particle quality tier would desync the simulation.
+ *
+ * Fixed-timestep alone was never enough for this; the draws had to be seeded too.
+ */
+let simRng: () => number = Math.random
+
+/** seed the simulation; pass null to return to unseeded play */
+export function setSimSeed(seed: number | null): void {
+  simRng = seed === null ? Math.random : seededRandom(seed)
+}
+
+/** a raw simulation draw in [0, 1) */
+export const simRandom = (): number => simRng()
+
+/** a seeded probability check */
+export const simChance = (p: number): boolean => simRng() < p
+
+export const randRange = (a: number, b: number) => a + simRng() * (b - a)
 export const randInt = (a: number, b: number) => Math.floor(randRange(a, b + 1))
-export const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]
+export const pick = <T>(arr: T[]): T => arr[Math.floor(simRng() * arr.length)]
 
 // Mulberry32: deterministic decoration scatter per level
 export function seededRandom(seed: number): () => number {

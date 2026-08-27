@@ -2,32 +2,36 @@ import * as THREE from 'three'
 import { Soldier } from './units.ts'
 import { World } from './world.ts'
 import { HeroDef, HeroId, SoldierDef } from './types.ts'
-import { lerpAngle, randRange } from '../core/utils.ts'
+import { lerpAngle, randRange, simRandom } from '../core/utils.ts'
 import { icon } from '../ui/icons.ts'
 
 const RESPAWN_TIME = 16
 const XP_LEVELS = [0, 60, 150, 280, 450, 660, 920, 1240, 1620, 2100]
+
+/** how far a signature can be sharpened, and what each rank costs in shards */
+export const HERO_RANK_MAX = 3
+export const heroRankCost = (rank: number): number => 4 + rank * 2
 
 export const HERO_DEFS: Record<HeroId, HeroDef> = {
   aldric: {
     id: 'aldric', name: 'Sir Aldric', title: 'the Bulwark', icon: 'helmPlume',
     blurb: 'A frontline champion who pins groups in place and shatters them with Valor Slam.',
     hp: 320, damage: [18, 30], attackInterval: 0.85, armor: 0.35, regen: 7,
-    moveSpeed: 1.75, model: 'hero', scale: 1.45,
+    moveSpeed: 1.75, model: 'hero', scale: 1.85,
     ability: { kind: 'slam', name: 'Valor Slam', cooldown: 13, blurb: 'Shockwave: true damage + stun around him.' },
   },
   liora: {
     id: 'liora', name: 'Liora', title: 'the Gale Warden', icon: 'bow',
     blurb: 'A ranger who strikes from range — the only hero who can shoot flyers from the ground.',
     hp: 215, damage: [15, 24], attackInterval: 0.75, armor: 0.1, regen: 6,
-    moveSpeed: 2.0, model: 'liora', scale: 1.35, attackRange: 2.3, projectile: 'arrow',
+    moveSpeed: 2.0, model: 'liora', scale: 1.72, attackRange: 2.3, projectile: 'arrow',
     ability: { kind: 'volley', name: 'Piercing Volley', cooldown: 14, blurb: 'Looses arrows at up to seven foes, gate-runners first.' },
   },
   zephyra: {
     id: 'zephyra', name: 'Zephyra', title: 'the Stormcaller', icon: 'lightning',
     blurb: 'A tempest mage whose bolts ignore armor — and whose nova freezes whole packs in place.',
     hp: 190, damage: [14, 21], attackInterval: 0.95, armor: 0.05, regen: 6,
-    moveSpeed: 1.9, model: 'zephyra', scale: 1.35, attackRange: 2.1, projectile: 'bolt',
+    moveSpeed: 1.9, model: 'zephyra', scale: 1.72, attackRange: 2.1, projectile: 'bolt',
     ability: { kind: 'nova', name: 'Static Nova', cooldown: 15, blurb: 'Shocks and slows everything around her.' },
   },
 }
@@ -114,7 +118,8 @@ export class Hero extends Soldier {
   die(world: World): void {
     if (this.dead) return
     this.deathPos.copy(this.group.position)
-    this.respawnCountdown = RESPAWN_TIME
+    // Second Wind halves the wait; the full-health return is handled on revive
+    this.respawnCountdown = RESPAWN_TIME * (world.heroReviveMult ?? 1)
     this.moveOrder = null
     this.waypoints = []
     super.die(world)
@@ -174,23 +179,95 @@ export class Hero extends Soldier {
     }
     super.update(dt, world)
 
-    // Valor Slam: auto-cast shockwave when engaged, scales with level
-    if (this.abilityCooldown <= 0 && this.target) {
-      const pos = this.group.position
-      const victims = world.enemies.filter(e => e.targetable && !e.def.flying && e.pos.distanceTo(pos) < 1.0)
-      if (victims.length >= 1) {
-        this.abilityCooldown = this.heroDef.ability.cooldown
-        const dmg = 26 + this.level * 6
-        for (const v of victims) {
-          v.takeDamage(dmg * (0.85 + Math.random() * 0.3), 'true', world, { credit: this })
-          v.applyStun(0.8, world)
-        }
-        world.particles.explosion(pos.x, 0.15, pos.z, 0.55)
-        world.floater(pos.x, 0.9, pos.z, 'Valor Slam!', 'gold')
-        world.sfx('crit', 1)
-        world.shake(0.06)
+  }
+
+  /**
+   * Signature ranks, bought with shards.
+   *
+   * The hero was the only thing on the board the player could not invest in:
+   * towers had five tiers and two ascensions, and the named, illustrated
+   * champion had nothing. Each rank shortens the cooldown and widens the
+   * effect, so a hero built around can genuinely carry a lane.
+   */
+  signatureRank = 0
+
+  get signatureCooldown(): number {
+    return this.heroDef.ability.cooldown * (1 - this.signatureRank * 0.12)
+  }
+
+  /** how much wider and harder the signature lands at this rank */
+  get signaturePower(): number {
+    return 1 + this.signatureRank * 0.28
+  }
+
+  get signatureReach(): number {
+    return 1 + this.signatureRank * 0.18
+  }
+
+  /** the hero's signature is the player's to spend, not the AI's */
+  get signatureReady(): boolean { return this.abilityCooldown <= 0 && this.alive && !this.dead }
+
+  /**
+   * Cast the hero's signature. Returns false when there is nothing to hit, so
+   * a mistimed press costs the player nothing rather than burning the cooldown.
+   */
+  castSignature(world: World): boolean {
+    if (!this.signatureReady) return false
+    const pos = this.group.position
+    const kind = this.heroDef.ability.kind
+    if (kind === 'slam') {
+      const victims = world.enemies.filter(e => e.targetable && !e.def.flying && e.pos.distanceTo(pos) < 1.35 * this.signatureReach)
+      if (!victims.length) return false
+      this.abilityCooldown = this.signatureCooldown
+      const dmg = (26 + this.level * 6) * this.signaturePower
+      for (const v of victims) {
+        v.takeDamage(dmg * (0.85 + simRandom() * 0.3), 'true', world, { credit: this })
+        v.applyStun(0.8, world)
       }
+      world.particles.explosion(pos.x, 0.15, pos.z, 0.55)
+      world.floater(pos.x, 0.9, pos.z, 'Valor Slam!', 'gold')
+      world.sfx('crit', 1)
+      world.shake(0.09)
+      world.impact('heavy')
+      return true
     }
+    if (kind === 'volley') {
+      const range = this.heroDef.attackRange ?? 3
+      const victims = world.enemies
+        .filter(e => e.targetable && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < range + 0.5)
+        .sort((a, b) => a.remaining - b.remaining)
+      if (!victims.length) return false
+      this.abilityCooldown = this.signatureCooldown
+      for (const v of victims.slice(0, 7 + this.signatureRank * 2)) {
+        world.fireProjectile({
+          kind: 'arrow',
+          from: pos.clone().add(new THREE.Vector3(0, 0.5, 0)),
+          target: v,
+          damage: randRange(...this.def.damage) * 1.25 * this.signaturePower,
+          crit: true,
+          credit: this,
+          world,
+        })
+      }
+      world.floater(pos.x, 0.9, pos.z, 'Piercing Volley!', 'gold')
+      world.sfx('crit', 1)
+      return true
+    }
+    // nova
+    const victims = world.enemies.filter(e => e.targetable && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < 2.0 * this.signatureReach)
+    if (!victims.length) return false
+    this.abilityCooldown = this.signatureCooldown
+    const dmg = (18 + this.level * 5) * this.signaturePower
+    for (const v of victims) {
+      v.takeDamage(dmg * (0.85 + simRandom() * 0.3), 'magic', world, { credit: this })
+      v.applySlow(0.45, 2.5, world)
+    }
+    world.particles.magicImpact(pos.x, 0.4, pos.z, 0x9fe8ff)
+    world.particles.explosion(pos.x, 0.2, pos.z, 0.5)
+    world.floater(pos.x, 0.9, pos.z, 'Static Nova!', 'gold')
+    world.sfx('lightning', 1)
+    world.impact('heavy')
+    return true
   }
 
   private rangedAttackTimer = 0
@@ -224,45 +301,6 @@ export class Hero extends Soldier {
           world.sfx('arrow', 0.7)
         }
         this.drawBowAnim()
-      }
-      if (this.abilityCooldown <= 0) {
-        if (this.heroDef.ability.kind === 'volley') {
-          // Piercing Volley: arrows at up to seven foes, gate-runners first
-          const victims = world.enemies
-            .filter(e => e.targetable && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < range + 0.5)
-            .sort((a, b) => a.remaining - b.remaining)
-          if (victims.length >= 3) {
-            this.abilityCooldown = this.heroDef.ability.cooldown
-            for (const v of victims.slice(0, 7)) {
-              world.fireProjectile({
-                kind: 'arrow',
-                from: pos.clone().add(new THREE.Vector3(0, 0.5, 0)),
-                target: v,
-                damage: randRange(...this.def.damage) * 1.25,
-                crit: true,
-                credit: this,
-                world,
-              })
-            }
-            world.floater(pos.x, 0.9, pos.z, 'Piercing Volley!', 'gold')
-            world.sfx('crit', 1)
-          }
-        } else if (this.heroDef.ability.kind === 'nova') {
-          // Static Nova: magic burst + heavy slow around her
-          const victims = world.enemies.filter(e => e.targetable && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < 1.6)
-          if (victims.length >= 2) {
-            this.abilityCooldown = this.heroDef.ability.cooldown
-            const dmg = 18 + this.level * 5
-            for (const v of victims) {
-              v.takeDamage(dmg * (0.85 + Math.random() * 0.3), 'magic', world, { credit: this })
-              v.applySlow(0.45, 2.5, world)
-            }
-            world.particles.magicImpact(pos.x, 0.4, pos.z, 0x9fe8ff)
-            world.particles.explosion(pos.x, 0.2, pos.z, 0.5)
-            world.floater(pos.x, 0.9, pos.z, 'Static Nova!', 'gold')
-            world.sfx('lightning', 1)
-          }
-        }
       }
     } else {
       this.idleAnim()

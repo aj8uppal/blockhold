@@ -3,7 +3,7 @@ import { World, ProjectileSpec, KillCredit, MineSpec } from './world.ts'
 import { Enemy, Soldier } from './units.ts'
 import { buildModel } from '../voxel/builder.ts'
 import * as env from '../voxel/models_env.ts'
-import { randRange } from '../core/utils.ts'
+import { randRange, simChance, simRandom } from '../core/utils.ts'
 
 export interface Projectile {
   mesh: THREE.Object3D
@@ -64,9 +64,9 @@ class ArrowProjectile extends Ballistic {
     return t.state !== 'gone' ? t.pos.clone().setY(t.pos.y + 0.35) : this.mesh.position.clone()
   }
   protected impact(): void {
-    const { target, world, damage, crit, poison, credit } = this.spec
+    const { target, world, damage, crit, poison, credit, armorPierce } = this.spec
     if (target.alive) {
-      const dealt = target.takeDamage(damage, 'physical', world, { crit, credit })
+      const dealt = target.takeDamage(damage, 'physical', world, { crit, credit, armorPierce })
       if (dealt > 0 && poison) target.applyPoison(poison.dps, poison.duration, world, credit)
       if (dealt > 0) {
         world.particles.hitSpark(target.pos.x, target.pos.y + 0.4, target.pos.z)
@@ -99,6 +99,7 @@ class BoltProjectile implements Projectile {
         const dealt = target.takeDamage(this.spec.damage, 'magic', world, { mrPierce: this.spec.mrPierce, credit: this.spec.credit })
         if (dealt > 0) {
           if (this.spec.armorShred) target.shredArmor(this.spec.armorShred)
+          if (this.spec.resistShred) target.shredResist(this.spec.resistShred)
           world.particles.magicImpact(to.x, to.y, to.z, this.spec.color)
           world.sfx('hit', 0.4)
         }
@@ -131,11 +132,11 @@ class BombProjectile extends Ballistic {
   }
   protected impact(): void {
     const { at, world, damage, splash, cluster, burn, stunChance, credit } = this.spec
-    explode(world, at, damage, splash, stunChance, credit)
+    explode(world, at, damage, splash, stunChance, credit, this.spec.slow, !!this.spec.submunition)
     if (cluster) {
       for (let i = 0; i < cluster.count; i++) {
-        const angle = Math.random() * Math.PI * 2
-        const r = 0.45 + Math.random() * 0.7
+        const angle = simRandom() * Math.PI * 2
+        const r = 0.45 + simRandom() * 0.7
         const to = at.clone().add(new THREE.Vector3(Math.sin(angle) * r, 0, Math.cos(angle) * r))
         world.fireProjectile({
           kind: 'bomb',
@@ -143,6 +144,7 @@ class BombProjectile extends Ballistic {
           at: to,
           damage: randRange(...cluster.damage),
           splash: cluster.radius,
+          submunition: true,
           credit,
           world,
         })
@@ -157,17 +159,26 @@ class BombProjectile extends Ballistic {
   }
 }
 
-function explode(world: World, at: THREE.Vector3, damage: number, splash: number, stunChance = 0, credit?: KillCredit): void {
-  world.particles.explosion(at.x, at.y + 0.15, at.z, Math.max(0.7, splash))
-  world.sfx('explosion', 0.8)
+function explode(
+  world: World, at: THREE.Vector3, damage: number, splash: number,
+  stunChance = 0, credit?: KillCredit, slow = false, submunition = false,
+): void {
+  world.particles.explosion(at.x, at.y + 0.15, at.z, Math.max(submunition ? 0.45 : 0.7, splash))
+  world.sfx('explosion', submunition ? 0.4 : 0.8)
+  // A cluster shell bursts into five of these at once. Letting each one take a
+  // heavy impact hold and a full shake stacked five holds on one frame, which
+  // is exactly the hitch that made cluster bombards feel like they lagged.
+  if (submunition) return
   world.shake(0.05 + splash * 0.05)
+  if (splash >= 0.6) world.impact('heavy')
   for (const e of world.enemies) {
     if (!e.targetable || e.def.flying) continue
     const d = e.pos.distanceTo(at)
     if (d <= splash + e.radius) {
       const falloff = 1 - 0.5 * (d / (splash + e.radius))
       const dealt = e.takeDamage(damage * falloff, 'physical', world, { credit })
-      if (dealt > 0 && stunChance > 0 && Math.random() < stunChance) e.applyStun(0.5, world)
+      if (dealt > 0 && stunChance > 0 && simChance(stunChance)) e.applyStun(0.5, world)
+      if (dealt > 0 && slow) e.applySlow(0.6, 1.5, world)
     }
   }
 }
@@ -227,7 +238,7 @@ class ChainLightning implements Projectile {
       const to = e.pos.clone().setY(e.pos.y + 0.35)
       this.mesh.add(makeLightningMesh(from, to))
       const dealt = e.takeDamage(damage, 'magic', world, { mrPierce: spec.mrPierce, credit: spec.credit })
-      if (dealt > 0 && Math.random() < spec.stunChance) e.applyStun(spec.stunDur, world)
+      if (dealt > 0 && simChance(spec.stunChance)) e.applyStun(spec.stunDur, world)
       world.particles.magicImpact(to.x, to.y, to.z, 0x9fe8ff)
       damage *= spec.falloff
       from = to

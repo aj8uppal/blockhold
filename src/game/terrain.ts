@@ -3,9 +3,10 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { LevelDef, ThemeId, Rect } from './types.ts'
 import { PathsInfo, gridToWorld } from './path.ts'
 import { seededRandom, shuffleColor } from '../core/utils.ts'
-import { buildModel } from '../voxel/builder.ts'
+import { buildModel, box, type VoxBox, type VoxModel } from '../voxel/builder.ts'
 import * as env from '../voxel/models_env.ts'
 import { TrapSpotInfo, trapSpotModel } from './traps.ts'
+import { deriveEarthworkSpots, type EarthworkSpot, type EarthworkKind } from './earthworks.ts'
 
 export interface ThemeColors {
   grass: number
@@ -74,6 +75,7 @@ export class Terrain {
   group = new THREE.Group()
   plots: PlotInfo[] = []
   trapSpots: TrapSpotInfo[] = []
+  earthworkSpots: EarthworkSpot[] = []
   spawnMarkers: THREE.Group[] = []
   castle!: THREE.Group
   theme: ThemeColors
@@ -105,6 +107,11 @@ export class Terrain {
     if (inRects(c, r, level.water)) return 'water'
     if (inRects(c, r, level.hills)) return 'hill'
     return 'grass'
+  }
+
+  /** is this cell part of the map's own raised ground? */
+  isOnHill(c: number, r: number): boolean {
+    return inRects(c, r, this.level.hills)
   }
 
   cellTop(c: number, r: number): number {
@@ -367,6 +374,19 @@ export class Terrain {
       this.group.add(mesh)
       this.trapSpots.push({ index: i, cell: [c, r], pos: new THREE.Vector3(x, 0.03, z), occupied: false, mesh })
     })
+    // earthworks are derived from the map's own shape, so the seven existing
+    // levels get them without being re-authored
+    const isTrap = (c: number, r: number) => (level.trapSpots ?? []).some(([tc, tr]) => tc === c && tr === r)
+    deriveEarthworkSpots(level, (c, r) => this.cellKind(c, r), isTrap).forEach((e, i) => {
+      const [x, z] = gridToWorld(e.cell[0], e.cell[1], level.width, level.height)
+      const mesh = buildModel(earthMarkerModel(e.kind), `earthmark:${e.kind}`, { castShadow: false, receiveShadow: true })
+      mesh.position.set(x, 0.012, z)
+      this.group.add(mesh)
+      this.earthworkSpots.push({
+        index: i, kind: e.kind, cell: e.cell,
+        pos: new THREE.Vector3(x, 0.02, z), occupied: false, mesh,
+      })
+    })
   }
 
   private buildDecorations(rng: () => number): void {
@@ -500,6 +520,18 @@ export class Terrain {
       c.scale.y = 1 + Math.sin(this.time * 1.8 + c.position.x) * 0.05
     }
   }
+}
+
+function earthMarkerModel(kind: EarthworkKind): VoxModel {
+  const c = kind === 'rampart' ? 0x7a6a44 : 0x4a5a6a
+  // lifted clear of y=0 so the corner marks do not z-fight the ground
+  const mark: VoxBox[] = [
+    box(0, 0.12, -4.2, 3.0, 0.14, 0.5, c),
+    box(0, 0.12, 4.2, 3.0, 0.14, 0.5, c),
+    box(-4.2, 0.12, 0, 0.5, 0.14, 3.0, c),
+    box(4.2, 0.12, 0, 0.5, 0.14, 3.0, c),
+  ]
+  return { parts: { mark }, scale: 0.1 }
 }
 
 function plotVox() {
