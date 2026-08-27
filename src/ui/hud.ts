@@ -34,6 +34,9 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
   return e
 }
 
+/** how long a press has to last before it counts as inspecting rather than acting */
+const HOLD_MS = 340
+
 export class HUD {
   root: HTMLElement
   onHome: () => void = () => {}
@@ -180,20 +183,15 @@ export class HUD {
       btn.setAttribute('aria-label', name)
       // title tooltips do not exist on touch, so the abilities were unlabelled
       // on the platform this game targets: first tap explains, second commits
-      btn.onmouseenter = () => this.showAbilityTip(name, desc)
-      btn.onmouseleave = () => this.hideAbilityTip()
+      // one tap enters targeting and shows what it does while you aim; the tap
+      // that follows is the target itself, which is the only step this ability
+      // genuinely needs. Holding reads it without arming anything.
+      this.tapOrHold(`ability:${key}`, btn, () => this.showAbilityTip(name, desc), () => this.hideAbilityTip())
       btn.onclick = () => {
-        if (isCoarsePointer() && this.armedAbility !== key) {
-          this.armedAbility = key
-          for (const b of Object.values(this.abilityBtns)) b.classList.remove('armed')
-          btn.classList.add('armed')
-          this.showAbilityTip(name, desc)
-          return
-        }
-        this.armedAbility = null
-        btn.classList.remove('armed')
-        this.hideAbilityTip()
-        this.game.setTargetMode(this.game.targetMode === key ? null : key)
+        if (this.heldFor === `ability:${key}`) { this.heldFor = null; return }
+        const on = this.game.targetMode === key
+        this.game.setTargetMode(on ? null : key)
+        if (on) this.hideAbilityTip(); else this.showAbilityTip(name, desc)
       }
       this.abilityBtns[key] = btn
     }
@@ -204,21 +202,14 @@ export class HUD {
     this.signatureBtn.innerHTML =
       `<span class="ability-icon">${icon('quake')}</span><span class="cd-sweep"></span><span class="hotkey">3</span>`
     this.signatureBtn.setAttribute('aria-label', 'Hero signature ability')
-    this.signatureBtn.onmouseenter = () => {
+    // the signature lands on the hero, so there is nowhere to aim and nothing
+    // to confirm: one tap casts it
+    this.tapOrHold('ability:signature', this.signatureBtn, () => {
       const h = this.game.hero
       if (h) this.showAbilityTip(h.heroDef.ability.name, h.heroDef.ability.blurb)
-    }
-    this.signatureBtn.onmouseleave = () => this.hideAbilityTip()
+    }, () => this.hideAbilityTip())
     this.signatureBtn.onclick = () => {
-      const h = this.game.hero
-      if (isCoarsePointer() && this.armedAbility !== 'signature' && h) {
-        this.armedAbility = 'signature'
-        this.signatureBtn.classList.add('armed')
-        this.showAbilityTip(h.heroDef.ability.name, h.heroDef.ability.blurb)
-        return
-      }
-      this.armedAbility = null
-      this.signatureBtn.classList.remove('armed')
+      if (this.heldFor === 'ability:signature') { this.heldFor = null; return }
       this.hideAbilityTip()
       this.game.castHeroSignature()
     }
@@ -542,16 +533,74 @@ export class HUD {
    * Fine pointers keep one-tap building, since hover already showed them.
    */
   private commitBuild(key: string, btn: HTMLButtonElement, inspect: () => void, build: () => void): void {
-    if (!isCoarsePointer()) { build(); return }
-    if (this.armedBuild === key) {
-      this.armedBuild = null
-      build()
+    // A hold has already shown this option's stats and put the preview ring on
+    // the board, and it swallows the click that follows; a tap means the player
+    // has decided. See `tapOrHold`.
+    if (this.heldFor === key) { this.heldFor = null; return }
+    build()
+  }
+
+  /**
+   * Tap acts, hold inspects.
+   *
+   * Touch has no hover, so every option that wanted to show its stats first was
+   * costing two taps to use - three for a targeted ability. Charging the player
+   * a tap on every single use to solve a problem they only have once is the
+   * wrong trade. Pressing and holding shows the same thing hover did and
+   * cancels the tap; a plain tap does the thing.
+   */
+  private heldFor: string | null = null
+  private holdTimer: number | null = null
+
+  private tapOrHold(key: string, btn: HTMLButtonElement, inspect: () => void, release?: () => void): void {
+    if (!isCoarsePointer()) {
+      btn.onmouseenter = inspect
+      btn.onmouseleave = () => release?.()
       return
     }
-    this.armedBuild = key
-    for (const b of this.buildMenu.querySelectorAll('.build-option')) b.classList.remove('armed')
-    btn.classList.add('armed')
-    inspect()
+    const cancel = () => {
+      if (this.holdTimer !== null) { clearTimeout(this.holdTimer); this.holdTimer = null }
+    }
+    btn.addEventListener('pointerdown', () => {
+      cancel()
+      this.holdTimer = window.setTimeout(() => {
+        this.holdTimer = null
+        this.heldFor = key
+        btn.classList.add('armed')
+        inspect()
+      }, HOLD_MS)
+    })
+    const up = () => {
+      cancel()
+      btn.classList.remove('armed')
+      // the preview stays up for a moment after the finger leaves, so a hold
+      // that ends is still readable
+      if (this.heldFor === key) window.setTimeout(() => release?.(), 900)
+    }
+    btn.addEventListener('pointerup', up)
+    btn.addEventListener('pointercancel', up)
+    btn.addEventListener('pointerleave', up)
+  }
+
+  /**
+   * A confirm tap, kept for the three actions that cannot be undone.
+   *
+   * Selling burns most of a tower's gold, and ascending and overcharging spend
+   * shards for good. These were the *only* single-tap actions on touch while
+   * building and upgrading each cost two, which is exactly backwards.
+   */
+  private confirmOnTouch(btn: HTMLButtonElement, label: string, act: () => void): void {
+    if (!isCoarsePointer()) { btn.onclick = this.menuGuard(act); return }
+    const original = btn.innerHTML
+    let armed = false
+    const disarm = () => { armed = false; btn.innerHTML = original; btn.classList.remove('confirming') }
+    btn.onclick = this.menuGuard(() => {
+      if (armed) { disarm(); act(); return }
+      armed = true
+      btn.innerHTML = `<span class="u-name">${label}</span>`
+      btn.classList.add('confirming')
+      window.setTimeout(() => { if (armed) disarm() }, 2600)
+    })
   }
 
   private clearArmedBuild(): void {
@@ -678,7 +727,7 @@ export class HUD {
     const actions = el('div', 'tp-actions', p)
     const row = el('div', 'tp-row', actions)
     const sell = el('button', 'btn small sell', row, `Dismantle ${icon('coin')}${Math.round(trap.def.cost * 0.6)}`) as HTMLButtonElement
-    sell.onclick = this.menuGuard(() => this.game.sellTrap(trap))
+    this.confirmOnTouch(sell, 'Sell it? Tap again', () => this.game.sellTrap(trap))
     p.classList.remove('hidden')
   }
 
@@ -768,7 +817,7 @@ export class HUD {
       PERKS[tower.kind].forEach((perk, i) => {
         const btn = el('button', 'btn upgrade ascend', actions) as HTMLButtonElement
         btn.innerHTML = `<span class="u-name">${icon(perk.icon)} Ascend: ${perk.name}</span><span class="u-cost">${icon('gem')}${ASCEND_SHARD_COST} ${icon('coin')}${ASCEND_GOLD_COST}</span><span class="u-desc">${perk.description}</span>`
-        btn.onclick = this.menuGuard(() => this.game.ascendTower(tower, i as 0 | 1))
+        this.confirmOnTouch(btn, `Ascend to ${perk.name}? Tap again`, () => this.game.ascendTower(tower, i as 0 | 1))
         btn.disabled = this.game.shards < ASCEND_SHARD_COST || this.game.gold < ASCEND_GOLD_COST
       })
     }
@@ -778,7 +827,7 @@ export class HUD {
       oc.title = `+60% attack speed for ${OVERCHARGE_DURATION}s`
       oc.id = 'oc-btn'
       this.lastOcHtml = ''
-      oc.onclick = this.menuGuard(() => this.game.overchargeTower(tower))
+      this.confirmOnTouch(oc, 'Spend a shard? Tap again', () => this.game.overchargeTower(tower))
       oc.disabled = !tower.canOvercharge(this.game)
     }
     if (tower.isBarracks) {
@@ -794,7 +843,7 @@ export class HUD {
       })
     }
     const sell = el('button', 'btn small sell', row, `Sell ${icon('coin')}${tower.sellValue}`) as HTMLButtonElement
-    sell.onclick = this.menuGuard(() => this.game.sellTower(tower))
+    this.confirmOnTouch(sell, `Sell for ${tower.sellValue}? Tap again`, () => this.game.sellTower(tower))
 
     p.classList.remove('hidden')
   }
