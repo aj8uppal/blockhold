@@ -1158,7 +1158,13 @@ export class Game implements World {
     this.sfx('click')
   }
 
-  /** primary click routing */
+  /**
+   * Primary click routing.
+   *
+   * A tap that lands on nothing closes whatever is open. On a desktop Escape
+   * does this; on a phone there was no way out of a tower panel except
+   * finding the small ✕, which is why dismissing felt awkward on touch.
+   */
   handleClick(sx: number, sy: number): void {
     if (this.phase !== 'playing' || this.paused) return
     if (this.targetMode) {

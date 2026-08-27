@@ -132,7 +132,7 @@ class BombProjectile extends Ballistic {
   }
   protected impact(): void {
     const { at, world, damage, splash, cluster, burn, stunChance, credit } = this.spec
-    explode(world, at, damage, splash, stunChance, credit, this.spec.slow)
+    explode(world, at, damage, splash, stunChance, credit, this.spec.slow, !!this.spec.submunition)
     if (cluster) {
       for (let i = 0; i < cluster.count; i++) {
         const angle = simRandom() * Math.PI * 2
@@ -144,6 +144,7 @@ class BombProjectile extends Ballistic {
           at: to,
           damage: randRange(...cluster.damage),
           splash: cluster.radius,
+          submunition: true,
           credit,
           world,
         })
@@ -158,9 +159,16 @@ class BombProjectile extends Ballistic {
   }
 }
 
-function explode(world: World, at: THREE.Vector3, damage: number, splash: number, stunChance = 0, credit?: KillCredit, slow = false): void {
-  world.particles.explosion(at.x, at.y + 0.15, at.z, Math.max(0.7, splash))
-  world.sfx('explosion', 0.8)
+function explode(
+  world: World, at: THREE.Vector3, damage: number, splash: number,
+  stunChance = 0, credit?: KillCredit, slow = false, submunition = false,
+): void {
+  world.particles.explosion(at.x, at.y + 0.15, at.z, Math.max(submunition ? 0.45 : 0.7, splash))
+  world.sfx('explosion', submunition ? 0.4 : 0.8)
+  // A cluster shell bursts into five of these at once. Letting each one take a
+  // heavy impact hold and a full shake stacked five holds on one frame, which
+  // is exactly the hitch that made cluster bombards feel like they lagged.
+  if (submunition) return
   world.shake(0.05 + splash * 0.05)
   if (splash >= 0.6) world.impact('heavy')
   for (const e of world.enemies) {

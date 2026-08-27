@@ -513,7 +513,7 @@ export class Enemy {
     }
 
     // combat with blockers
-    const engaged = this.blockers.some(s => s.alive && s.group.position.distanceTo(this.pos) < 0.62)
+    const engaged = this.blockers.some(s => s.alive && s.group.position.distanceTo(this.pos) < 0.72)
     this.blockers = this.blockers.filter(s => s.alive && s.target === this)
 
     // A boss held forever by one blocker is not a fight, it is a lock. The
@@ -749,6 +749,8 @@ export class Soldier {
   private healPulseTimer = 0
   /** world time before which this soldier cannot take a new block */
   reengageAt = 0
+  /** how much room this soldier takes up, so fighters do not stand inside each other */
+  readonly radius: number = 0.2
   private animT = Math.random() * 10
   private flash = 0
   private yaw = 0
@@ -898,13 +900,26 @@ export class Soldier {
 
     const pos = this.group.position
     if (this.target) {
-      // stand shoulder-to-shoulder around the enemy
+      /**
+       * Take a fixed slot in front of the enemy and hold it.
+       *
+       * The angle used to be derived from the soldier's own live position, so
+       * every frame it recomputed and every fighter slowly orbited its
+       * opponent - the endless circling that made melee look aimless. The
+       * slot is anchored to the enemy's facing instead, so soldiers plant
+       * themselves and actually stand and fight.
+       *
+       * The stand-off distance accounts for both bodies, so they line up
+       * against each other rather than standing inside one another.
+       */
       const idx = Math.max(0, this.target.blockers.indexOf(this))
-      const angle = Math.atan2(pos.x - this.target.pos.x, pos.z - this.target.pos.z) + (idx - 1) * 0.5
+      const facing = Math.atan2(this.target.pos.x - pos.x, this.target.pos.z - pos.z)
+      const angle = facing + Math.PI + (idx - 1) * 0.62
+      const standOff = 0.34 + this.target.radius + this.radius
       const standAt = new THREE.Vector3(
-        this.target.pos.x + Math.sin(angle) * 0.42,
+        this.target.pos.x + Math.sin(angle) * standOff,
         0,
-        this.target.pos.z + Math.cos(angle) * 0.42,
+        this.target.pos.z + Math.cos(angle) * standOff,
       )
       const d = pos.distanceTo(standAt)
       if (d > 0.1) {
@@ -914,7 +929,7 @@ export class Soldier {
         this.animWalk()
       }
       this.yaw = lerpAngle(this.yaw, Math.atan2(this.target.pos.x - pos.x, this.target.pos.z - pos.z), dt * 9)
-      if (pos.distanceTo(this.target.pos) < 0.68) {
+      if (pos.distanceTo(this.target.pos) < standOff + 0.22) {
         this.animFight(dt)
         this.attackTimer -= dt
         if (this.attackTimer <= 0) {

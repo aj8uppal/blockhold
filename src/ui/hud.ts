@@ -105,6 +105,7 @@ export class HUD {
     this.bannerEl = el('div', 'banner hidden', this.root)
     this.toastEl = el('div', 'toast hidden', this.root)
     this.modeHint = el('div', 'mode-hint hidden', this.root)
+    this.abilityTip = el('div', 'ability-tip hidden', this.root)
     this.beatEl = el('div', 'beat-meter hidden', this.root)
     this.beatEl.innerHTML = Array.from({ length: BEATS_PER_BAR }, () => '<i></i>').join('')
     this.buildPauseOverlay()
@@ -175,7 +176,23 @@ export class HUD {
       btn.innerHTML = `<span class="ability-icon">${icon(ico)}</span><span class="cd-sweep"></span><span class="hotkey">${hotkey}</span>`
       btn.title = `${name} — ${desc}`
       btn.setAttribute('aria-label', name)
-      btn.onclick = () => this.game.setTargetMode(this.game.targetMode === key ? null : key)
+      // title tooltips do not exist on touch, so the abilities were unlabelled
+      // on the platform this game targets: first tap explains, second commits
+      btn.onmouseenter = () => this.showAbilityTip(name, desc)
+      btn.onmouseleave = () => this.hideAbilityTip()
+      btn.onclick = () => {
+        if (isCoarsePointer() && this.armedAbility !== key) {
+          this.armedAbility = key
+          for (const b of Object.values(this.abilityBtns)) b.classList.remove('armed')
+          btn.classList.add('armed')
+          this.showAbilityTip(name, desc)
+          return
+        }
+        this.armedAbility = null
+        btn.classList.remove('armed')
+        this.hideAbilityTip()
+        this.game.setTargetMode(this.game.targetMode === key ? null : key)
+      }
       this.abilityBtns[key] = btn
     }
     mk('meteor', 'meteor', 'Meteor Storm', '1', 'Rain three meteors on a target area (true damage + stun). Hotkey 1.')
@@ -185,11 +202,40 @@ export class HUD {
     this.signatureBtn.innerHTML =
       `<span class="ability-icon">${icon('quake')}</span><span class="cd-sweep"></span><span class="hotkey">3</span>`
     this.signatureBtn.setAttribute('aria-label', 'Hero signature ability')
-    this.signatureBtn.onclick = () => this.game.castHeroSignature()
+    this.signatureBtn.onmouseenter = () => {
+      const h = this.game.hero
+      if (h) this.showAbilityTip(h.heroDef.ability.name, h.heroDef.ability.blurb)
+    }
+    this.signatureBtn.onmouseleave = () => this.hideAbilityTip()
+    this.signatureBtn.onclick = () => {
+      const h = this.game.hero
+      if (isCoarsePointer() && this.armedAbility !== 'signature' && h) {
+        this.armedAbility = 'signature'
+        this.signatureBtn.classList.add('armed')
+        this.showAbilityTip(h.heroDef.ability.name, h.heroDef.ability.blurb)
+        return
+      }
+      this.armedAbility = null
+      this.signatureBtn.classList.remove('armed')
+      this.hideAbilityTip()
+      this.game.castHeroSignature()
+    }
   }
 
   private signatureBtn!: HTMLButtonElement
   private lastSignatureId = ''
+  private armedAbility: string | null = null
+  private abilityTip!: HTMLElement
+
+  private showAbilityTip(name: string, desc: string): void {
+    this.abilityTip.innerHTML = `<b>${name}</b> — ${desc}`
+    this.abilityTip.classList.remove('hidden')
+  }
+
+  private hideAbilityTip(): void {
+    if (this.armedAbility) return
+    this.abilityTip.classList.add('hidden')
+  }
 
   private static readonly SIGNATURE_ICON: Record<string, string> = {
     slam: 'quake', volley: 'bow', nova: 'lightning',
@@ -551,6 +597,7 @@ export class HUD {
     el('div', 'tp-name', t, work.def.name)
     el('div', 'tp-level', t, work.kind === 'rampart' ? 'High ground' : 'Sunken road')
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
 
     el('div', 'tp-traits', p, work.def.description)
@@ -605,6 +652,7 @@ export class HUD {
     el('div', 'tp-name', title, trap.def.name)
     el('div', 'tp-level', title, `Road trap<span class="tp-kills" title="Enemies slain by this trap"> · ${icon('skull')} <span class="tp-kill-n">${trap.kills}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
     el('div', 'tp-stats', p, trap.def.description)
     const actions = el('div', 'tp-actions', p)
@@ -631,6 +679,7 @@ export class HUD {
       + `Tier ${tower.level}/5`
       + `<span class="tp-kills" title="Enemies slain by this building"> · ${icon('skull')} <span class="tp-kill-n">${tower.kills}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
 
     // labeled stat chips read faster than an inline icon run
@@ -759,6 +808,7 @@ export class HUD {
     el('div', 'tp-level', title, `${hero.heroDef.title} · Level <span class="hp-lvl">${hero.level}</span>`
       + `<span class="tp-kills" title="Foes slain by the hero"> · ${icon('skull')} <span class="tp-kill-n">${hero.kills}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
 
     const bars = el('div', 'stat-bars', p)
