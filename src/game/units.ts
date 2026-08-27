@@ -51,6 +51,21 @@ const barFgMatCrit = new THREE.MeshBasicMaterial({ color: 0xd8452f, transparent:
 for (const m of [barBgMat, barFgMat, barFgMatHurt, barFgMatCrit]) m.userData.shared = true
 const barGeo = new THREE.PlaneGeometry(1, 1)
 
+const _measureBox = new THREE.Box3()
+
+/**
+ * How high a health bar should float: the top of the model plus a small,
+ * scale-aware gap. Derived rather than authored, so a new model never ends up
+ * wearing its bar in the wrong place.
+ */
+export function measuredBarHeight(group: THREE.Object3D): number {
+  group.updateMatrixWorld(true)
+  _measureBox.setFromObject(group)
+  const top = _measureBox.max.y - group.position.y
+  if (!Number.isFinite(top) || top <= 0) return 0.75
+  return top + 0.14
+}
+
 export class HealthBar {
   group = new THREE.Group()
   private fg: THREE.Mesh
@@ -172,15 +187,24 @@ export class Enemy {
     const s = (def.scale ?? 1) * 1.12 * (this.elite ? 1.15 : 1)
     this.group.scale.setScalar(s)
     if (this.elite || this.surged || def.tint !== undefined) this.applyTint()
-    this.barY = (def.model === 'juggernaut' ? 1.35 : def.model === 'brute' ? 1.0 : 0.75) * s + (def.yOffset ?? 0)
+    // Sit the bar just above whatever this thing actually is, measured rather
+    // than guessed per model.
+    //
+    // The bar is a child of a group already scaled by `s`, and the old height
+    // was *also* multiplied by `s` - so bars floated at s-squared height and
+    // big units wore theirs absurdly high, which at close zoom pushed them off
+    // the top of the screen. Width had the same double-scaling, which is why
+    // boss bars were enormous. barY stays in world units for floaters; the
+    // bar's own transform is divided back out.
+    this.barY = measuredBarHeight(this.group) + (def.yOffset ?? 0)
     this.radius = 0.22 * s
     this.parts = {}
     for (const name of ['body', 'head', 'legL', 'legR', 'armL', 'armR', 'wingL', 'wingR', 'legsL', 'legsR', 'legFL', 'legFR', 'legBL', 'legBR']) {
       this.parts[name] = getPart(this.group, name)
     }
-    this.bar = new HealthBar(def.boss ? 0.9 : 0.5 * Math.max(1, s))
+    this.bar = new HealthBar((def.boss ? 0.85 : 0.5) / s)
     this.bar.group.name = HP_BAR_NAME
-    this.bar.group.position.y = this.barY
+    this.bar.group.position.y = this.barY / s
     this.group.add(this.bar.group)
     const start = lane.sample(startDist, this.offset)
     this.group.position.set(start.x, def.yOffset ?? 0, start.z)

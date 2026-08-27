@@ -14,6 +14,8 @@ import { isCoarsePointer } from '../core/utils.ts'
 import { isPortalMode } from '../core/platform.ts'
 import { EARTHWORK_DEFS, type EarthworkSpot } from '../game/earthworks.ts'
 import { beatIndex, BEATS_PER_BAR } from '../game/beat.ts'
+import { traitsOf, counterFor } from '../game/dossier.ts'
+import type { EnemyDef } from '../game/types.ts'
 import { icon, BOSS_ART } from './icons.ts'
 
 function chip(label: string, value: string, cls = ''): string {
@@ -827,6 +829,45 @@ export class HUD {
   }
 
   // ---------------- transient messaging ----------------
+
+  /**
+   * Introduce an enemy the player has not met. The battle is paused behind
+   * this, so it is a card to read rather than something to dismiss in a
+   * hurry - and it is DOM, so it works the same on a phone as on a desktop.
+   */
+  showDossier(def: EnemyDef, onClose: () => void): void {
+    const overlay = el('div', 'help-overlay dossier-overlay', this.root)
+    const card = el('div', 'help-card dossier-card', overlay)
+    el('div', 'dossier-eyebrow', card, def.boss ? 'A boss walks the road' : 'Something new is coming')
+
+    const head = el('div', 'dossier-head', card)
+    if (BOSS_ART.has(def.id)) {
+      const art = el('div', 'dossier-art', head)
+      art.style.backgroundImage = `url(art/boss-${def.id}.webp)`
+    }
+    const title = el('div', 'dossier-title', head)
+    el('h2', '', title, def.name)
+    el('div', 'dossier-blurb', title, def.description)
+
+    const traits = traitsOf(def)
+    if (traits.length) {
+      const list = el('div', 'dossier-traits', card)
+      for (const t of traits) {
+        const row = el('div', 'dossier-trait', list)
+        el('span', 'dt-label', row, t.label)
+        el('span', 'dt-detail', row, t.detail)
+      }
+    }
+
+    const counter = el('div', 'dossier-counter', card)
+    el('span', 'dc-label', counter, 'How to beat it')
+    el('span', 'dc-text', counter, counterFor(def))
+
+    const go = el('button', 'btn primary', card, 'Understood') as HTMLButtonElement
+    go.onclick = () => { overlay.remove(); onClose() }
+    // a stray tap on the backdrop should not skip the one explanation there is
+    setTimeout(() => go.focus?.(), 40)
+  }
 
   showBanner(text: string, cls = ''): void {
     this.bannerEl.textContent = text

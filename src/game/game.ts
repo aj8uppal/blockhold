@@ -15,6 +15,7 @@ import { reactionFor, REACTION_RADIUS } from './towers.ts'
 import { buildPaths, LanePath } from './path.ts'
 import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
 import { holdModel, holdPieces, holdCacheKey } from './hold.ts'
+import { isNotable } from './dossier.ts'
 import { levels, generateEndlessWaves } from './levels.ts'
 import { Terrain, PlotInfo, THEMES } from './terrain.ts'
 import { Particles } from './particles.ts'
@@ -241,11 +242,18 @@ export class Game implements World {
   spawnEnemyAt(id: string, laneIndex: number, dist: number, opts: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean } = {}): void {
     const def = enemyDef(id)
     // interaction enemies teach themselves the first time they appear
-    if ((def.hexer || def.wardAura) && !this.mechanicsSeen.has(id)) {
+    // First meeting with anything notable: stop, explain it, and never
+    // interrupt for that enemy again. A boss camera move is arresting once and
+    // irritating by the fourth Juggernaut.
+    const firstMeeting = isNotable(def) && !this.save.seenEnemies.includes(id)
+    if (firstMeeting) {
+      this.save.seenEnemies.push(id)
+      writeSave(this.save)
       this.mechanicsSeen.add(id)
-      this.hud.showToast(def.hexer
-        ? 'A Hexling! It leaps onto a tower and silences it — shoot it off for a fat bounty.'
-        : 'A Wardbearer! Its banner half-shields every foe ahead of it. Bring the bearer down first.', 7)
+      if (!this.paused) {
+        this.paused = true
+        this.hud.showDossier(def, () => { this.paused = false })
+      }
     }
     const surged = opts.surged ?? false
     const eliteChance = this.difficulty === 'veteran' ? 0.12 : this.isEndless ? 0.08 : 0
@@ -260,11 +268,15 @@ export class Game implements World {
     })
     this.enemies.push(e)
     this.dynamic.add(e.group)
-    // a boss walking on is the strongest authored moment in a map; stage it
-    if (def.boss && this.phase === 'playing') {
+    // stage a boss's arrival the first time the player ever sees it; after
+    // that they know what it is and the camera should stay out of the way
+    if (def.boss && this.phase === 'playing' && firstMeeting) {
       this.engine.cinematic(e.pos.x, e.pos.z, 8.5, 2.0, 0.72)
       this.engine.addShake(0.16)
       this.impact('heavy')
+    } else if (def.boss && this.phase === 'playing') {
+      this.hud.showBanner(`${def.name.toUpperCase()}`, 'final')
+      this.engine.addShake(0.12)
     }
     if (e.waveTag >= 0) {
       const track = this.waveTracks.get(e.waveTag) ?? { spawned: 0, gone: 0, leaked: false }
@@ -297,7 +309,9 @@ export class Game implements World {
         this.waveOutcomes[e.waveTag] = 'held'
         telemetry.track({ type: 'wave_cleared', level: this.level.id, wave: e.waveTag + 1, lives: this.lives, leaked: false })
         if (this.defenseStreak > 0 && this.defenseStreak % 5 === 0) {
-          this.hud.showBanner(`${this.defenseStreak} WAVES HELD!`, '')
+          // this is the unbroken streak, not the wave number: saying "15 WAVES
+          // HELD" on wave 19 reads as a miscount rather than a streak
+          this.hud.showBanner(`${this.defenseStreak} WAVES IN A ROW!`, '')
         }
       }
     }

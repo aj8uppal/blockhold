@@ -933,3 +933,49 @@ button:focus-visible {
 }
 .beat-meter i.downbeat { box-shadow: 0 0 0 1px rgba(232, 178, 60, 0.5); }
 .beat-meter i.on { background: var(--gold-bright); transform: scale(1.45); }
+
+/* ---------- enemy dossier: shown once, the first time you meet something ---------- */
+
+.dossier-card { max-width: min(520px, 92vw); gap: 10px; }
+.dossier-eyebrow {
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--gold-bright); opacity: 0.85;
+}
+.dossier-head { display: flex; gap: 14px; align-items: flex-start; text-align: left; }
+.dossier-art {
+  width: 84px; height: 84px; flex: none;
+  border-radius: 12px; background-size: cover; background-position: center;
+  border: 1px solid rgba(232, 178, 60, 0.4);
+}
+.dossier-title { flex: 1; }
+.dossier-title h2 { margin: 0 0 4px; font-size: 22px; }
+.dossier-blurb { font-size: 13px; font-style: italic; color: rgba(244, 232, 207, 0.8); line-height: 1.45; }
+.dossier-traits { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.dossier-trait {
+  display: flex; gap: 9px; align-items: baseline; text-align: left;
+  background: rgba(10, 6, 3, 0.45); border-radius: 8px; padding: 6px 9px;
+}
+.dt-label {
+  flex: none; font-size: 11px; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--gold-bright);
+}
+.dt-detail { font-size: 12.5px; color: rgba(244, 232, 207, 0.86); line-height: 1.4; }
+.dossier-counter {
+  display: flex; flex-direction: column; gap: 3px; text-align: left; width: 100%;
+  background: rgba(127, 212, 255, 0.1);
+  border: 1px solid rgba(127, 212, 255, 0.3);
+  border-radius: 9px; padding: 8px 10px;
+}
+.dc-label {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #8fdfff;
+}
+.dc-text { font-size: 13px; color: var(--parchment); line-height: 1.45; }
+
+@media (max-height: 480px) {
+  .dossier-card { gap: 6px; padding: 12px 16px; }
+  .dossier-art { width: 56px; height: 56px; }
+  .dossier-title h2 { font-size: 17px; }
+  .dossier-blurb { display: none; }
+  .dt-detail { font-size: 11.5px; }
+}
