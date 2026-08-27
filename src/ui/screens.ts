@@ -8,6 +8,7 @@ import { icon } from './icons.ts'
 import { readCheckpoint } from '../game/checkpoint.ts'
 import { dailyNumber } from '../game/ruleset.ts'
 import { holdPieces, holdSummary } from '../game/hold.ts'
+import { cloud, applyCloud } from '../core/cloud.ts'
 import { dailyShareText, challengeUrl, type DailyResult } from '../game/share.ts'
 
 export type ScreenName = 'menu' | 'levels' | 'victory' | 'defeat' | 'none'
@@ -130,12 +131,27 @@ export class Screens {
     const daily = el('button', 'btn ghost', card,
       `${icon('moon')} Daily Hold #${day}${done ? ` · wave ${save.dailyBest!.wave}` : ''}`) as HTMLButtonElement
     daily.onclick = () => this.onPlayDaily()
-    const bell = el('button', 'btn ghost', card, `${icon('music')} The Bellfoundry`) as HTMLButtonElement
-    bell.title = 'The battle keeps time. Shots that land on the beat ring out and hit harder.'
-    bell.onclick = () => this.onPlayBellfoundry()
-    const watches = el('button', 'btn ghost', card, `${icon('respawn')} The Three Watches`) as HTMLButtonElement
-    watches.title = 'One siege, fought three times. Each watch your earlier defense returns to fight beside you.'
-    watches.onclick = () => this.onPlayWatches()
+    this.infoButton(card, daily, {
+      tagline: 'One battle a day, the same for everyone.',
+      body: 'Twelve waves on a board built from today\'s date, identical for every player in the world. It resets at midnight UTC.',
+      skill: 'When it ends you get a result bar you can copy, and a link that drops a friend onto the exact same board.',
+    })
+    this.modeRow(card, 'music', 'The Bellfoundry', () => this.onPlayBellfoundry(), {
+      tagline: 'The battle keeps time.',
+      body: 'One siege scored to its own soundtrack. Towers always fire the moment they are ready - but a shot that lands on the beat rings out and hits 40% harder. A meter shows where in the bar you are.',
+      skill: 'The skill is arranging a defense whose rhythms fall on the beat more often than not.',
+    })
+    this.modeRow(card, 'respawn', 'The Three Watches', () => this.onPlayWatches(), {
+      tagline: 'Fight beside your earlier self.',
+      body: 'One short siege, fought three times over. Each watch, the defense you built last time returns as translucent echoes that still fight - faintly, and untouchable.',
+      skill: 'By the third watch you are standing behind two earlier versions of your own plan, building the layer they could not.',
+    })
+    if (cloud.enabled) {
+      const st = cloud.status()
+      const acct = el('button', 'btn ghost', card,
+        `${icon('chest')} ${st.signedIn ? 'Your progress is saved' : 'Save my progress'}`) as HTMLButtonElement
+      acct.onclick = () => this.renderAccount()
+    }
     const how = el('button', 'btn ghost', card, 'How to play') as HTMLButtonElement
     how.onclick = () => this.renderHelp()
     if (needsInstallGuide()) {
@@ -383,6 +399,143 @@ export class Screens {
       }
     }
   }
+
+  /**
+   * A mode button with an info affordance beside it.
+   *
+   * `title` tooltips do not exist on touch, so the three alternate modes were
+   * unexplained on exactly the platform the game targets. The (i) opens a
+   * panel that reads the same on a phone as on a desktop.
+   */
+  private modeRow(
+    parent: HTMLElement, ico: string, label: string, play: () => void,
+    info: { tagline: string, body: string, skill: string },
+  ): void {
+    const row = el('div', 'mode-row', parent)
+    const btn = el('button', 'btn ghost mode-btn', row, `${icon(ico)} ${label}`) as HTMLButtonElement
+    btn.onclick = play
+    this.infoButton(row, btn, info, label)
+  }
+
+  private infoButton(
+    parent: HTMLElement, near: HTMLElement,
+    info: { tagline: string, body: string, skill: string },
+    label?: string,
+  ): void {
+    const name = label ?? near.textContent?.trim() ?? ''
+    const b = el('button', 'info-dot', parent, 'i') as HTMLButtonElement
+    b.setAttribute('aria-label', `What is ${name}?`)
+    b.title = info.tagline
+    b.onclick = (e) => { e.stopPropagation(); this.showModeInfo(name, info) }
+  }
+
+  private showModeInfo(name: string, info: { tagline: string, body: string, skill: string }): void {
+    const overlay = el('div', 'help-overlay', this.root)
+    const card = el('div', 'help-card mode-info', overlay)
+    el('h2', '', card, name)
+    el('div', 'mode-tagline', card, info.tagline)
+    el('p', 'mode-body', card, info.body)
+    el('p', 'mode-skill', card, info.skill)
+    const close = el('button', 'btn primary', card, 'Got it') as HTMLButtonElement
+    close.onclick = () => overlay.remove()
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove() }
+  }
+
+  /**
+   * Cloud saves, in the player's language.
+   *
+   * There is no sign-up, no email and no password - so this screen's whole
+   * job is to explain that a code *is* the account, and to make that code
+   * easy to move to another device.
+   */
+  renderAccount(): void {
+    const overlay = el('div', 'help-overlay', this.root)
+    const card = el('div', 'help-card account-card', overlay)
+    const draw = () => {
+      card.innerHTML = ''
+      const st = cloud.status()
+      el('h2', '', card, `${icon('chest')} Your progress`)
+
+      if (!st.signedIn) {
+        el('p', 'account-body', card,
+          'Right now your campaign lives only in this browser. Clearing site data, a private window, or a new phone would lose it.')
+        el('p', 'account-body', card,
+          'Saving gives you a short code. No email, no password, nothing about you - the code is the account. Type it on another device and your progress follows.')
+        const go = el('button', 'btn primary', card, 'Save my progress') as HTMLButtonElement
+        go.onclick = async () => {
+          go.disabled = true
+          go.textContent = 'Saving…'
+          await cloud.createAccount(this.save())
+          draw()
+        }
+        const have = el('button', 'btn ghost', card, 'I already have a code') as HTMLButtonElement
+        have.onclick = () => this.renderLinkEntry(overlay, draw)
+      } else {
+        el('p', 'account-body', card, 'Your progress is saved. Keep this code somewhere safe - it is the only way back to it.')
+        const codeBox = el('div', 'account-code', card, st.linkCode ?? '••••-••••')
+        // a device that joined with a code holds the token but not the code
+        // itself, so fetch it rather than showing the player dots
+        if (!st.linkCode) {
+          void cloud.refreshLinkCode().then(c => { if (c) codeBox.textContent = c })
+        }
+        const copy = el('button', 'btn primary', card, 'Copy code') as HTMLButtonElement
+        copy.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(st.linkCode ?? '')
+            copy.textContent = 'Copied'
+          } catch {
+            // clipboard can be blocked; the code is on screen either way
+            codeBox.classList.add('flash')
+            copy.textContent = 'Select it above'
+          }
+          setTimeout(() => { copy.textContent = 'Copy code' }, 2200)
+        }
+        const rotate = el('button', 'btn ghost', card, 'Replace this code') as HTMLButtonElement
+        rotate.title = 'Invalidates the old code, in case you shared it'
+        rotate.onclick = async () => { rotate.disabled = true; await cloud.rotateLinkCode(); draw() }
+        const out = el('button', 'btn ghost', card, 'Stop saving on this device') as HTMLButtonElement
+        out.onclick = () => { cloud.signOut(); draw() }
+        if (st.lastError) el('div', 'account-warn', card, st.lastError)
+      }
+      const close = el('button', 'btn ghost', card, 'Back') as HTMLButtonElement
+      close.onclick = () => { overlay.remove(); this.show('menu') }
+    }
+    draw()
+    overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); this.show('menu') } }
+  }
+
+  private renderLinkEntry(overlay: HTMLElement, back: () => void): void {
+    const card = overlay.querySelector('.account-card') as HTMLElement
+    card.innerHTML = ''
+    el('h2', '', card, 'Enter your code')
+    el('p', 'account-body', card, 'Type the code from your other device. Anything you have already earned here is kept and merged in.')
+    const input = el('input', 'account-input', card) as HTMLInputElement
+    input.placeholder = 'ABCD-EFGH'
+    input.autocapitalize = 'characters'
+    input.spellcheck = false
+    input.maxLength = 12
+    const warn = el('div', 'account-warn', card, '')
+    const go = el('button', 'btn primary', card, 'Restore') as HTMLButtonElement
+    go.onclick = async () => {
+      go.disabled = true
+      warn.textContent = ''
+      const res = await cloud.linkDevice(input.value)
+      if (!res.ok || !res.save) {
+        warn.textContent = res.error ?? 'That did not work.'
+        go.disabled = false
+        return
+      }
+      const merged = applyCloud(this.save(), res.save)
+      this.onRestore(merged)
+      back()
+    }
+    const cancel = el('button', 'btn ghost', card, 'Back') as HTMLButtonElement
+    cancel.onclick = back
+    setTimeout(() => input.focus(), 40)
+  }
+
+  /** hands a restored save back to the game */
+  onRestore: (save: SaveData) => void = () => {}
 
   /** how many watches are still to come; 0 outside the mode */
   watchesRemaining = 0

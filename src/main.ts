@@ -82,6 +82,13 @@ screens.onPlayDaily = () => {
     { seed, daily: dailyNumber() })
 }
 screens.onShared = (kind) => telemetry.track({ type: 'share_copied', kind })
+screens.onRestore = (restored) => {
+  Object.assign(game.save, restored)
+  writeSave(game.save)
+  game.showMenuBackdrop()
+  screens.show('menu')
+  hud.showToast('Progress restored', 3)
+}
 
 screens.canRecordTape = () => canRecordTape()
 screens.onRecordTape = async () => {

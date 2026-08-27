@@ -153,6 +153,10 @@ export class Cloud {
       const out = await res.json() as { token: string, save: unknown }
       this.token = out.token
       writeLocal(TOKEN_KEY, out.token)
+      // the code that got us here is this account's code; remember it so the
+      // player is not shown dots on the device they just restored onto
+      this.code = linkCode.trim().toUpperCase()
+      writeLocal(CODE_KEY, this.code)
       const cloud = sanitizeCloudSave(out.save)
       this.lastError = null
       this.lastSyncedAt = Date.now()
