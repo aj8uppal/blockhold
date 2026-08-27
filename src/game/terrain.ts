@@ -94,6 +94,7 @@ export class Terrain {
     this.buildGround(rng)
     this.buildPlots()
     this.buildDecorations(rng)
+    this.buildLandmarks(rng)
     this.buildEndpoints()
     this.buildClouds(rng)
   }
@@ -107,6 +108,27 @@ export class Terrain {
     if (inRects(c, r, level.water)) return 'water'
     if (inRects(c, r, level.hills)) return 'hill'
     return 'grass'
+  }
+
+  /** the big set-pieces that give a board its horizon */
+  private buildLandmarks(rng: () => number): void {
+    const { level } = this
+    for (const [c, r, kind] of level.landmarks ?? []) {
+      // a set-piece dropped on the road or a foundation reads as a bug, so an
+      // authoring mistake is skipped loudly rather than rendered
+      const on = this.cellKind(c, r)
+      if (on === 'road' || on === 'plot' || on === 'void' || on === 'water') {
+        console.warn(`level ${level.id}: landmark ${kind} at [${c},${r}] sits on ${on}`)
+        continue
+      }
+      const [x, z] = gridToWorld(c, r, level.width, level.height)
+      const m = buildModel(env.landmark(kind, rng, level.theme), `landmark:${kind}:${level.theme}`, {
+        castShadow: true, receiveShadow: true,
+      })
+      m.position.set(x, this.cellTop(c, r), z)
+      m.rotation.y = Math.round(rng() * 3) * (Math.PI / 2)
+      this.group.add(m)
+    }
   }
 
   /**
@@ -131,12 +153,23 @@ export class Terrain {
 
   /** is this cell part of the map's own raised ground? */
   isOnHill(c: number, r: number): boolean {
-    return inRects(c, r, this.level.hills)
+    return inRects(c, r, this.level.hills) || this.plateauAt(c, r) > 0
   }
 
   cellTop(c: number, r: number): number {
+    const p = this.plateauAt(c, r)
+    if (p > 0) return p
     const k = this.cellKind(c, r)
     return k === 'hill' ? 0.5 : k === 'water' ? -0.4 : 0
+  }
+
+  /** height of any authored plateau covering this cell, else 0 */
+  plateauAt(c: number, r: number): number {
+    let best = 0
+    for (const [c0, r0, c1, r1, h] of this.level.plateaus ?? []) {
+      if (c >= c0 && c <= c1 && r >= r0 && r <= r1) best = Math.max(best, h)
+    }
+    return best
   }
 
   /** can ground units stand here? (flat grass or road) */
@@ -294,6 +327,13 @@ export class Terrain {
           || ['void'].includes(this.cellKind(c, r + 1)) || ['void'].includes(this.cellKind(c, r - 1))
           || c === 0 || r === 0 || c === level.width - 1 || r === level.height - 1
         const bottom = edge ? -1.6 - rng() * 0.9 : -1.2
+        // an authored plateau lifts the ground itself, not just what stands on it
+        const plateau = this.plateauAt(c, r)
+        if (plateau > 0 && kind !== 'water') {
+          addBox(x, z, bottom, plateau, 1, 1,
+            shuffleColor(kind === 'road' ? t.road : rng() < 0.5 ? t.grass : t.grassAlt, 0.07, rng))
+          continue
+        }
         switch (kind) {
           case 'road':
             addBox(x, z, bottom, 0.02, 1, 1, shuffleColor(rng() < 0.5 ? t.road : t.roadAlt, 0.06, rng))

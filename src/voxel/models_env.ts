@@ -79,6 +79,82 @@ export function flowers(rng: () => number): VoxModel {
   return { parts: { base } }
 }
 
+/**
+ * Landmarks: big scenery that gives a board a horizon.
+ *
+ * The maps read as flat green tables partly because nothing on them was
+ * taller than a tree. These are deliberately oversized - they are meant to be
+ * seen from across the map and to sit behind the fight rather than in it.
+ */
+export function landmark(kind: string, rng: () => number, theme: string): VoxModel {
+  // These sit against the map's own ambient grade, and the ember and void
+  // themes are dark enough that an unlit stone reads as a black cut-out. The
+  // palette is deliberately lighter than the ground it stands on.
+  const stone = theme === 'ember' ? 0xa8776a : theme === 'void' ? 0x8d7fc4
+    : theme === 'winter' ? 0xbcc6d4 : 0xa9abb2
+  const dark = shuffleColor(stone, 0.12, rng)
+  const accent = theme === 'ember' ? 0xff6a2a : theme === 'void' ? 0xb37aff
+    : theme === 'winter' ? 0x8fdfff : 0x7fd44a
+
+  switch (kind) {
+    case 'spire': {
+      const body: VoxBox[] = []
+      let w = 5.2
+      for (let i = 0; i < 9; i++) {
+        body.push(box(0, 2 + i * 3.4, 0, w, 3.4, w, i % 2 ? dark : stone))
+        w = Math.max(1.8, w - 0.38)
+      }
+      // broken crown: the top course is snapped off on one side
+      body.push(box(-1.0, 32, -0.6, 2.4, 2.2, 2.4, stone))
+      body.push(box(0, 0.8, 0, 7.2, 1.6, 7.2, dark))
+      return { parts: { body }, scale: 0.1 }
+    }
+    case 'arch': {
+      const body: VoxBox[] = [
+        box(-6.5, 9, 0, 3.4, 18, 3.6, stone),
+        box(6.5, 9, 0, 3.4, 18, 3.6, stone),
+        box(0, 19.5, 0, 16.5, 3.2, 3.6, dark),
+        box(0, 22, 0, 12, 2.2, 3.0, stone),
+        box(-6.5, 0.9, 0, 4.6, 1.8, 4.8, dark),
+        box(6.5, 0.9, 0, 4.6, 1.8, 4.8, dark),
+      ]
+      return { parts: { body }, scale: 0.1 }
+    }
+    case 'monolith': {
+      const body: VoxBox[] = [
+        box(0, 11, 0, 3.6, 22, 2.4, dark),
+        box(0, 24, 0, 2.6, 4, 1.8, stone),
+        box(0, 1, 0, 6, 2, 5, dark),
+        box(0, 15, 1.3, 1.4, 6, 0.3, accent, true),
+      ]
+      return { parts: { body }, scale: 0.1 }
+    }
+    case 'ruin': {
+      const body: VoxBox[] = [
+        box(-3, 4, 0, 8, 8, 2.6, stone),
+        box(3.4, 6.5, 0, 5, 13, 2.6, dark),
+        box(6.2, 2.5, 1.6, 2.4, 5, 2.4, stone),
+        box(-6.5, 1.6, -1.2, 3, 3.2, 3, dark),
+        box(0, 0.7, 0, 15, 1.4, 5, dark),
+      ]
+      return { parts: { body }, scale: 0.1 }
+    }
+    default: {
+      // a great tree: trunk plus stacked canopy, three times a normal one
+      const leaf = theme === 'winter' ? 0xdfe9f2 : theme === 'ember' ? 0x7a5a3a
+        : theme === 'void' ? 0x5f4a8f : 0x3f7a35
+      const body: VoxBox[] = [
+        box(0, 7, 0, 3.4, 14, 3.4, 0x6b4a2a),
+        box(0, 15, 0, 13, 4.4, 13, leaf),
+        box(0, 19, 0, 10, 4, 10, shuffleColor(leaf, 0.1, rng)),
+        box(0, 22.5, 0, 6.4, 3.2, 6.4, leaf),
+        box(0, 0.8, 0, 6, 1.6, 6, 0x5a3f26),
+      ]
+      return { parts: { body }, scale: 0.1 }
+    }
+  }
+}
+
 export function lampPost(): VoxModel {
   return {
     parts: {

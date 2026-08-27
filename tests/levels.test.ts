@@ -190,3 +190,45 @@ describe('earthworks', () => {
     }
   })
 })
+
+describe('map set-pieces', () => {
+  /**
+   * A landmark is deliberately oversized. Dropped on a road, a foundation or
+   * open water it does not read as scenery, it reads as a bug - and seven of
+   * the first placements did exactly that before this test existed.
+   */
+  it('never stands a landmark on road, plot, water or void', () => {
+    for (const lvl of levels) {
+      const paths = buildPaths(lvl)
+      for (const [c, r, kind] of lvl.landmarks ?? []) {
+        const onRoad = paths.roadCells.has(`${c},${r}`)
+        const onPlot = lvl.plots.some(([pc, pr]) => pc === c && pr === r)
+        const inRect = (rects: number[][]) =>
+          rects.some(([a, b, x, y]) => c >= a && c <= x && r >= b && r <= y)
+        expect(onRoad, `${lvl.id} ${kind} on road`).toBe(false)
+        expect(onPlot, `${lvl.id} ${kind} on plot`).toBe(false)
+        expect(inRect(lvl.water), `${lvl.id} ${kind} in water`).toBe(false)
+        expect(inRect(lvl.voids), `${lvl.id} ${kind} over the void`).toBe(false)
+      }
+    }
+  })
+
+  it('escalates terrain drama through the campaign', () => {
+    const drama = levels.map(l => (l.landmarks?.length ?? 0) + (l.plateaus?.length ?? 0))
+    const early = drama.slice(0, 3).reduce((a, b) => a + b, 0)
+    const late = drama.slice(-3).reduce((a, b) => a + b, 0)
+    expect(late, 'later maps should be more dramatic than earlier ones').toBeGreaterThan(early)
+  })
+
+  it('keeps plateaus inside their map', () => {
+    for (const lvl of levels) {
+      for (const [c0, r0, c1, r1, h] of lvl.plateaus ?? []) {
+        expect(c0).toBeGreaterThanOrEqual(0)
+        expect(r0).toBeGreaterThanOrEqual(0)
+        expect(c1).toBeLessThan(lvl.width)
+        expect(r1).toBeLessThan(lvl.height)
+        expect(h).toBeGreaterThan(0)
+      }
+    }
+  })
+})
