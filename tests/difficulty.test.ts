@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { levels } from '../src/game/levels.ts'
-import { judgeLevel, campaignScale } from '../src/game/balanceModel.ts'
+import { judgeLevel, judgeWave, campaignScale } from '../src/game/balanceModel.ts'
+import { enemyDef } from '../src/game/enemyDefs.ts'
 import type { Difficulty } from '../src/game/types.ts'
 
 const median = (a: number[]) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)]
@@ -60,5 +61,43 @@ describe('the campaign difficulty curve', () => {
 
   it('scales longer maps harder, since they compound more income', () => {
     expect(campaignScale(27, 28)).toBeGreaterThan(campaignScale(15, 16))
+  })
+})
+
+describe('multi-lane pressure', () => {
+  /**
+   * A tower shoots the road it was built beside, so a wave's verdict is its
+   * worst road - not the whole board's damage against the whole wave's health.
+   * Judging it the old way let every gun defend every road at once: true on
+   * Greenhollow's single lane, badly false on three, where it rated Veilscar's
+   * wave 6 a comfortable 0.53 while a bot fielding 108% of the model's own
+   * affordable DPS lost the map there.
+   *
+   * Ordinary waves must stay answerable. Boss waves may spike - the model
+   * credits no hero, Meteor Storm, trap or Overcharge, which are exactly what
+   * a boss is answered with - but not without limit.
+   */
+  const BOSS_HP = 2000
+  const isBoss = (w: { groups: { enemy: string }[] }) =>
+    w.groups.some(g => enemyDef(g.enemy).hp >= BOSS_HP)
+
+  it('leaves no ordinary wave that cannot be held', () => {
+    for (const lvl of levels) {
+      lvl.waves.forEach((wave, i) => {
+        if (isBoss(wave)) return
+        const r = judgeWave(lvl, wave, i, 'normal').worstRatio
+        expect(r, `${lvl.id} wave ${i + 1} overloads one lane`).toBeLessThanOrEqual(1)
+      })
+    }
+  })
+
+  it('keeps even the boss waves inside reach', () => {
+    for (const lvl of levels) {
+      lvl.waves.forEach((wave, i) => {
+        if (!isBoss(wave)) return
+        const r = judgeWave(lvl, wave, i, 'normal').worstRatio
+        expect(r, `${lvl.id} wave ${i + 1} is an unanswerable boss`).toBeLessThanOrEqual(1.6)
+      })
+    }
   })
 })

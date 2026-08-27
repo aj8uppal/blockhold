@@ -56,6 +56,44 @@ function laneLengthFor(level: LevelDef, laneIndex: number): number {
   return lens[laneIndex] ?? lens[0] ?? 22
 }
 
+/** a mid-tier tower's reach, used to decide which lanes a foundation can serve */
+const PLOT_REACH = 3.6
+const coverCache = new Map<string, number[]>()
+
+/**
+ * What share of the board's damage each lane can actually receive.
+ *
+ * A tower shoots the road it was built beside. Comparing a whole wave's HP
+ * against the whole board's DPS therefore lets every gun defend every lane at
+ * once, which is true on Greenhollow's single road and badly false on a
+ * three-road map: Veilscar's wave 6 measured 0.53 - comfortable - while a bot
+ * fielding 108% of the model's own affordable DPS lost the map there, because
+ * its ten towers were answering three roads and only seven of twenty
+ * foundations reach more than one.
+ */
+function laneShares(level: LevelDef): number[] {
+  const hit = coverCache.get(level.id)
+  if (hit) return hit
+  const paths = buildPaths(level)
+  const cover = paths.lanes.map(() => 0)
+  for (const [c, r] of level.plots) {
+    const x = c - (level.width - 1) / 2
+    const z = r - (level.height - 1) / 2
+    paths.lanes.forEach((lane, i) => {
+      if (lane.distanceToPath(x, z) <= PLOT_REACH) cover[i]++
+    })
+  }
+  /*
+   * Normalised by the plot count, not by the sum of coverage: a foundation at
+   * a junction serves both roads it reaches, so the shares deliberately sum to
+   * more than one. Dividing by the sum instead would pretend a tower has to
+   * choose, and would understate every map whose lanes converge.
+   */
+  const shares = cover.map(n => n / (level.plots.length || 1))
+  coverCache.set(level.id, shares)
+  return shares
+}
+
 export interface WaveVerdict {
   wave: number
   /** worst survivor's overshoot: >1 means something reaches the gate */
@@ -131,17 +169,23 @@ export function judgeWave(
    * spent sequentially instead: the question is whether the whole wave can be
    * chewed through in the time the lane gives you.
    */
-  let effortHp = 0        // raw damage output the wave demands, after resistances
-  let spawnSpan = 0
-  let slowestTransit = 0
+  /*
+   * Judged per lane. Each road only receives the damage of the towers that can
+   * reach it, and a wave is beaten only if every one of its roads holds - so
+   * the wave's verdict is its worst road, not its average.
+   */
+  const shares = laneShares(level)
+  const lanes = shares.map(() => ({ effortHp: 0, spawnSpan: 0, slowestTransit: 0 }))
+  let effortHp = 0
   let worst: { name: string, cost: number } | null = null
 
   for (const g of wave.groups) {
     const d = enemyDef(g.enemy)
+    const li = Math.min(g.lane ?? 0, lanes.length - 1)
     const speed = d.speed * (wave.surge ? 1.12 : 1)
-    const transit = laneLengthFor(level, g.lane ?? 0) / speed
-    slowestTransit = Math.max(slowestTransit, transit)
-    spawnSpan = Math.max(spawnSpan, g.delay + g.interval * Math.max(0, g.count - 1))
+    const transit = laneLengthFor(level, li) / speed
+    lanes[li].slowestTransit = Math.max(lanes[li].slowestTransit, transit)
+    lanes[li].spawnSpan = Math.max(lanes[li].spawnSpan, g.delay + g.interval * Math.max(0, g.count - 1))
 
     const physical = PHYSICAL_SHARE * (1 - d.armor)
     const magic = (1 - PHYSICAL_SHARE) * (1 - d.magicResist)
@@ -151,14 +195,23 @@ export function judgeWave(
 
     const hp = d.hp * mods.enemyHp * surge * g.count * campaignScale(waveIndex, level.waves.length)
     const cost = hp / share
+    lanes[li].effortHp += cost
     effortHp += cost
     if (!worst || cost > worst.cost) worst = { name: d.name, cost }
   }
 
-  // the defense has the whole spawn span plus one transit's worth of reach
-  const timeAvailable = spawnSpan + slowestTransit * LANE_COVERAGE
-  const timeToClear = dps > 0 ? effortHp / dps : Infinity
-  const ratio = timeToClear / Math.max(1, timeAvailable)
+  let ratio = 0
+  let spawnSpan = 0
+  let slowestTransit = 0
+  lanes.forEach((ln, i) => {
+    spawnSpan = Math.max(spawnSpan, ln.spawnSpan)
+    slowestTransit = Math.max(slowestTransit, ln.slowestTransit)
+    if (ln.effortHp <= 0) return
+    const laneDps = dps * (shares[i] || 1)
+    const timeAvailable = ln.spawnSpan + ln.slowestTransit * LANE_COVERAGE
+    const timeToClear = laneDps > 0 ? ln.effortHp / laneDps : Infinity
+    ratio = Math.max(ratio, timeToClear / Math.max(1, timeAvailable))
+  })
 
   return {
     wave: waveIndex + 1,
