@@ -327,6 +327,23 @@ export function boltProjectile(color: number): VoxModel {
   }
 }
 
+/**
+ * A thrown axe. Built lying along +z like the arrow so `lookAt` aims it, and
+ * spun around x by the projectile so it tumbles end over end in flight.
+ */
+export function axeProjectile(): VoxModel {
+  return {
+    parts: {
+      base: [
+        box(0, 0, 0.1, 0.3, 0.3, 2.6, 0x7a5a30),          // haft
+        box(0, 0, 1.25, 0.34, 1.6, 0.9, 0xb7bcc4),         // double bit
+        box(0, 0, 1.25, 0.2, 2.0, 0.35, 0xdfe6f0),         // the edge, brighter
+        box(0, 0, -1.2, 0.5, 0.5, 0.4, 0x8f2f2f),          // wrapped grip end
+      ],
+    },
+  }
+}
+
 export function bombProjectile(): VoxModel {
   return {
     parts: {

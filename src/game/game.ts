@@ -18,11 +18,12 @@ import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
 import { holdModel, holdPieces, holdCacheKey, holdSummary } from './hold.ts'
 import { isNotable } from './dossier.ts'
 import { AFFIX_IDS } from './affixes.ts'
+import { difficultyMods } from './difficulty.ts'
 import { battleXp, isUnlocked, levelForXp, unlocksBetween, type UnlockDef } from './progress.ts'
 import { campaignScale } from './balanceModel.ts'
 import { OnboardingDirector } from './onboarding.ts'
 import { HERO_RANK_MAX, heroRankCost } from './hero.ts'
-import { levels, generateEndlessWaves } from './levels.ts'
+import { levels, generateEndlessWaves, generateFreeplayChunk, ladderRung } from './levels.ts'
 import { Terrain, PlotInfo, THEMES } from './terrain.ts'
 import { Particles } from './particles.ts'
 import { Enemy, Soldier } from './units.ts'
@@ -91,6 +92,14 @@ export class Game implements World {
   /** the Bellfoundry: shots that land on the beat ring out and hit harder */
   isBellfoundry = false
   isWatches = false
+  /**
+   * Holding the line past a map's last authored wave. Not the Long Night:
+   * that starts from an empty board, this keeps the one the player built.
+   * Its own flag because `isEndless` decides health scaling, XP, score keys,
+   * checkpoints and the result card, and freeplay wants different answers to
+   * most of those.
+   */
+  isFreeplay = false
   watchIndex = 0
   private ghostLayers: { plot: number, kind: TowerKind, level: number, branch: 0 | 1 | null }[][] = []
   speed: 1 | 2 = 1
@@ -197,7 +206,8 @@ export class Game implements World {
     // summoned-while-alive enemies pay nothing: stalling a summoner must not be a gold farm
     if (!e.noReward) {
       const premium = this.tithePremium(e.pos.x, e.pos.z)
-      const bounty = Math.max(1, Math.round(e.def.bounty * DIFFICULTIES[this.difficulty].bounty * (e.elite ? 1.6 : 1) * premium))
+      const eliteMult = e.elite ? 1.6 * (1 + 0.25 * armoryTier(this.save, 'bountyhunter')) : 1
+      const bounty = Math.max(1, Math.round(e.def.bounty * this.mods().bounty * eliteMult * premium))
       this.addGold(bounty, e.pos.x, e.pos.y + e.barY, e.pos.z)
       let shardGain = (e.def.shardDrop ?? 0) + (e.elite ? 1 : 0) + (e.def.boss ? 4 : 0)
       // the Exchequer: a shard for every twelfth kill made in its light
@@ -223,6 +233,21 @@ export class Game implements World {
     }
     this.particles.deathPuff(e.pos.x, e.pos.y + 0.2, e.pos.z, 0x777788)
     this.sfx('die', 0.6)
+    // The Ossuary: what dies in its shadow stands back up, once, as a Husk that
+    // pays nothing. `raised` stops a raised thing rising twice, `noReward`
+    // stops the boss being a gold farm, and bosses themselves never rise.
+    if (!e.def.boss && !e.raised) {
+      const bone = this.enemies.find(b => b.alive && b.def.raises
+        && Math.hypot(b.pos.x - e.pos.x, b.pos.z - e.pos.z) <= b.def.raises.radius)
+      if (bone) {
+        const rx = e.pos.x, rz = e.pos.z, lane = e.laneIndex, dist = e.dist, tag = e.waveTag
+        this.deferFx(0.7, () => {
+          if (!bone.alive) return
+          this.particles.magicImpact(rx, 0.4, rz, 0x8fe08a)
+          this.spawnEnemyAt(bone.def.raises!.id, lane, Math.max(0, dist), { waveTag: tag, noReward: true, raised: true })
+        })
+      }
+    }
     // weight the moment: a fodder kill must not feel like a boss falling
     this.impact(e.def.boss ? 'boss' : e.elite ? 'elite' : 'light')
     if (!e.def.boss) this.engine.addShake(e.elite ? 0.09 : 0.035)
@@ -249,9 +274,16 @@ export class Game implements World {
       this.resolveWaveEnemy(e, true)
       return
     }
-    const fatal = e.def.boss || this.lives - e.def.livesCost <= 0
+    // A boss at the gate ends the defense outright - unless the Veilward holds,
+    // in which case it costs ten lives and the battle goes on. The old code set
+    // lives straight to zero for a boss rather than charging its nominal cost,
+    // so "how many lives does a boss take" has to be answered here explicitly.
+    const warded = e.def.boss && hasArmory(this.save, 'veilward')
+    const cost = e.def.boss ? (warded ? 10 : this.lives) : e.def.livesCost
+    const fatal = this.lives - cost <= 0
     if (fatal) this.engine.cinematic(e.pos.x, e.pos.z, 9, 2.4, 0.7)
-    this.lives = e.def.boss ? 0 : Math.max(0, this.lives - e.def.livesCost)
+    else if (warded) this.hud.showToast('The Veilward holds - the gate stands, at a price', 3)
+    this.lives = Math.max(0, this.lives - cost)
     this.defenseStreak = 0
     this.lastLeak = { name: e.def.name, wave: e.waveTag >= 0 ? e.waveTag + 1 : (this.waves?.waveIndex ?? 0) + 1 }
     this.resolveWaveEnemy(e, true)
@@ -290,7 +322,32 @@ export class Game implements World {
    */
   private campaignHpScale(): number {
     if (this.isEndless || this.isDaily || !this.waves || !this.level) return 1
-    return campaignScale(Math.max(0, this.waves.waveIndex), this.level.waves.length)
+    // past the authored end the campaign ramp is frozen at its final value;
+    // freeplayHpScale carries on from there
+    const n = this.level.waves.length
+    return campaignScale(Math.min(n - 1, Math.max(0, this.waves.waveIndex)), n)
+  }
+
+  /**
+   * Freeplay's escalation, normalised so the first wave past the authored end
+   * is no harder than the last authored one, and every wave after climbs on
+   * the Long Night's curve from that point:
+   *
+   *   endlessScale(authored + depth) / endlessScale(authored - 1)
+   *
+   * Without the division the handover would be a cliff on long maps, where
+   * the Long Night's curve is already steep by wave 30.
+   */
+  private freeplayHpScale(): number {
+    if (!this.isFreeplay || !this.waves) return 1
+    const authored = this.waves.authoredWaves
+    const at = (w: number) => (1 + Math.max(0, w - 6) * 0.035) * (1 + Math.max(0, w - 30) * 0.012)
+    return at(this.waves.waveIndex) / at(Math.max(0, authored - 1))
+  }
+
+  /** the mode a difficulty is resolved for; freeplay keeps the campaign's per-map bite */
+  private modeKey(): 'campaign' | 'endless' | 'freeplay' {
+    return this.isEndless ? 'endless' : this.isFreeplay ? 'freeplay' : 'campaign'
   }
 
   /** deep-endless hardening: 0 until wave 20, then bands of armor/resist */
@@ -305,10 +362,15 @@ export class Game implements World {
    * disagree, and a preview that lies is worse than no preview.
    */
   eliteChance(): number {
-    return this.difficulty === 'veteran' ? 0.12 : this.isEndless ? 0.08 : 0
+    return this.mods().eliteChance
   }
 
-  spawnEnemyAt(id: string, laneIndex: number, dist: number, opts: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean } = {}): void {
+  /** what this difficulty means on this map; the one source every consumer reads */
+  mods() {
+    return difficultyMods(this.level?.id ?? null, this.difficulty, this.modeKey())
+  }
+
+  spawnEnemyAt(id: string, laneIndex: number, dist: number, opts: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean, hpMult?: number, affix?: string, raised?: boolean } = {}): void {
     const def = enemyDef(id)
     // interaction enemies teach themselves the first time they appear
     // First meeting with anything notable: stop, explain it, and never
@@ -328,19 +390,24 @@ export class Game implements World {
     const elite = (opts.eliteRoll ?? false) && !def.boss && simChance(this.eliteChance())
     // Which elite this is, drawn from the same seeded stream as the roll that
     // made it one. A daily and a challenge link are only the same fight if the
-    // affixes match, so this must never reach for Math.random.
-    const affix = elite ? pick(AFFIX_IDS) : null
+    // affixes match, so this must never reach for Math.random. An Ascendant
+    // boss arrives with its affix named by the ladder rather than rolled.
+    const ladderAffix = opts.affix && AFFIX_IDS.includes(opts.affix as never) ? opts.affix as typeof AFFIX_IDS[number] : null
+    const affix = ladderAffix ?? (elite ? pick(AFFIX_IDS) : null)
+    const hpScale = opts.hpScale ?? (this.endlessHpScale() * this.freeplayHpScale())
     const e = new Enemy(def, this.lanes[laneIndex], laneIndex, dist, {
-      hpMult: DIFFICULTIES[this.difficulty].enemyHp * (surged ? 1.3 : 1)
-        * (opts.hpScale ?? this.endlessHpScale()) * this.campaignHpScale(),
+      hpMult: this.mods().enemyHp * (surged ? 1.3 : 1)
+        * hpScale * this.campaignHpScale() * (opts.hpMult ?? 1),
       toughness: this.endlessToughness(),
       speedMult: surged ? 1.12 : 1,
-      elite,
+      elite: elite || !!ladderAffix,
       affix,
       surged,
       waveTag: opts.waveTag ?? -1,
       noReward: opts.noReward ?? false,
+      raised: opts.raised ?? false,
     })
+    e.phaseHpScale = hpScale
     this.enemies.push(e)
     this.dynamic.add(e.group)
     // stage a boss's arrival the first time the player ever sees it; after
@@ -424,7 +491,7 @@ export class Game implements World {
     // not in `levels` - checkpointing one put a "Resume battle" button on the
     // menu that threw out of `levelById` the moment it was pressed. They are
     // also short, seeded and repeatable, so there is nothing worth saving.
-    if (this.isDaily || this.isWatches || this.isBellfoundry) return
+    if (this.isDaily || this.isWatches || this.isBellfoundry || this.isFreeplay) return
     if (this.enemies.some(e => e.alive) || this.projectiles.length) return
     if (this.waves.phase === 'spawning') return
     const waveIndex = this.waves.waveIndex + 1
@@ -477,7 +544,7 @@ export class Game implements World {
       pressure += 0.06 + progress * 0.12
       if (e.def.boss) boss = true
     }
-    const maxLives = DIFFICULTIES[this.difficulty].lives
+    const maxLives = this.mods().lives
     audio.setMusicState({
       pressure: Math.min(1, pressure),
       surge: this.surgeActive,
@@ -683,6 +750,10 @@ export class Game implements World {
     return 1 + 0.15 * armoryTier(this.save, 'drill')
   }
 
+  armoryTier(id: string): number {
+    return armoryTier(this.save, id)
+  }
+
   trapCooldownMult(): number {
     return 1 - 0.2 * armoryTier(this.save, 'runesmith')
   }
@@ -770,6 +841,7 @@ export class Game implements World {
     this.isWatches = opts.watches ?? this.isWatches
     this.isDaily = opts.daily !== undefined
     this.dailyDay = opts.daily ?? 0
+    this.isFreeplay = false
     this.isEndless = mode === 'endless'
     this.level = this.isEndless ? { ...level, waves: generateEndlessWaves(level, undefined, this.runSeed) } : level
     level = this.level
@@ -802,7 +874,7 @@ export class Game implements World {
 
     this.gold = level.startGold + 40 * armoryTier(this.save, 'coffers')
     this.shards = (level.startShards ?? 2) + 3 * armoryTier(this.save, 'prospector')
-    this.lives = DIFFICULTIES[difficulty].lives
+    this.lives = difficultyMods(level.id, difficulty, this.isEndless ? 'endless' : 'campaign').lives
     this.speed = 1
     this.paused = false
     this.time = 0
@@ -813,18 +885,37 @@ export class Game implements World {
     this.abilities.reinforce.cooldown = 0
     this.waves = new WaveManager(
       level,
-      (id, lane) => this.spawnEnemyAt(id, this.liveLane(lane), 0, {
-        surged: level.waves[this.waves!.waveIndex]?.surge ?? false,
+      (id, lane, extra) => this.spawnEnemyAt(id, this.liveLane(lane), 0, {
+        surged: this.waves!.waveAt(this.waves!.waveIndex)?.surge ?? false,
         eliteRoll: true,
         waveTag: this.waves!.waveIndex,
+        hpMult: extra?.hpMult,
+        affix: extra?.affix,
       }),
       (i) => {
-        const isFinal = i === level.waves.length - 1
-        const isSurge = level.waves[i]?.surge ?? false
+        const authored = this.waves!.authoredWaves
+        const isFinal = i === authored - 1 && !this.isFreeplay
+        const isSurge = this.waves!.waveAt(i)?.surge ?? false
+        const depth = i + 1 - authored
+        const boss = depth > 0 ? ladderRung(depth) : null
         this.hud.showBanner(
-          isFinal ? 'FINAL WAVE!' : isSurge ? 'VEILTIDE SURGE!' : `Wave ${i + 1}`,
-          isFinal ? 'final' : isSurge ? 'surge' : '',
+          isFinal ? 'FINAL WAVE!'
+            : boss ? (boss.ascendant ? 'AN ASCENDANT WALKS' : `${enemyDef(boss.boss).name.toUpperCase()}`)
+            : isSurge ? 'VEILTIDE SURGE!'
+            : depth > 0 ? `Held ${depth}` : `Wave ${i + 1}`,
+          isFinal || boss ? 'final' : isSurge ? 'surge' : '',
         )
+        // Long Night Rations: a life back every ten waves held past the end
+        if (depth > 0 && depth % 10 === 0 && (this.isFreeplay || this.isEndless)) {
+          const back = armoryTier(this.save, 'rations') >= 2 ? 2 : armoryTier(this.save, 'rations') >= 1 ? 1 : 0
+          if (back > 0) {
+            this.lives += back
+            this.hud.spawnFloater(window.innerWidth / 2, 156, `+${back} ${back === 1 ? 'life' : 'lives'} - rations`, 'gold')
+            this.hud.pulseLives()
+          }
+        }
+        // the next chunk is generated before the current one runs out
+        if (this.isFreeplay && this.waves!.totalWaves - (i + 1) < 3) this.extendFreeplay()
         this.sfx('horn', 0.9)
         for (const m of this.terrain!.spawnMarkers) {
           this.particles.magicImpact(m.position.x, 0.8, m.position.z, isSurge ? 0xdd6bff : 0x9f5aff)
@@ -863,6 +954,37 @@ export class Game implements World {
     if (this.isWatches) this.raiseGhosts()
     if (resume) this.applyCheckpoint(resume)
     else if (level.intro) this.hud.showToast(level.intro, 5)
+  }
+
+  /**
+   * Hold the line: keep playing on the board the player built.
+   *
+   * Called from the victory card after a campaign clear has been recorded.
+   * The stars, medals and experience for the clear are already written and
+   * will not be written twice; everything the player earns from here is
+   * freeplay depth, its own record, and experience per wave. Bosses come from
+   * the ladder in levels.ts, and the board's health scaling carries on from
+   * where the campaign left it rather than restarting.
+   */
+  holdTheLine(): void {
+    if (this.phase !== 'victory' || !this.level || !this.waves || this.isEndless || this.isDaily || this.isWatches || this.isBellfoundry) return
+    this.isFreeplay = true
+    this.phase = 'playing'
+    this.paused = false
+    this.hazard = this.level.hazard ? createHazard(this.level.hazard, this.level.id) : null
+    this.extendFreeplay()
+    this.hud.setChrome(true)
+    this.hud.showBanner('HOLD THE LINE', 'final')
+    this.sfx('horn', 0.9)
+    audio.startMusic()
+    this.onPhaseChange('playing')
+    telemetry.track({ type: 'battle_start', level: this.level.id, difficulty: this.difficulty, hero: this.hero?.heroDef.id ?? '', mode: 'freeplay', seed: this.runSeed, resumed: false })
+  }
+
+  private extendFreeplay(): void {
+    if (!this.level || !this.waves) return
+    const depthStart = this.waves.totalWaves - this.waves.authoredWaves
+    this.waves.extend(generateFreeplayChunk(this.level, this.runSeed, depthStart))
   }
 
   /** stand up every previous watch's defense as echoes */
@@ -1101,6 +1223,9 @@ export class Game implements World {
     audio.play(won ? 'victory' : 'defeat')
     audio.stopMusic()
     let stars = 0
+    // the star record is written a few lines down; the first-clear bonus has to
+    // be decided from what it was before that, or it is never true on a win
+    const hadStars = this.level ? (this.save.stars[this.level.id] ?? 0) > 0 : true
     if (this.level) {
       // honest scoring: lives held, perfect waves, nerve (early calls), weighted by difficulty
       const diffMult = { casual: 0.8, normal: 1, veteran: 1.3 }[this.difficulty]
@@ -1111,13 +1236,20 @@ export class Game implements World {
         Math.round(this.earlyCallSeconds) * 2 +
         (this.isEndless ? reached * 60 : won ? 1000 : 0)
       ) * diffMult)
-      const scoreKey = `${this.level.id}:${this.isEndless ? 'endless' : this.difficulty}`
+      const scoreKey = `${this.level.id}:${this.isEndless ? 'endless' : this.isFreeplay ? `freeplay:${this.difficulty}` : this.difficulty}`
       this.lastPrevBestScore = this.save.bestScore[scoreKey] ?? 0
       this.lastNewBestScore = this.lastScore > this.lastPrevBestScore
       if (this.lastNewBestScore) this.save.bestScore[scoreKey] = this.lastScore
 
       if (this.isWatches) {
         // the watches are their own thing; they must not move the campaign
+      } else if (this.isFreeplay) {
+        // the clear was already paid for; freeplay records only how far past
+        // it the line held, keyed by difficulty so a Veteran hold is its own number
+        const depth = this.waves ? this.waves.freeplayDepth - (won ? 0 : 1) : 0
+        const key = `${this.level.id}:${this.difficulty}`
+        this.lastNewWaveRecord = depth > (this.save.bestFreeplay[key] ?? 0)
+        if (this.lastNewWaveRecord) this.save.bestFreeplay[key] = depth
       } else if (this.isDaily) {
         // the daily is its own ladder: it must never move campaign progress,
         // or a lucky day would unlock maps the player has not earned
@@ -1133,7 +1265,7 @@ export class Game implements World {
         this.lastNewWaveRecord = reached > prevBestWave
         if (this.lastNewWaveRecord) this.save.bestEndless[this.level.id] = reached
       } else if (won) {
-        const maxLives = DIFFICULTIES[this.difficulty].lives
+        const maxLives = this.mods().lives
         stars = this.lives >= maxLives * 0.88 ? 3 : this.lives >= maxLives * 0.5 ? 2 : 1
         const idx = levels.findIndex(l => l.id === this.level!.id)
         if (idx >= 0) this.save.unlocked = Math.max(this.save.unlocked, Math.min(idx + 2, levels.length))
@@ -1147,13 +1279,13 @@ export class Game implements World {
       // experience: every wave held counts, win or lose, and the account
       // levels on it. Ghost watches are the one thing that pays nothing extra
       // over the first watch, so replaying a siege three times is not a farm.
-      const firstClear = won && !this.isEndless && !this.isDaily && !this.isWatches && !this.isBellfoundry
-        && (this.save.stars[this.level.id] ?? 0) === 0
+      const firstClear = won && !this.isEndless && !this.isDaily && !this.isWatches && !this.isBellfoundry && !hadStars
       this.lastXpBefore = this.save.xp
       this.lastXpEarned = battleXp({
-        mode: this.isDaily ? 'daily' : this.isWatches ? 'watches' : this.isBellfoundry ? 'bellfoundry' : this.isEndless ? 'endless' : 'campaign',
+        mode: this.isDaily ? 'daily' : this.isWatches ? 'watches' : this.isBellfoundry ? 'bellfoundry' : this.isEndless || this.isFreeplay ? 'endless' : 'campaign',
         difficulty: this.difficulty,
-        wavesHeld: this.wavesCleared(),
+        // freeplay pays only for the waves past the clear, which was paid for already
+        wavesHeld: this.isFreeplay ? Math.max(0, this.wavesCleared() - (this.waves?.authoredWaves ?? 0)) : this.wavesCleared(),
         won,
         firstClear,
       })
@@ -1220,6 +1352,7 @@ export class Game implements World {
     heroKills: number,
     stamp: RunStamp,
     daily?: DailyResult,
+    freeplay: boolean, freeplayDepth: number,
     xpEarned: number, levelBefore: number, levelAfter: number, newUnlocks: UnlockDef[],
   } {
     return {
@@ -1253,11 +1386,13 @@ export class Game implements World {
       newWaveRecord: this.lastNewWaveRecord,
       perfectWaves: this.perfectWaves,
       bestStreak: this.bestStreak,
-      noleak: this.lives === DIFFICULTIES[this.difficulty].lives,
+      noleak: this.lives === this.mods().lives,
       livesLeft: Math.max(0, this.lives),
       lastLeak: this.lastLeak,
       topKiller: this.topKiller(),
       heroKills: this.hero?.kills ?? 0,
+      freeplay: this.isFreeplay,
+      freeplayDepth: this.waves ? this.waves.freeplayDepth : 0,
       xpEarned: this.lastXpEarned,
       levelBefore: levelForXp(this.lastXpBefore),
       levelAfter: levelForXp(this.save.xp),

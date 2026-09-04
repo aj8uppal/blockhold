@@ -30,6 +30,11 @@ export const enemyModelFactories: Record<string, () => VoxModel> = {
   veilqueen: units.veilqueenModel,
   hexling: units.hexlingModel,
   wardbearer: units.wardbearerModel,
+  // the long tail's bosses, each with its own silhouette
+  veilregent: units.veilRegentModel,
+  ossuary: units.ossuaryModel,
+  veilempress: () => units.veilEmpressModel(false),
+  veilempressLanded: () => units.veilEmpressModel(true),
 }
 
 const soldierModelFactories: Record<string, () => VoxModel> = {
@@ -123,6 +128,8 @@ export interface EnemySpawnOpts {
   noReward?: boolean
   /** deep-endless hardening added to armor and magic resistance */
   toughness?: number
+  /** stood back up by the Ossuary: never again, and never for gold */
+  raised?: boolean
 }
 
 const ELITE_TINT = 0x9f3aff
@@ -168,6 +175,8 @@ export class Enemy {
   readonly surged: boolean
   readonly waveTag: number
   readonly noReward: boolean
+  /** raised once by the Ossuary; a raised thing does not rise twice */
+  readonly raised: boolean
   private speedMult: number
   phased = false
   private phaseTimer = 0
@@ -205,6 +214,7 @@ export class Enemy {
     this.surged = opts.surged ?? false
     this.waveTag = opts.waveTag ?? -1
     this.noReward = opts.noReward ?? false
+    this.raised = opts.raised ?? false
     this.speedMult = (opts.speedMult ?? 1) * (this.affix?.speed ?? 1)
     const hpMult = (opts.hpMult ?? 1) * (this.elite ? ELITE_HP * (this.affix?.hp ?? 1) : 1)
     this.hp = this.maxHp = Math.round(def.hp * hpMult)
@@ -318,11 +328,39 @@ export class Enemy {
       this.showDamage(dealt, world)
     }
     if (this.hp <= 0) {
+      if (this.def.phaseInto) {
+        // a second phase: the body is replaced on the spot by the next
+        // definition, with its own health, and nothing is paid for the first
+        this.phaseOut(world)
+        return dealt
+      }
       if (opts.credit) opts.credit.kills++
       this.die(world)
     }
     return dealt
   }
+
+  /**
+   * Become the next phase. The current enemy leaves quietly - no bounty, no
+   * shatter, no wave resolution - and its successor is spawned where it stood,
+   * carrying the wave tag so the wave still knows it is not over.
+   */
+  private phaseOut(world: World): void {
+    const next = this.def.phaseInto!
+    this.state = 'gone'
+    this.group.visible = false
+    for (const s of this.blockers) s.target = null
+    this.blockers = []
+    world.particles.explosion(this.pos.x, this.pos.y + 0.6, this.pos.z, 1.2)
+    world.particles.magicImpact(this.pos.x, this.pos.y + 0.8, this.pos.z, 0x9fe8ff)
+    world.sfx('explosion', 0.9)
+    world.shake(0.28)
+    world.floater(this.pos.x, this.pos.y + this.barY + 0.4, this.pos.z, 'She lands!', 'crit')
+    world.spawnEnemyAt(next, this.laneIndex, this.dist, { waveTag: this.waveTag, hpScale: this.phaseHpScale })
+  }
+
+  /** the health scaling this enemy was spawned with, so a second phase inherits it */
+  phaseHpScale = 1
 
   /** damage taken since the last number was shown above this enemy */
   private pendingDamage = 0
@@ -849,6 +887,8 @@ export class Soldier {
   private strikeT = 0
   private hitCount = 0
   private healPulseTimer = 0
+  /** 1 at the moment an axe leaves the hand, decaying: the throw pose */
+  private throwT = 0
   /** world time before which this soldier cannot take a new block */
   reengageAt = 0
   /** how much room this soldier takes up, so fighters do not stand inside each other */
@@ -935,6 +975,21 @@ export class Soldier {
     this.group.rotation.set(0, 0, 0)
   }
 
+  /**
+   * Throw. Called by the Warcamp when this soldier is the one hurling the
+   * axe, so the arm goes back and snaps forward as the projectile appears -
+   * the axe visibly comes from somebody rather than from the roof.
+   */
+  throwAxe(): void {
+    this.throwT = 1
+  }
+
+  /** where a thrown thing leaves this soldier's hand */
+  get handPos(): THREE.Vector3 {
+    const p = this.group.position
+    return new THREE.Vector3(p.x + Math.sin(this.yaw) * 0.12, p.y + 0.42, p.z + Math.cos(this.yaw) * 0.12)
+  }
+
   /** decay the damage flash; safe to call from any update path */
   protected tickFlash(dt: number): void {
     if (this.flash > 0) {
@@ -948,6 +1003,7 @@ export class Soldier {
     if (this.expiresAt !== null && world.time > this.expiresAt) { this.die(world); return }
     this.animT += dt
     this.strikeT = Math.max(0, this.strikeT - dt * 4.5)
+    this.throwT = Math.max(0, this.throwT - dt * 3.2)
     this.tickFlash(dt)
 
     // regen & heal pulse
@@ -1064,6 +1120,14 @@ export class Soldier {
       } else {
         this.animIdle()
       }
+    }
+    if (this.throwT > 0) {
+      // wound back at 1, whipped forward by 0: a sin over the decay reads as a
+      // fast overhand throw without a keyframe
+      const armR = this.part('armR')
+      if (armR) armR.rotation.x = -Math.sin(this.throwT * Math.PI) * 2.4 + (1 - this.throwT) * 0.6
+      const body = this.part('body')
+      if (body) body.rotation.x = Math.sin(this.throwT * Math.PI) * 0.25
     }
     this.group.rotation.y = this.yaw
     // height is composed here and nowhere else: the ground under the unit plus

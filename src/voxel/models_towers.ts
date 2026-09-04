@@ -426,6 +426,14 @@ function faultlineArsenal(branch: 0 | 1): VoxModel {
 function oathgateCitadel(branch: 0 | 1): VoxModel {
   const m = branch === 0 ? paladinSanctum() : berserkerHall()
   const sigil = branch === 0 ? 0xffe89f : 0xff7a3c
+  if (branch === 1) {
+    // a rack of throwing axes by the door: what this camp does, visible at rest
+    m.parts.base.push(box(-3.0, 1.6, 2.2, 0.3, 1.4, 1.8, 0x2a1f16))
+    for (const z of [1.6, 2.2, 2.8]) {
+      m.parts.base.push(box(-3.0, 2.6, z, 0.25, 1.6, 0.25, 0x7a5a30))
+      m.parts.base.push(box(-3.0, 3.4, z, 0.3, 0.7, 0.55, 0xb7bcc4))
+    }
+  }
   // the oath-gate arch over the mustering door
   m.parts.base.push(
     box(-1.7, 2.2, 3.9, 0.7, 4.4, 0.7, W.stoneDark),

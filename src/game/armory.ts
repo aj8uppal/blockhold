@@ -1,4 +1,5 @@
 import { SaveData } from '../core/save.ts'
+import { isUnlocked } from './progress.ts'
 
 /**
  * The Royal Armory: permanent kingdom upgrades bought with campaign stars.
@@ -12,6 +13,8 @@ export interface ArmoryTrack {
   name: string
   desc: string
   tierCosts: number[]     // star cost of each tier
+  /** shown only once this is unlocked on the account ladder (see progress.ts) */
+  requires?: { kind: 'tower' | 'hero', id: string }
 }
 
 export const ARMORY_TRACKS: ArmoryTrack[] = [
@@ -23,6 +26,13 @@ export const ARMORY_TRACKS: ArmoryTrack[] = [
   { id: 'coffers', icon: 'chest', name: 'Royal Coffers', desc: 'Begin every battle with +40 gold per tier.', tierCosts: [1, 2, 3] },
   { id: 'prospector', icon: 'gem', name: 'Prospector', desc: 'Begin every battle with +3 shards per tier.', tierCosts: [1, 2, 3] },
   { id: 'drill', icon: 'shield', name: 'Drill Sergeants', desc: 'Barracks soldiers and reinforcements gain +15% health per tier.', tierCosts: [1, 2, 3] },
+  // the long tail: tracks a full campaign cannot afford, bought with crown stars
+  { id: 'musterroll', icon: 'soldiers', name: 'Muster Roll', desc: 'Every barracks fields one more soldier.', tierCosts: [3] },
+  { id: 'bountyhunter', icon: 'skull', name: 'Bounty Hunter', desc: 'Elites pay +25% gold per tier.', tierCosts: [1, 2] },
+  { id: 'rations', icon: 'heart', name: 'Long Night Rations', desc: 'In freeplay and the Long Night, regain a life every ten waves held; two at the second tier.', tierCosts: [1, 2] },
+  { id: 'veilward', icon: 'castle', name: 'Veilward', desc: 'A boss reaching the gate costs ten lives instead of ending the battle outright.', tierCosts: [4] },
+  { id: 'siegecraft', icon: 'target', name: 'Siegecraft', desc: 'Ballistae reach +6% further per tier.', tierCosts: [1, 2, 2], requires: { kind: 'tower', id: 'ballista' } },
+  { id: 'lamplighters', icon: 'flame', name: 'Lamplighters', desc: 'Beacons light +0.3 further per tier.', tierCosts: [1, 2, 2], requires: { kind: 'tower', id: 'beacon' } },
 ]
 
 /**
@@ -42,8 +52,28 @@ export function hasArmory(save: SaveData, id: string): boolean {
   return armoryTier(save, id) > 0
 }
 
+/**
+ * Stars from victories plus one crown star per map conquered on Veteran.
+ *
+ * The board now costs sixty against thirty campaign stars, and the missing
+ * thirty are the grind: a Veteran clear is worth a fourth star, so replaying
+ * every map on the hardest setting is what completes the Armory. The crown
+ * comes from the existing `veteran` medal rather than a fourth value in
+ * `stars`, because the save parser clamps stars to three and every device
+ * already merges medals as a union - so old clears count retroactively and
+ * nothing has to migrate.
+ */
 export function starsEarned(save: SaveData): number {
-  return Object.values(save.stars).reduce((a, b) => a + b, 0)
+  return Object.values(save.stars).reduce((a, b) => a + b, 0) + crownStars(save)
+}
+
+export function crownStars(save: SaveData): number {
+  return Object.values(save.medals ?? {}).filter(m => Array.isArray(m) && m.includes('veteran')).length
+}
+
+/** the tracks this account can see: the rest wait behind the ladder */
+export function visibleTracks(save: SaveData): ArmoryTrack[] {
+  return ARMORY_TRACKS.filter(t => !t.requires || isUnlocked(save, t.requires.kind, t.requires.id))
 }
 
 export function starsSpent(save: SaveData): number {
@@ -70,6 +100,7 @@ export function buyTier(save: SaveData, id: string): boolean {
   const track = ARMORY_TRACKS.find(t => t.id === id)
   if (!track) return false
   const tier = save.armory[id] ?? 0
+  if (track.requires && !isUnlocked(save, track.requires.kind, track.requires.id)) return false
   if (tier >= track.tierCosts.length) return false
   if (starsAvailable(save) < track.tierCosts[tier]) return false
   save.armory[id] = tier + 1

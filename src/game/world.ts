@@ -38,6 +38,8 @@ export interface World {
   towerDamageMult(kind: string): number
   splashMult(): number
   soldierHpMult(): number
+  /** purchased tier of an Armory track, 0 when unbought */
+  armoryTier(id: string): number
   trapCooldownMult(): number
   shards: number
   /** A* route between two world points, or null if unreachable */
@@ -73,6 +75,8 @@ export type ProjectileSpec =
   | { kind: 'chain', from: THREE.Vector3, first: Enemy, damage: number, targets: number, falloff: number, stunChance: number, stunDur: number, mrPierce?: number, credit?: KillCredit, world: World }
   | { kind: 'warlockBolt', from: THREE.Vector3, target: Soldier, damage: number, world: World }
   | { kind: 'meteor', at: THREE.Vector3, damage: number, world: World }
+  /** a Stormhowl's thrown axe: leaves a soldier's hand, tumbles, and hits a flyer */
+  | { kind: 'axe', from: THREE.Vector3, target: Enemy, damage: number, armorPierce?: number, credit?: KillCredit, world: World }
   /**
    * A ballista bolt: flies a straight line from `from` through `aim` out to
    * `reach`, and strikes everything it passes. `falloff` scales each hit after

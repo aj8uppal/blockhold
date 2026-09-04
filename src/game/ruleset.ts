@@ -17,8 +17,11 @@
  *      produces, and all three shipped while this constant still said 1 - so
  *      results from those builds are recorded under a version whose rules they
  *      were not played by. Bumping here is what stops that compounding.
+ *   3  per-map Veteran health and elite chance on the three late maps, the
+ *      Armory's six new tracks, the Veilward changing what a boss at the gate
+ *      costs, and the freeplay ladder. All change what a seed produces.
  */
-export const RULESET_VERSION = 2
+export const RULESET_VERSION = 3
 
 /** identifies a reproducible run */
 export interface RunStamp {

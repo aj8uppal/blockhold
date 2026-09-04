@@ -52,21 +52,21 @@ describe('loadSave', () => {
   it('returns defaults for non-object JSON', () => {
     for (const raw of ['null', '42', '"not an object"']) {
       getItem.mockReturnValue(raw)
-      expect(loadSave()).toEqual({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestScore: {}, medals: {}, seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false, xp: 0 })
+      expect(loadSave()).toEqual({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestFreeplay: {}, bestScore: {}, medals: {}, seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false, xp: 0 })
     }
   })
 
   it('returns defaults for invalid JSON without throwing', () => {
     getItem.mockReturnValue('{ definitely not json')
 
-    expect(loadSave()).toEqual({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestScore: {}, medals: {}, seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false, xp: 0 })
+    expect(loadSave()).toEqual({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestFreeplay: {}, bestScore: {}, medals: {}, seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false, xp: 0 })
   })
 })
 
 describe('save durability', () => {
   const sample: SaveData = {
     unlocked: 4, stars: { greenhollow: 3, frostmere: 2 }, armory: { coffers: 1 },
-    bestEndless: { greenhollow: 41 }, bestScore: { 'greenhollow:normal': 9100 },
+    bestEndless: { greenhollow: 41 }, bestFreeplay: { 'greenhollow:normal': 12 }, bestScore: { 'greenhollow:normal': 9100 },
     medals: { greenhollow: ['noleak'] }, seenEnemies: ['juggernaut'], taughtBasics: true, lastHero: 'liora', sfxMuted: false, musicMuted: true, xp: 1234,
   }
 

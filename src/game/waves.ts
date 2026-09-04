@@ -1,8 +1,8 @@
-import { LevelDef } from './types.ts'
+import { LevelDef, WaveDef } from './types.ts'
 import { WAVE_BREAK, EARLY_CALL_GOLD_PER_SEC } from './levels.ts'
 import { enemyDef } from './enemyDefs.ts'
 
-interface QueuedSpawn { time: number, enemy: string, lane: number }
+interface QueuedSpawn { time: number, enemy: string, lane: number, hpMult?: number, affix?: string }
 
 export interface WavePreviewEntry {
   name: string
@@ -37,9 +37,40 @@ export class WaveManager {
   private queue: QueuedSpawn[] = []
   private elapsed = 0
 
-  constructor(readonly level: LevelDef, private onSpawn: (enemy: string, lane: number) => void, private onWaveStart: (index: number) => void) {}
+  /**
+   * The waves this battle will run. Starts as the map's authored list and can
+   * be extended by freeplay; `level.waves` itself is never touched, because
+   * `campaignScale()` reads its length and appending there would silently
+   * re-balance the campaign.
+   */
+  private source: WaveDef[]
 
-  get totalWaves(): number { return this.level.waves.length }
+  constructor(
+    readonly level: LevelDef,
+    private onSpawn: (enemy: string, lane: number, extra?: { hpMult?: number, affix?: string }) => void,
+    private onWaveStart: (index: number) => void,
+  ) {
+    this.source = level.waves
+  }
+
+  /** the number of authored waves; everything past it is freeplay depth */
+  get authoredWaves(): number { return this.level.waves.length }
+
+  /** how many waves past the authored end the battle has gone (0 in the campaign) */
+  get freeplayDepth(): number { return Math.max(0, this.waveIndex + 1 - this.authoredWaves) }
+
+  /** append waves and reopen the countdown: the field must be clear when this is called */
+  extend(more: WaveDef[]): void {
+    this.source = [...this.source, ...more]
+    this.phase = 'countdown'
+    this.countdown = WAVE_BREAK
+    this.queue = []
+  }
+
+  /** the wave at an index, from whichever source holds it */
+  waveAt(i: number): WaveDef | undefined { return this.source[i] }
+
+  get totalWaves(): number { return this.source.length }
   get isLastWaveStarted(): boolean { return this.waveIndex >= this.totalWaves - 1 }
   get allSpawned(): boolean { return this.isLastWaveStarted && this.queue.length === 0 }
 
@@ -61,7 +92,7 @@ export class WaveManager {
    * because hover does not exist on touch.
    */
   nextWavePreview(): WavePreviewEntry[] | null {
-    const next = this.level.waves[this.waveIndex + 1]
+    const next = this.source[this.waveIndex + 1]
     if (!next) return null
     const counts = new Map<string, number>()
     for (const g of next.groups) {
@@ -103,7 +134,7 @@ export class WaveManager {
   }
 
   nextWaveIsSurge(): boolean {
-    return !!this.level.waves[this.waveIndex + 1]?.surge
+    return !!this.source[this.waveIndex + 1]?.surge
   }
 
   /** bonus gold if the player calls now */
@@ -123,11 +154,11 @@ export class WaveManager {
     this.waveIndex = index
     this.phase = 'spawning'
     this.elapsed = 0
-    const wave = this.level.waves[index]
+    const wave = this.source[index]
     this.queue = []
     for (const grp of wave.groups) {
       for (let i = 0; i < grp.count; i++) {
-        this.queue.push({ time: grp.delay + i * grp.interval, enemy: grp.enemy, lane: grp.lane ?? 0 })
+        this.queue.push({ time: grp.delay + i * grp.interval, enemy: grp.enemy, lane: grp.lane ?? 0, hpMult: grp.hpMult, affix: grp.affix })
       }
     }
     this.queue.sort((a, b) => a.time - b.time)
@@ -148,14 +179,14 @@ export class WaveManager {
     this.elapsed += dt
     while (this.queue.length > 0 && this.queue[0].time <= this.elapsed) {
       const s = this.queue.shift()!
-      this.onSpawn(s.enemy, s.lane)
+      this.onSpawn(s.enemy, s.lane, s.hpMult !== undefined || s.affix ? { hpMult: s.hpMult, affix: s.affix } : undefined)
     }
     if (this.queue.length === 0) {
       if (this.isLastWaveStarted) {
         this.phase = 'finished'
       } else {
         this.phase = 'countdown'
-        this.countdown = this.level.waves[this.waveIndex]?.breakAfter ?? WAVE_BREAK
+        this.countdown = this.source[this.waveIndex]?.breakAfter ?? WAVE_BREAK
       }
     }
   }

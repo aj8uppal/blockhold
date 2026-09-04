@@ -5,6 +5,8 @@ export interface SaveData {
   stars: Record<string, number>
   armory: Record<string, number>  // upgrade track id -> purchased tier
   bestEndless: Record<string, number>  // level id -> deepest wave survived
+  /** "levelId:difficulty" -> deepest freeplay wave held past a map's end */
+  bestFreeplay: Record<string, number>
   bestScore: Record<string, number>    // "levelId:difficulty|endless" -> best score
   medals: Record<string, string[]>     // level id -> earned medals (veteran, noleak)
   lastHero: string
@@ -51,7 +53,7 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
 }
 
 const DEFAULT_SAVE = (): SaveData =>
-  ({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestScore: {}, medals: {}, seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false, xp: 0 })
+  ({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestFreeplay: {}, bestScore: {}, medals: {}, seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false, xp: 0 })
 
 /** validate anything claiming to be a save; the same gate for disk and for imports */
 export function parseSave(d: unknown): SaveData | null {
@@ -77,6 +79,12 @@ export function parseSave(d: unknown): SaveData | null {
             bestEndless[k] = clampInt(v, 0, 999, 0)
           }
         }
+        const bestFreeplay: Record<string, number> = {}
+        if (o.bestFreeplay && typeof o.bestFreeplay === 'object') {
+          for (const [k, v] of Object.entries(o.bestFreeplay as Record<string, unknown>)) {
+            bestFreeplay[k] = clampInt(v, 0, 9999, 0)
+          }
+        }
         const bestScore: Record<string, number> = {}
         if (o.bestScore && typeof o.bestScore === 'object') {
           for (const [k, v] of Object.entries(o.bestScore as Record<string, unknown>)) {
@@ -94,6 +102,7 @@ export function parseSave(d: unknown): SaveData | null {
           stars,
           armory,
           bestEndless,
+          bestFreeplay,
           bestScore,
           medals,
           lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',

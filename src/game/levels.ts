@@ -1,4 +1,5 @@
 import { LevelDef, WaveDef } from './types.ts'
+import { enemyDef } from './enemyDefs.ts'
 
 // Wave authoring helper: g(enemy, count, interval, delay, lane)
 const g = (enemy: string, count: number, interval: number, delay = 0, lane = 0) =>
@@ -676,6 +677,81 @@ export function generateEndlessWaves(level: LevelDef, count = 200, seed = level.
   }
   return waves
 }
+
+/**
+ * Freeplay: the waves after a map's last authored wave.
+ *
+ * Bloons' best trick is that a cleared map is not over. Here, "Hold the line"
+ * keeps the board the player built and keeps sending waves, generated in
+ * chunks of twenty so a resumed run gets the same chunk again. Each chunk is
+ * seeded from the run, the map and its own depth, so chunk N is the same
+ * whether it was generated in one sitting or across three.
+ *
+ * The boss ladder climbs rather than rotating: the campaign's bosses in the
+ * order they were met, then two the campaign never shows, then the ladder
+ * repeats from the Veilqueen as Ascendants - more health, a named affix, and
+ * from wave 80 a second boss at the first one's heel. The multipliers on the
+ * early rungs are what make it a ladder at all: the Hollow King's 1,150 base
+ * health would be a speed bump at wave 10 of a maxed board.
+ */
+export const FREEPLAY_CHUNK = 20
+
+export interface LadderRung { boss: string, hpMult: number, ascendant: boolean, second?: { boss: string, hpMult: number } }
+
+/** the boss due at a given freeplay depth (1-based wave past the authored end), or null */
+export function ladderRung(depth: number): LadderRung | null {
+  if (depth <= 0 || depth % 10 !== 0) return null
+  const rung = depth / 10
+  const first: [string, number][] = [
+    ['hollowking', 3.2], ['juggernaut', 1.1], ['veilqueen', 1.55], ['veilregent', 1.0], ['ossuary', 1.0], ['veilempress', 1.0],
+  ]
+  if (rung <= first.length) {
+    const [boss, hpMult] = first[rung - 1]
+    return { boss, hpMult, ascendant: false }
+  }
+  // past the Empress the ladder repeats from the Veilqueen, ascended
+  const loop = first.slice(2)
+  const [boss, base] = loop[(rung - first.length - 1) % loop.length]
+  const out: LadderRung = { boss, hpMult: base * 1.6, ascendant: true }
+  if (depth >= 80) {
+    const [second, secondBase] = loop[(rung - first.length) % loop.length]
+    out.second = { boss: second, hpMult: secondBase * 1.6 * 0.55 }
+  }
+  return out
+}
+
+/** a stable seed for one chunk: the same run, map and depth always agree */
+function chunkSeed(runSeed: number, levelId: string, depthStart: number): number {
+  let h = (runSeed ^ 0x9e3779b9) >>> 0
+  for (const ch of `${levelId}#${depthStart}`) {
+    h ^= ch.charCodeAt(0)
+    h = Math.imul(h, 16777619) >>> 0
+  }
+  return h >>> 0
+}
+
+export function generateFreeplayChunk(level: LevelDef, runSeed: number, depthStart: number, count = FREEPLAY_CHUNK): WaveDef[] {
+  // the Long Night's generator already produces well-shaped waves; freeplay
+  // uses the deep end of it (the full pool) and adds the ladder on top
+  const deep = generateEndlessWaves(level, depthStart + count + 40, chunkSeed(runSeed, level.id, depthStart)).slice(depthStart + 40)
+  const out: WaveDef[] = []
+  for (let i = 0; i < count; i++) {
+    const depth = depthStart + i + 1
+    const base = deep[i]
+    // the generator's own tenth-wave boss is replaced by the ladder's
+    const groups = base.groups.filter(g => !enemyDef(g.enemy).boss)
+    const rung = ladderRung(depth)
+    if (rung) {
+      groups.push({ enemy: rung.boss, count: 1, interval: 1, delay: 8, lane: groups[0]?.lane ?? 0, hpMult: rung.hpMult, affix: rung.ascendant ? ASCENDANT_AFFIXES[(depth / 10) % ASCENDANT_AFFIXES.length] : undefined })
+      if (rung.second) groups.push({ enemy: rung.second.boss, count: 1, interval: 1, delay: 14, lane: groups[0]?.lane ?? 0, hpMult: rung.second.hpMult })
+    }
+    out.push({ groups, surge: depth % 5 === 0 && !rung })
+  }
+  return out
+}
+
+/** the affixes an Ascendant boss cycles through, in ladder order */
+export const ASCENDANT_AFFIXES = ['bulwark', 'swift', 'nullward', 'commander']
 
 export const WAVE_BREAK = 22          // seconds between waves
 export const EARLY_CALL_GOLD_PER_SEC = 1.6

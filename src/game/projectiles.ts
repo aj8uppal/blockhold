@@ -124,6 +124,55 @@ class BoltProjectile implements Projectile {
   }
 }
 
+/**
+ * A Stormhowl's axe.
+ *
+ * The Warcamp's whole promise is "the only barracks that can touch a flyer",
+ * and for a long time the thing it threw was an arrow: the capstone's one
+ * visible idea was invisible. This is the axe. It leaves a soldier's hand,
+ * arcs high because it is thrown rather than shot, and tumbles end over end
+ * the whole way, which is the one motion that reads as "thrown axe" from any
+ * distance.
+ */
+class AxeProjectile extends Ballistic {
+  private spin = 0
+  constructor(private spec: Extract<ProjectileSpec, { kind: 'axe' }>) {
+    super(
+      buildModel(env.axeProjectile(), 'proj:axe', { castShadow: false }),
+      spec.from,
+      spec.from.distanceTo(spec.target.pos),
+      7.5,
+      0.7,
+    )
+  }
+  protected targetPos(): THREE.Vector3 {
+    const t = this.spec.target
+    return t.state !== 'gone' ? t.pos.clone().setY(t.pos.y + 0.3) : this.mesh.position.clone()
+  }
+  update(dt: number): void {
+    super.update(dt)
+    if (this.done) return
+    // Ballistic.update re-aims the haft along the flight every frame with
+    // lookAt, so the accumulated tumble is re-applied on top of that aim
+    this.spin += dt * 16
+    this.mesh.rotateX(this.spin)
+  }
+  protected impact(): void {
+    const { target, world, damage, credit, armorPierce } = this.spec
+    if (target.alive) {
+      const dealt = target.takeDamage(damage, 'physical', world, { credit, armorPierce })
+      if (dealt > 0) {
+        world.particles.hitSpark(target.pos.x, target.pos.y + 0.4, target.pos.z, 0xd8452f)
+        world.sfx('hit', 0.6)
+      }
+    } else {
+      const p = this.mesh.position
+      world.particles.hitSpark(p.x, p.y, p.z)
+      world.sfx('hit', 0.2)
+    }
+  }
+}
+
 class BombProjectile extends Ballistic {
   constructor(private spec: Extract<ProjectileSpec, { kind: 'bomb' }>, arcOverride?: number, speed = 6) {
     super(
@@ -435,6 +484,7 @@ export function createProjectile(spec: ProjectileSpec): Projectile {
     case 'warlockBolt': return new WarlockBolt(spec)
     case 'meteor': return new Meteor(spec)
     case 'spear': return new SpearProjectile(spec)
+    case 'axe': return new AxeProjectile(spec)
   }
 }
 

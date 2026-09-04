@@ -22,6 +22,15 @@ export interface EnemyDef {
   hexer?: { range: number, duration: number }
   /** shields enemies ahead of it (closer to the gate) within radius */
   wardAura?: { radius: number, reduction: number }
+  /** the Ossuary: enemies that die within radius stand back up once, as this */
+  raises?: { radius: number, id: string }
+  /**
+   * A two-phase boss: at zero health it does not die, it becomes this other
+   * definition on the spot, with that definition's own health. The Veil
+   * Empress lands and walks. Done as a new definition rather than by mutating
+   * this one, because definitions are shared by every enemy built from them.
+   */
+  phaseInto?: string
   // melee vs blockers
   attackDamage: [number, number]
   attackInterval: number
@@ -141,6 +150,10 @@ export interface WaveGroup {
   interval: number      // seconds between spawns
   delay: number         // seconds after wave start
   lane?: number         // which spawn lane (default 0)
+  /** freeplay's boss ladder: this group's health relative to the definition */
+  hpMult?: number
+  /** an Ascendant boss carries a named elite affix; bosses are never rolled one */
+  affix?: string
 }
 
 export interface WaveDef {

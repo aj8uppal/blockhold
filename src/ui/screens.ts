@@ -1,7 +1,8 @@
 import { levels } from '../game/levels.ts'
-import { Difficulty, DIFFICULTIES, HeroId } from '../game/types.ts'
+import { Difficulty, HeroId } from '../game/types.ts'
+import { difficultyMods } from '../game/difficulty.ts'
 import { HERO_DEFS } from '../game/hero.ts'
-import { ARMORY_TRACKS, starsAvailable, starsEarned, buyTier, respec, armoryTier } from '../game/armory.ts'
+import { starsAvailable, starsEarned, buyTier, respec, armoryTier, crownStars, visibleTracks } from '../game/armory.ts'
 import { exportSave, importSave, writeSave } from '../core/save.ts'
 import type { SaveData } from '../core/save.ts'
 import { icon } from './icons.ts'
@@ -61,6 +62,7 @@ export interface BattleStats {
   topKiller: { name: string, kills: number } | null,
   heroKills: number,
   daily?: DailyResult,
+  freeplay: boolean, freeplayDepth: number,
   xpEarned: number, levelBefore: number, levelAfter: number, newUnlocks: UnlockDef[],
 }
 
@@ -99,6 +101,7 @@ export class Screens {
   onPlayWatches: () => void = () => {}
   onPlayBellfoundry: () => void = () => {}
   onNextWatch: () => void = () => {}
+  onHoldTheLine: () => void = () => {}
 
   constructor(private save: () => SaveData) {
     this.root = document.getElementById('screens')!
@@ -294,11 +297,13 @@ export class Screens {
       el('div', 'level-sub', card, lvl.subtitle)
       el('div', 'level-meta', card, `${lvl.waves.length} waves · ${lvl.lanes.length === 1 ? 'single road' : `${lvl.lanes.length} roads`}`)
       const best = save.bestEndless[lvl.id] ?? 0
+      const held = Math.max(...(['casual', 'normal', 'veteran'] as const).map(d => save.bestFreeplay?.[`${lvl.id}:${d}`] ?? 0))
       const medals = save.medals[lvl.id] ?? []
       el('div', 'level-stars', card, '★'.repeat(stars) + '<span class="dim">' + '★'.repeat(3 - stars) + '</span>' +
         (medals.includes('noleak') ? `<span class="level-medal" title="Flawless: won without a single leak"> ${icon('medal')}</span>` : '') +
         (medals.includes('veteran') ? `<span class="level-medal" title="Conquered on Veteran"> ${icon('medal', 'vet')}</span>` : '') +
-        (best > 0 ? `<span class="level-endless"> ${icon('moon')}${best}</span>` : ''))
+        (best > 0 ? `<span class="level-endless"> ${icon('moon')}${best}</span>` : '') +
+        (held > 0 ? `<span class="level-endless" title="Waves held past the end"> ${icon('castle')}+${held}</span>` : ''))
       // the goal ladder: always show the next rung
       if (!locked) {
         const goal = stars === 0 ? 'Clear the map'
@@ -523,10 +528,13 @@ export class Screens {
     el('div', 'diff-sub', card, 'Choose your challenge')
     const row = el('div', 'diff-row', card)
     for (const key of ['casual', 'normal', 'veteran'] as Difficulty[]) {
-      const d = DIFFICULTIES[key]
+      // the numbers this map will actually use, which on the late maps differ
+      // from the global table; a picker that showed the table would lie
+      const d = difficultyMods(levelId, key, (mode as GameMode) === 'endless' ? 'endless' : 'campaign')
       const btn = el('button', `diff-option ${key}`, row) as HTMLButtonElement
       btn.innerHTML = `<span class="diff-name">${d.name}</span><span class="diff-blurb">${d.blurb}</span>` +
-        `<span class="diff-stats">${icon('heart')} ${d.lives} · foes ${Math.round(d.enemyHp * 100)}% · gold ${Math.round(d.bounty * 100)}%</span>`
+        `<span class="diff-stats">${icon('heart')} ${d.lives} · foes ${Math.round(d.enemyHp * 100)}% · gold ${Math.round(d.bounty * 100)}%` +
+        `${d.eliteChance ? ` · elites ${Math.round(d.eliteChance * 100)}%` : ''}</span>`
       btn.onclick = () => this.onPlayLevel(levelId, key, hero, mode)
     }
     const cancel = el('button', 'btn ghost small', card, 'Cancel') as HTMLButtonElement
@@ -542,9 +550,16 @@ export class Screens {
     const wrap = el('div', 'screen end-screen', this.root)
     const card = el('div', `end-card ${won ? 'won' : 'lost'}`, wrap)
     if (daily) { this.renderDailyResult(card, daily, won); return }
-    el('div', 'end-emoji', card, icon(endless ? 'moon' : won ? 'trophy' : 'skull'))
-    el('h2', 'end-title', card, endless ? 'The Long Night ends' : won ? 'Victory!' : 'The gate has fallen')
-    if (endless && stats) {
+    const freeplay = stats?.freeplay ?? false
+    el('div', 'end-emoji', card, icon(endless ? 'moon' : freeplay ? 'castle' : won ? 'trophy' : 'skull'))
+    el('h2', 'end-title', card, endless ? 'The Long Night ends' : freeplay ? 'The line breaks' : won ? 'Victory!' : 'The gate has fallen')
+    if (freeplay && stats) {
+      // how far past the map's end the line held, which is the whole score
+      const held = Math.max(0, stats.freeplayDepth - 1)
+      el('div', 'end-sub', card,
+        `You held the line <b>${held}</b> wave${held === 1 ? '' : 's'} past the end of ${levels[idx]?.name ?? 'the map'}` +
+        (stats.newWaveRecord ? ` — a new record! ${icon('medal')}` : ''))
+    } else if (endless && stats) {
       // held and fell-on are different numbers, and reporting only one of them
       // next to the record read as though the record *was* the result
       el('div', 'end-sub', card,
@@ -583,8 +598,15 @@ export class Screens {
     }
     if (stats) this.renderXp(card, stats)
     const row = el('div', 'end-actions', card)
+    // A cleared map is not over. Holding the line keeps the board the player
+    // built and keeps the waves coming, with the ladder of bosses beyond.
+    if (won && !endless && !freeplay && !daily && this.watchesRemaining === 0) {
+      const hold = el('button', 'btn primary', row, `${icon('castle')} Hold the line`) as HTMLButtonElement
+      hold.title = 'Keep your defense and keep fighting: harder waves, bigger bosses, a record to set'
+      hold.onclick = () => this.onHoldTheLine()
+    }
     if (hasNext) {
-      const next = el('button', 'btn primary', row, 'Next battle →') as HTMLButtonElement
+      const next = el('button', `btn${won && !endless && !freeplay ? '' : ' primary'}`, row, 'Next battle →') as HTMLButtonElement
       next.onclick = () => this.onPlayLevel(levels[idx + 1].id)
     }
     const retry = el('button', `btn ${won && !endless ? '' : 'primary'}`, row, endless ? 'Descend again' : won ? 'Replay' : 'Try again') as HTMLButtonElement
@@ -846,9 +868,11 @@ export class Screens {
     const grid = el('div', 'armory-grid', card)
 
     const rerender = () => {
-      starsLine.innerHTML = `<b>${starsAvailable(save)}★</b> to spend · ${starsEarned(save)}★ earned in battle`
+      const crowns = crownStars(save)
+      starsLine.innerHTML = `<b>${starsAvailable(save)}★</b> to spend · ${starsEarned(save)}★ earned` +
+        (crowns ? ` <span class="dim">(${crowns} crown ${crowns === 1 ? 'star' : 'stars'} from Veteran clears)</span>` : ' <span class="dim">· a Veteran clear adds a fourth crown star</span>')
       grid.innerHTML = ''
-      for (const track of ARMORY_TRACKS) {
+      for (const track of visibleTracks(save)) {
         const tier = armoryTier(save, track.id)  // clamped to the track's real tier count
         const maxed = tier >= track.tierCosts.length
         const nextCost = maxed ? 0 : track.tierCosts[tier]

@@ -198,7 +198,12 @@ export class Tower {
   get isBeacon(): boolean { return this.kind === 'beacon' }
   /** the beacon's light reaches this far; the perk widens it */
   get auraReach(): number {
-    return this.def.range + (this.perk?.id === 'farsight' ? 0.6 : 0)
+    return this.def.range + (this.perk?.id === 'farsight' ? 0.6 : 0) + 0.3 * this.world.armoryTier('lamplighters')
+  }
+
+  /** how many soldiers this barracks fields: its tier's squad plus the Muster Roll */
+  get squadSize(): number {
+    return (this.def.soldierCount ?? 3) + (this.isBarracks ? this.world.armoryTier('musterroll') : 0)
   }
 
   /**
@@ -282,8 +287,9 @@ export class Tower {
 
   /** the reach a given tier would have from this plot */
   rangeFor(def: TowerLevelDef): number {
-    if (def.aura) return def.range + (this.perk?.id === 'farsight' ? 0.6 : 0)
+    if (def.aura) return def.range + (this.perk?.id === 'farsight' ? 0.6 : 0) + 0.3 * this.world.armoryTier('lamplighters')
     return (def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0))
+      * (this.kind === 'ballista' ? 1 + 0.06 * this.world.armoryTier('siegecraft') : 1)
       * (this.has('ranging') ? 1.12 : 1)
       * (this.has('longshot') ? 1.10 : 1)
       * (this.onHighGround ? 1 + RAMPART_RANGE_BONUS : 1)
@@ -516,7 +522,7 @@ export class Tower {
   }
 
   soldierHome(i: number): THREE.Vector3 {
-    const angle = (i / (this.def.soldierCount ?? 3)) * Math.PI * 2 + 0.6
+    const angle = (i / this.squadSize) * Math.PI * 2 + 0.6
     return new THREE.Vector3(
       this.rallyPoint.x + Math.sin(angle) * 0.3,
       0,
@@ -551,7 +557,7 @@ export class Tower {
       hp: Math.round(base.hp * hpMult),
       damage: [Math.round(base.damage[0] * dmgMult), Math.round(base.damage[1] * dmgMult)] as [number, number],
     }
-    for (let i = 0; i < (this.def.soldierCount ?? 3); i++) {
+    for (let i = 0; i < this.squadSize; i++) {
       const s = new Soldier(def, this.doorPos(), this.soldierHome(i))
       s.credit = this   // soldiers fight for their barracks' tally
       this.soldiers.push(s)
@@ -830,13 +836,23 @@ export class Tower {
         break
       }
       case 'barracks': {
-        // Stormhowl Warcamp: the only barracks that answers the sky
+        // Stormhowl Warcamp: the only barracks that answers the sky. The axe
+        // comes from the nearest living berserker's hand, and that berserker
+        // throws it; if every one of them is down, the camp itself hurls one.
+        let thrower: Soldier | null = null
+        let best = Infinity
+        for (const s of this.soldiers) {
+          if (!s.alive) continue
+          const d = Math.hypot(s.group.position.x - target.pos.x, s.group.position.z - target.pos.z)
+          if (d < best) { best = d; thrower = s }
+        }
+        const origin = thrower ? thrower.handPos : from
+        thrower?.throwAxe()
         world.fireProjectile({
-          kind: 'arrow', from, target, damage: dmg, crit: false, credit: this, world,
+          kind: 'axe', from: origin, target, damage: dmg, credit: this, world,
           armorPierce: this.has('enchanted') ? 0.3 : undefined,
         })
         world.sfx('arrow', 0.8)
-        world.particles.hitSpark(from.x, from.y, from.z, 0xd8452f)
         break
       }
       case 'arrow': {

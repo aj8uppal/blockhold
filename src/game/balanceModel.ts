@@ -1,7 +1,8 @@
 import { enemyDef } from './enemyDefs.ts'
 import { buildPaths } from './path.ts'
 import { towerTrees } from './towerDefs.ts'
-import { DIFFICULTIES, type Difficulty, type LevelDef, type TowerLevelDef, type WaveDef } from './types.ts'
+import { type Difficulty, type LevelDef, type TowerKind, type TowerLevelDef, type WaveDef } from './types.ts'
+import { difficultyMods } from './difficulty.ts'
 
 /**
  * A time-based model of whether a wave actually gets through.
@@ -113,21 +114,67 @@ export interface WaveVerdict {
  * like it decayed into nothing. Gold stops mattering once the board is full;
  * past that point the only way up is upgrading what is already standing.
  */
-export function affordableDps(gold: number, plots = 14): number {
+/**
+ * What a player brings to the board besides gold.
+ *
+ * The model used to assume every family on every map. That cannot express the
+ * long tail's central promise - "this map on Veteran needs the Ballista and a
+ * finished Armory" - so a profile names what is available: the unlocked
+ * families, the starting gold the Armory adds, and the flat damage bonus a
+ * beacon's light puts on the towers it reaches. It is still a static model and
+ * it still knows nothing about placement, pierce or blocking; it is a
+ * regression alarm for the gate, not a proof that the gate holds.
+ */
+export interface BuildProfile {
+  kinds: TowerKind[]
+  /** extra gold every battle starts with (Royal Coffers) */
+  bonusGold: number
+  /** multiplier on tower damage from the best beacon in reach, e.g. 1.22 */
+  auraDamage: number
+  /**
+   * Consider both tier-4 branches rather than only the first. The campaign's
+   * difficulty tests were tuned against branch A alone, so the default profile
+   * keeps that; the gate profiles look at both, since a player grinding the
+   * late maps will pick whichever side answers the board.
+   */
+  bothBranches?: boolean
+}
+
+export const BASE_KINDS: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks']
+/** the roster before any grind: four families, nothing bought, nothing lit */
+export const PRE_GRIND: BuildProfile = { kinds: BASE_KINDS, bonusGold: 0, auraDamage: 1, bothBranches: true }
+/** level 20 with the board finished: every family, full Coffers, a High Beacon's light */
+export const FULL_KIT: BuildProfile = {
+  kinds: ['arrow', 'mage', 'cannon', 'barracks', 'ballista', 'beacon'],
+  bonusGold: 120,
+  auraDamage: 1.22,
+  bothBranches: true,
+}
+/** the baseline the campaign was tuned against: every family, nothing else */
+const EVERYTHING: BuildProfile = {
+  kinds: ['arrow', 'mage', 'cannon', 'barracks', 'ballista', 'beacon'],
+  bonusGold: 0,
+  auraDamage: 1,
+}
+
+export function affordableDps(gold: number, plots = 14, profile: BuildProfile = EVERYTHING): number {
   const budget = gold * TOWER_SPEND_SHARE
   let best = 0
   for (const tree of Object.values(towerTrees)) {
+    if (!profile.kinds.includes(tree.kind)) continue
     const rungs: { cost: number, def: TowerLevelDef }[] = []
     let running = 0
     for (const lvl of tree.levels) { running += lvl.cost; rungs.push({ cost: running, def: lvl }) }
-    const branch = tree.branches[0]
-    rungs.push({ cost: running + branch.cost, def: branch })
-    const cap = tree.capstones[0]
-    rungs.push({ cost: running + branch.cost + cap.cost, def: cap })
-
+    // both branches, both crowns: the best rung on either side counts
+    for (const b of (profile.bothBranches ? [0, 1] : [0]) as (0 | 1)[]) {
+      const branch = tree.branches[b]
+      rungs.push({ cost: running + branch.cost, def: branch })
+      const cap = tree.capstones[b]
+      rungs.push({ cost: running + branch.cost + cap.cost, def: cap })
+    }
     for (const rung of rungs) {
       if (!rung.def.damage || !rung.def.attackInterval) continue
-      const dps = (rung.def.damage[0] + rung.def.damage[1]) / 2 / rung.def.attackInterval
+      const dps = (rung.def.damage[0] + rung.def.damage[1]) / 2 / rung.def.attackInterval * profile.auraDamage
       const count = Math.min(plots, Math.floor(budget / rung.cost))
       best = Math.max(best, dps * count)
     }
@@ -136,9 +183,9 @@ export function affordableDps(gold: number, plots = 14): number {
 }
 
 /** gold the player has plausibly banked by the start of a wave */
-export function goldByWave(level: LevelDef, waveIndex: number, difficulty: Difficulty): number {
-  const bounty = DIFFICULTIES[difficulty].bounty
-  let gold = level.startGold
+export function goldByWave(level: LevelDef, waveIndex: number, difficulty: Difficulty, bonusGold = 0): number {
+  const bounty = difficultyMods(level.id, difficulty).bounty
+  let gold = level.startGold + bonusGold
   for (let i = 0; i < waveIndex; i++) {
     for (const g of level.waves[i].groups) {
       gold += enemyDef(g.enemy).bounty * g.count * bounty
@@ -155,11 +202,11 @@ export function goldByWave(level: LevelDef, waveIndex: number, difficulty: Diffi
  * exactly at the gate, above 1.0 means it gets through.
  */
 export function judgeWave(
-  level: LevelDef, wave: WaveDef, waveIndex: number, difficulty: Difficulty,
+  level: LevelDef, wave: WaveDef, waveIndex: number, difficulty: Difficulty, profile: BuildProfile = EVERYTHING,
 ): WaveVerdict {
-  const mods = DIFFICULTIES[difficulty]
-  const gold = goldByWave(level, waveIndex, difficulty)
-  const dps = affordableDps(gold, level.plots.length)
+  const mods = difficultyMods(level.id, difficulty)
+  const gold = goldByWave(level, waveIndex, difficulty, profile.bonusGold)
+  const dps = affordableDps(gold, level.plots.length, profile)
   const surge = wave.surge ? 1.3 : 1
 
   /**
@@ -223,8 +270,8 @@ export function judgeWave(
   }
 }
 
-export function judgeLevel(level: LevelDef, difficulty: Difficulty): WaveVerdict[] {
-  return level.waves.map((w, i) => judgeWave(level, w, i, difficulty))
+export function judgeLevel(level: LevelDef, difficulty: Difficulty, profile: BuildProfile = EVERYTHING): WaveVerdict[] {
+  return level.waves.map((w, i) => judgeWave(level, w, i, difficulty, profile))
 }
 
 /**

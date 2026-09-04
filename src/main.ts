@@ -210,6 +210,11 @@ screens.onNextWatch = () => {
   game.startLevel(dailyLevel(watchSeed), 'normal', (game.save.lastHero as never) ?? 'aldric', 'campaign',
     { seed: watchSeed, watches: true })
 }
+screens.onHoldTheLine = () => {
+  screens.show('none')
+  hud.reset()
+  game.holdTheLine()
+}
 screens.onResume = () => {
   const cp = readCheckpoint()
   if (!cp) return

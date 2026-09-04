@@ -448,6 +448,244 @@ export function veilqueenModel(): VoxModel {
   }
 }
 
+/**
+ * The Veil Regent - a phasing colossus. It used to be the Juggernaut with a
+ * purple tint, which meant the two act-bosses were indistinguishable at play
+ * distance. This one is taller and narrower, robed instead of armoured, and
+ * carries a crown of veilcrystal spikes plus a rune halo, so its outline is a
+ * spire where the Juggernaut's is a block.
+ *
+ * Animated by units.ts: body, head, legL, legR, armL, armR (humanoid walk).
+ * 'crystal' is the halo of rune shards above the crown. Towers spin a part of
+ * that name; units.ts leaves it alone, and it is authored to look right static.
+ * Top of the crown is ~11.2 vu at scale 0.13, about 1.3x the Juggernaut.
+ */
+export function veilRegentModel(): VoxModel {
+  const robe = 0x3a2454, robeDark = 0x241638, skin = 0x8d7aa8
+  const shard = 0x9f4fdf, shardPale = 0xd8a5ff, hollow = 0x140c22
+  const body: VoxBox[] = [
+    box(0, 5.0, 0, 3.2, 4.4, 2.3, robe),                  // torso, tall and slim
+    box(0, 2.6, 0, 3.6, 1.4, 2.6, robe),                  // skirt hem, overlaps the legs
+    box(0, 3.5, 0, 3.4, 0.4, 2.4, robeDark),              // belt
+    box(0, 5.0, 1.2, 0.8, 4.0, 0.14, shard, true),         // lit sash down the front
+    box(0, 7.4, 0, 4.0, 0.7, 2.5, robeDark),              // narrow shoulders
+    box(0, 7.7, -0.3, 2.8, 0.7, 1.8, robeDark),           // cowl
+    box(-1.75, 8.2, 0, 0.45, 1.4, 0.45, shard, true),      // shoulder shards
+    box(1.75, 8.2, 0, 0.45, 1.4, 0.45, shard, true),
+  ]
+  const head: VoxBox[] = [
+    box(0, 8.5, 0.15, 1.9, 1.8, 1.8, skin),
+    box(0, 9.3, -0.2, 2.2, 0.7, 2.1, robe),               // hood
+    box(0, 8.5, -0.95, 2.1, 1.7, 0.3, robe),
+    box(0, 8.45, 1.0, 1.3, 1.1, 0.16, hollow),            // shadowed face
+    box(-0.38, 8.65, 1.1, 0.3, 0.3, 0.12, shardPale, true),
+    box(0.38, 8.65, 1.1, 0.3, 0.3, 0.12, shardPale, true),
+    // crown: a band and five spikes, tallest at the front
+    box(0, 9.7, 0, 2.1, 0.4, 2.0, shard, true),
+    box(0, 10.5, 0.1, 0.42, 1.4, 0.42, shardPale, true),
+    box(-0.65, 10.3, 0.1, 0.38, 1.0, 0.38, shard, true),
+    box(0.65, 10.3, 0.1, 0.38, 1.0, 0.38, shard, true),
+    box(-0.7, 10.15, -0.55, 0.34, 0.7, 0.34, shard, true),
+    box(0.7, 10.15, -0.55, 0.34, 0.7, 0.34, shard, true),
+  ]
+  const legL: VoxBox[] = [box(-0.85, 1.4, 0, 1.3, 2.8, 1.4, robeDark), box(-0.85, 0.3, 0.2, 1.4, 0.6, 1.6, hollow)]
+  const legR: VoxBox[] = [box(0.85, 1.4, 0, 1.3, 2.8, 1.4, robeDark), box(0.85, 0.3, 0.2, 1.4, 0.6, 1.6, hollow)]
+  // arms hang past the belt: the long reach is what makes it read as a wraith
+  const armL: VoxBox[] = [
+    box(-2.3, 5.4, 0, 1.0, 3.6, 1.1, robe),
+    box(-2.3, 3.5, 0, 1.2, 0.5, 1.3, robeDark),           // cuff
+    box(-2.3, 2.6, 0.1, 0.7, 1.4, 0.7, skin),             // claw
+  ]
+  const armR: VoxBox[] = [
+    box(2.3, 5.4, 0, 1.0, 3.6, 1.1, robe),
+    box(2.3, 3.5, 0, 1.2, 0.5, 1.3, robeDark),
+    box(2.3, 2.6, 0.1, 0.7, 1.4, 0.7, skin),
+    box(2.3, 4.6, 0.9, 0.3, 6.0, 0.3, robeDark),          // sceptre haft
+    box(2.3, 8.1, 0.9, 0.7, 1.2, 0.7, shardPale, true),    // sceptre shard
+  ]
+  // halo of eight rune shards above the crown. It sits outside the arm swing
+  // and clear of the crown spikes, so nothing intersects whether or not it spins.
+  const crystal: VoxBox[] = []
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2
+    crystal.push(box(Math.cos(a) * 1.9, 10.3, Math.sin(a) * 1.9, 0.45, 0.35, 0.45, i % 2 ? shard : shardPale, true))
+  }
+  return {
+    scale: 0.13,
+    parts: { body, head, legL, legR, armL, armR, crystal },
+    pivots: {
+      head: [0, 7.6, 0], legL: [-0.85, 2.8, 0], legR: [0.85, 2.8, 0],
+      armL: [-2.3, 7.0, 0], armR: [2.3, 7.0, 0], crystal: [0, 10.3, 0],
+    },
+  }
+}
+
+/**
+ * The Ossuary - a bone colossus that raises the dead around it. Built as a
+ * knuckle-walker: hips low and back, ribcage pushed forward and up, skull
+ * hanging out over the front, forelimbs planted on the ground. That hunch is
+ * the whole silhouette; upright it would be another Brute in bone paint.
+ * The ribcage is striped with dark gaps and one sickly green band so the thing
+ * animating it shows between the ribs.
+ *
+ * Animated by units.ts: body, head, legL, legR, armL, armR (humanoid walk;
+ * the arms are the front legs, so the swing reads as a lope).
+ * Top of the skull crest is ~9.3 vu at scale 0.14; the widest boss on the field.
+ */
+export function ossuaryModel(): VoxModel {
+  const bone = 0xe8e4d4, boneMid = 0xc9c2ae, boneDark = 0x8f8778
+  const hollow = 0x1a1612, marrow = 0x8fe08a
+  const body: VoxBox[] = [
+    box(0, 3.6, -1.6, 4.4, 2.0, 2.4, boneMid),            // pelvis, low and back
+    box(0, 4.8, -0.9, 1.2, 1.0, 1.4, boneDark),           // spine, stepping up and forward
+    box(0, 5.5, 0.2, 1.2, 1.0, 1.4, boneDark),
+    box(0, 5.8, 0.9, 5.0, 3.2, 3.0, bone),                // ribcage mass
+    // gap bands slightly wider than the cage: they read as space between ribs
+    box(0, 6.55, 0.9, 5.12, 0.45, 3.12, hollow),
+    box(0, 5.8, 0.9, 5.14, 0.5, 3.14, marrow, true),      // the light inside
+    box(0, 5.05, 0.9, 5.12, 0.45, 3.12, hollow),
+    box(0, 5.8, 2.5, 0.7, 3.2, 0.25, boneDark),           // sternum
+    box(0, 7.4, 0.6, 6.2, 1.0, 2.4, boneMid),             // shoulder girdle
+    box(0, 7.9, -0.4, 0.6, 1.0, 0.6, boneDark),           // vertebrae standing off the hunch
+    box(0, 6.6, -1.4, 0.6, 1.0, 0.6, boneDark),
+    box(0, 4.9, -2.6, 0.6, 1.0, 0.6, boneDark),
+  ]
+  const head: VoxBox[] = [
+    box(0, 7.6, 2.4, 2.4, 2.1, 2.2, bone),                // skull, out over the front
+    box(0, 6.4, 2.6, 1.9, 0.6, 1.6, boneMid),             // jaw
+    box(-0.55, 7.8, 3.52, 0.6, 0.6, 0.14, hollow),        // sockets
+    box(0.55, 7.8, 3.52, 0.6, 0.6, 0.14, hollow),
+    box(-0.55, 7.8, 3.6, 0.3, 0.3, 0.1, marrow, true),    // pinprick lights in them
+    box(0.55, 7.8, 3.6, 0.3, 0.3, 0.1, marrow, true),
+    box(0, 7.2, 3.52, 0.4, 0.5, 0.12, hollow),            // nasal hollow
+    box(0, 8.9, 2.0, 0.6, 0.8, 1.4, boneDark),            // crest
+  ]
+  const legL: VoxBox[] = [
+    box(-1.5, 1.4, -1.4, 1.7, 2.8, 1.9, boneMid),
+    box(-1.5, 0.35, -1.0, 1.9, 0.7, 2.4, boneDark),       // foot
+    box(-1.5, 2.4, -0.4, 1.0, 0.9, 0.7, bone),            // kneecap
+  ]
+  const legR: VoxBox[] = [
+    box(1.5, 1.4, -1.4, 1.7, 2.8, 1.9, boneMid),
+    box(1.5, 0.35, -1.0, 1.9, 0.7, 2.4, boneDark),
+    box(1.5, 2.4, -0.4, 1.0, 0.9, 0.7, bone),
+  ]
+  // forelimbs long enough to reach the ground from the raised shoulders
+  const armL: VoxBox[] = [
+    box(-3.3, 4.6, 0.6, 1.4, 5.4, 1.5, boneMid),
+    box(-3.3, 5.2, -0.3, 0.6, 1.4, 0.7, bone),            // elbow spur
+    box(-3.3, 0.9, 1.0, 1.8, 1.8, 1.9, boneDark),         // knuckles
+    box(-3.3, 0.35, 2.2, 1.6, 0.7, 0.8, bone),            // fingers
+  ]
+  const armR: VoxBox[] = [
+    box(3.3, 4.6, 0.6, 1.4, 5.4, 1.5, boneMid),
+    box(3.3, 5.2, -0.3, 0.6, 1.4, 0.7, bone),
+    box(3.3, 0.9, 1.0, 1.8, 1.8, 1.9, boneDark),
+    box(3.3, 0.35, 2.2, 1.6, 0.7, 0.8, bone),
+  ]
+  return {
+    scale: 0.14,
+    parts: { body, head, legL, legR, armL, armR },
+    pivots: {
+      head: [0, 6.9, 1.6], legL: [-1.5, 2.8, -1.4], legR: [1.5, 2.8, -1.4],
+      armL: [-3.3, 7.3, 0.6], armR: [3.3, 7.3, 0.6],
+    },
+  }
+}
+
+/**
+ * The Veil Empress - the Veilqueen's matriarch, in two phases that must read
+ * as one creature. Both share the thorax, tail, head and crown; the palette
+ * never changes. Winged, she has two wing pairs: the big front pair flaps
+ * (wingL / wingR) and a smaller rear pair is static in the body. Landed, the
+ * same body stands on two legs and every wing is reduced to a broken spar, so
+ * the phase change reads as "she shed her wings and walks" rather than as a
+ * different enemy being swapped in.
+ *
+ * Animated by units.ts: winged - body, head, wingL, wingR (veilqueen flight);
+ * landed - body, head, legL, legR, armL, armR (humanoid walk, claws swinging).
+ * Top of the crown is ~9.4 vu at scale 0.14; wingspan is about 16 vu.
+ */
+export function veilEmpressModel(landed: boolean): VoxModel {
+  const violet = 0x3a1d5c, violetPale = 0x5f3d8f, violetDeep = 0x2a1440
+  const membrane = 0x7a5aa8, glow = 0x9fe8ff, crown = 0xbfefff
+  // the tail droops to the ground once she is walking
+  const tY = landed ? -1.2 : 0
+  const body: VoxBox[] = [
+    box(0, 4.2, 0, 3.4, 3.0, 2.4, violet),                // thorax
+    box(0, 2.8, -1.2, 2.4, 1.8, 3.0, violetPale),         // abdomen
+    box(0, 4.5, 1.35, 1.8, 1.8, 0.3, glow, true),          // chest sigil
+    box(0, 2.6 + tY * 0.4, -3.2, 1.4, 1.2, 2.2, violet),  // tail
+    box(0, 2.8 + tY * 0.8, -4.9, 0.9, 0.8, 1.8, violetPale),
+    box(0, 3.1 + tY, -6.2, 0.5, 0.5, 1.2, glow, true),     // stinger
+  ]
+  const head: VoxBox[] = [
+    box(0, 6.6, 0.5, 2.2, 2.0, 2.0, violet),
+    box(-0.5, 6.9, 1.55, 0.34, 0.34, 0.12, glow, true),
+    box(0.5, 6.9, 1.55, 0.34, 0.34, 0.12, glow, true),
+    box(-0.5, 5.9, 1.4, 0.35, 0.7, 0.5, violetPale),      // mandibles
+    box(0.5, 5.9, 1.4, 0.35, 0.7, 0.5, violetPale),
+    box(-0.9, 8.3, -0.5, 0.4, 1.3, 0.4, violetPale),      // horns
+    box(0.9, 8.3, -0.5, 0.4, 1.3, 0.4, violetPale),
+    // crown of crystal: band and three spikes
+    box(0, 7.75, 0.3, 2.3, 0.4, 2.1, crown, true),
+    box(0, 8.6, 0.3, 0.45, 1.6, 0.45, crown, true),
+    box(-0.8, 8.4, 0.3, 0.4, 1.1, 0.4, crown, true),
+    box(0.8, 8.4, 0.3, 0.4, 1.1, 0.4, crown, true),
+  ]
+  const pivots: VoxModel['pivots'] = { head: [0, 5.7, 0.4] }
+  const parts: VoxModel['parts'] = { body, head }
+
+  if (!landed) {
+    // claws tucked up under the thorax, as on the queen
+    body.push(box(-1.2, 2.7, 1.0, 0.6, 1.6, 0.6, violetPale), box(1.2, 2.7, 1.0, 0.6, 1.6, 0.6, violetPale))
+    // rear wing pair: smaller, lower, swept back, and static
+    for (const s of [-1, 1]) {
+      body.push(
+        box(s * 2.6, 3.6, -1.4, 2.6, 0.35, 1.4, violetPale),
+        box(s * 4.4, 3.7, -1.6, 1.4, 0.3, 2.0, membrane),
+        box(s * 5.4, 3.8, -1.6, 0.5, 0.25, 1.4, glow, true),
+      )
+    }
+    const wing = (s: number): VoxBox[] => [
+      box(s * 2.8, 5.4, -0.2, 2.6, 0.4, 2.0, violetPale),
+      box(s * 5.2, 5.7, -0.3, 2.4, 0.35, 3.2, membrane),
+      box(s * 7.0, 5.9, -0.3, 1.2, 0.3, 2.6, violetPale),
+      box(s * 7.9, 6.0, -0.3, 0.6, 0.3, 2.0, glow, true),  // lit leading edge
+      box(s * 5.2, 5.95, -0.3, 2.4, 0.12, 0.3, glow, true), // vein
+    ]
+    parts.wingL = wing(-1)
+    parts.wingR = wing(1)
+    pivots.wingL = [-1.5, 5.4, -0.2]
+    pivots.wingR = [1.5, 5.4, -0.2]
+  } else {
+    // both pairs reduced to broken spars, with the ice light leaking from the breaks
+    for (const s of [-1, 1]) {
+      body.push(
+        box(s * 2.4, 5.5, -0.2, 1.8, 0.45, 1.2, violetPale),
+        box(s * 3.5, 5.4, -0.4, 0.6, 0.7, 0.6, violetDeep),
+        box(s * 3.45, 5.75, -0.2, 0.4, 0.3, 0.9, glow, true),
+        box(s * 2.4, 3.6, -1.4, 1.4, 0.35, 1.0, violetPale),
+        box(s * 3.2, 3.55, -1.5, 0.5, 0.55, 0.5, violetDeep),
+      )
+    }
+    const leg = (s: number): VoxBox[] => [
+      box(s * 1.0, 1.35, 0.2, 1.3, 2.7, 1.4, violetPale),
+      box(s * 1.0, 0.3, 0.7, 1.4, 0.6, 1.9, violetDeep),    // splayed foot
+      box(s * 1.0, 1.9, 0.9, 0.5, 0.8, 0.5, violet),        // knee spur
+    ]
+    const arm = (s: number): VoxBox[] => [
+      box(s * 2.2, 4.0, 0.4, 0.8, 2.6, 0.8, violetPale),
+      box(s * 2.2, 2.4, 0.6, 0.6, 1.0, 0.9, violetDeep),    // claw
+    ]
+    parts.legL = leg(-1); parts.legR = leg(1)
+    parts.armL = arm(-1); parts.armR = arm(1)
+    pivots.legL = [-1.0, 2.7, 0.2]; pivots.legR = [1.0, 2.7, 0.2]
+    pivots.armL = [-2.2, 5.3, 0.4]; pivots.armR = [2.2, 5.3, 0.4]
+  }
+  return { scale: 0.14, parts, pivots }
+}
+
 // ---------- soldiers ----------
 
 /** small hexing imp: horned head, glowing eyes, whip tail */

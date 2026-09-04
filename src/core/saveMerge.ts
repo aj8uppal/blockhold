@@ -25,6 +25,7 @@ export interface CloudSave {
   stars: Record<string, number>
   armory: Record<string, number>
   bestEndless: Record<string, number>
+  bestFreeplay: Record<string, number>
   bestScore: Record<string, number>
   medals: Record<string, string[]>
   lastHero: string
@@ -78,6 +79,7 @@ export function sanitizeCloudSave(v: unknown): CloudSave {
     stars: numberMap(o.stars, 3),
     armory: numberMap(o.armory, 4),
     bestEndless: numberMap(o.bestEndless, 999),
+    bestFreeplay: numberMap(o.bestFreeplay, 9999),
     bestScore: numberMap(o.bestScore, 99_999_999),
     medals,
     lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',
@@ -119,6 +121,7 @@ export function mergeSaves(a: CloudSave, b: CloudSave): CloudSave {
     unlocked: Math.max(a.unlocked, b.unlocked),
     stars: maxMerge(a.stars, b.stars),
     bestEndless: maxMerge(a.bestEndless, b.bestEndless),
+    bestFreeplay: maxMerge(a.bestFreeplay, b.bestFreeplay),
     bestScore: maxMerge(a.bestScore, b.bestScore),
     medals,
     dailyBest: betterDaily(a.dailyBest, b.dailyBest),

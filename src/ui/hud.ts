@@ -317,7 +317,11 @@ export class HUD {
     if (w) {
       const waveText = game.isEndless
         ? `${Math.max(1, w.waveIndex + 1)}/∞`
-        : `${Math.min(w.waveIndex + 1, w.totalWaves)}/${w.totalWaves}`
+        // past the authored end the count is "held past the end", not a
+        // fraction of a chunk whose size means nothing to the player
+        : w.totalWaves > w.authoredWaves
+          ? `${w.authoredWaves}+${w.freeplayDepth}`
+          : `${Math.min(w.waveIndex + 1, w.totalWaves)}/${w.totalWaves}`
       if (waveText !== this.lastWaveText) {
         this.lastWaveText = waveText
         this.waveEl.querySelector('b')!.textContent = waveText
