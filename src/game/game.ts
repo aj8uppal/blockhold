@@ -15,8 +15,10 @@ import { tallestLandmark } from '../voxel/models_env.ts'
 import { reactionFor, REACTION_RADIUS } from './towers.ts'
 import { buildPaths, LanePath } from './path.ts'
 import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
-import { holdModel, holdPieces, holdCacheKey } from './hold.ts'
+import { holdModel, holdPieces, holdCacheKey, holdSummary } from './hold.ts'
 import { isNotable } from './dossier.ts'
+import { AFFIX_IDS } from './affixes.ts'
+import { battleXp, isUnlocked, levelForXp, unlocksBetween, type UnlockDef } from './progress.ts'
 import { campaignScale } from './balanceModel.ts'
 import { OnboardingDirector } from './onboarding.ts'
 import { HERO_RANK_MAX, heroRankCost } from './hero.ts'
@@ -32,11 +34,11 @@ import { Projectile, createProjectile, updateBurnZones, clearBurnZones, updateMi
 import { armoryTier, hasArmory } from './armory.ts'
 import type { HUD } from '../ui/hud.ts'
 import { icon } from '../ui/icons.ts'
-import { randRange, simChance, setSimSeed } from '../core/utils.ts'
+import { randRange, simChance, setSimSeed, pick } from '../core/utils.ts'
 import { newRunSeed, runStamp, RULESET_VERSION, type RunStamp } from './ruleset.ts'
 import { writeCheckpoint, clearCheckpoint, readCheckpoint, type Checkpoint } from './checkpoint.ts'
 import { ReplayLog } from './replay.ts'
-import { canRecordTape, recordTape } from '../core/capture.ts'
+import { canRecordTape, capturePostcard, recordVerticalTape } from '../core/capture.ts'
 import { attachDebris, shatter, updateDebris, clearDebris, type DeathFlavor } from './debris.ts'
 import { telemetry } from '../core/telemetry.ts'
 import type { DailyResult } from './share.ts'
@@ -113,6 +115,17 @@ export class Game implements World {
   selectedTrapSpot: TrapSpotInfo | null = null
   selectedEarthSpot: EarthworkSpot | null = null
   selectedEarthwork: Earthwork | null = null
+  private rampartRing!: THREE.Mesh
+
+  /** the towers a rampart standing at this point lifts onto the high ground */
+  private liftedBy(x: number, z: number): Tower[] {
+    return this.towers.filter(t => Math.hypot(t.pos.x - x, t.pos.z - z) <= RAMPART_REACH)
+  }
+
+  private clearLiftMarkers(): void {
+    for (const t of this.towers) t.showLift(false)
+    this.rampartRing.visible = false
+  }
   hero: Hero | null = null
   heroSelected = false
   targetMode: TargetMode = null
@@ -150,6 +163,10 @@ export class Game implements World {
 
     this.rangeRing = makeRing(1, 0x7fd4ff, 0.24)
     this.upgradeRing = makeRing(1, 0x8fff9f, 0.42)
+    // the reach a rampart would have, drawn at its site before any gold is spent
+    this.rampartRing = makeRing(1, 0xe8c24a, 0.5)
+    this.rampartRing.scale.setScalar(RAMPART_REACH)
+    this.rampartRing.visible = false
     this.selectRing = makeRing(1, 0xffe89f, 0.5)
     this.selectRing.scale.setScalar(0.62)
     this.targetRing = makeRing(1.15, 0xff8c42, 0.5)
@@ -179,9 +196,15 @@ export class Game implements World {
     this.killCount++
     // summoned-while-alive enemies pay nothing: stalling a summoner must not be a gold farm
     if (!e.noReward) {
-      const bounty = Math.max(1, Math.round(e.def.bounty * DIFFICULTIES[this.difficulty].bounty * (e.elite ? 1.6 : 1)))
+      const premium = this.tithePremium(e.pos.x, e.pos.z)
+      const bounty = Math.max(1, Math.round(e.def.bounty * DIFFICULTIES[this.difficulty].bounty * (e.elite ? 1.6 : 1) * premium))
       this.addGold(bounty, e.pos.x, e.pos.y + e.barY, e.pos.z)
-      const shardGain = (e.def.shardDrop ?? 0) + (e.elite ? 1 : 0) + (e.def.boss ? 4 : 0)
+      let shardGain = (e.def.shardDrop ?? 0) + (e.elite ? 1 : 0) + (e.def.boss ? 4 : 0)
+      // the Exchequer: a shard for every twelfth kill made in its light
+      if (premium > 1 && this.towers.some(b => b.def.signature === 'tithe'
+        && Math.hypot(b.pos.x - e.pos.x, b.pos.z - e.pos.z) <= b.auraReach)) {
+        if (++this.titheKills >= 12) { this.titheKills = 0; shardGain += 1 }
+      }
       if (shardGain > 0) {
         this.shards += shardGain
         this.shardsEarned += shardGain
@@ -276,6 +299,15 @@ export class Game implements World {
     return Math.min(0.35, Math.max(0, Math.floor((this.waves.waveIndex - 20) / 10)) * 0.07)
   }
 
+  /**
+   * How often a spawn is a named elite. One definition, read both by the roll
+   * below and by the wave preview that warns about it - they used to be able to
+   * disagree, and a preview that lies is worse than no preview.
+   */
+  eliteChance(): number {
+    return this.difficulty === 'veteran' ? 0.12 : this.isEndless ? 0.08 : 0
+  }
+
   spawnEnemyAt(id: string, laneIndex: number, dist: number, opts: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean } = {}): void {
     const def = enemyDef(id)
     // interaction enemies teach themselves the first time they appear
@@ -293,14 +325,18 @@ export class Game implements World {
       }
     }
     const surged = opts.surged ?? false
-    const eliteChance = this.difficulty === 'veteran' ? 0.12 : this.isEndless ? 0.08 : 0
-    const elite = (opts.eliteRoll ?? false) && !def.boss && simChance(eliteChance)
+    const elite = (opts.eliteRoll ?? false) && !def.boss && simChance(this.eliteChance())
+    // Which elite this is, drawn from the same seeded stream as the roll that
+    // made it one. A daily and a challenge link are only the same fight if the
+    // affixes match, so this must never reach for Math.random.
+    const affix = elite ? pick(AFFIX_IDS) : null
     const e = new Enemy(def, this.lanes[laneIndex], laneIndex, dist, {
       hpMult: DIFFICULTIES[this.difficulty].enemyHp * (surged ? 1.3 : 1)
         * (opts.hpScale ?? this.endlessHpScale()) * this.campaignHpScale(),
       toughness: this.endlessToughness(),
       speedMult: surged ? 1.12 : 1,
       elite,
+      affix,
       surged,
       waveTag: opts.waveTag ?? -1,
       noReward: opts.noReward ?? false,
@@ -383,6 +419,12 @@ export class Game implements World {
   dailyDay = 0
   private maybeCheckpoint(): void {
     if (this.phase !== 'playing' || !this.level || !this.waves) return
+    // Only campaign and endless boards can be resumed. The Daily, the Watches
+    // and the Bellfoundry all run on `dailyLevel()`, whose id is `daily` and is
+    // not in `levels` - checkpointing one put a "Resume battle" button on the
+    // menu that threw out of `levelById` the moment it was pressed. They are
+    // also short, seeded and repeatable, so there is nothing worth saving.
+    if (this.isDaily || this.isWatches || this.isBellfoundry) return
     if (this.enemies.some(e => e.alive) || this.projectiles.length) return
     if (this.waves.phase === 'spawning') return
     const waveIndex = this.waves.waveIndex + 1
@@ -511,19 +553,31 @@ export class Game implements World {
     this.engine.camTargetGoal.set(0, 0, 0)
     this.engine.camTarget.set(0, 0, 0)
 
+    const st = this.battleStats()
+    const headline = this.isEndless
+      ? `Wave ${st.wavesReached} of the Long Night`
+      : st.wavesCleared >= st.totalWaves && st.totalWaves > 0
+        ? `Held all ${st.totalWaves} waves`
+        : `Wave ${st.wavesReached} of ${st.totalWaves}`
+    const onFrame = (k: number): void => {
+      // hold the finished board for the last fifth of the tape
+      const build = Math.min(1, k / 0.8)
+      const shown = Math.round(build * ordered.length)
+      for (let i = 0; i < ordered.length; i++) ordered[i].group.visible = i < shown
+      this.engine.yaw = this.engine.yawGoal = startYaw + k * Math.PI * 0.55
+      this.engine.pitch = this.engine.pitchGoal = 0.78 - k * 0.12
+      this.engine.dist = this.engine.distGoal = startDist * (1.06 - k * 0.16)
+      this.engine.render()
+    }
+
     try {
-      return await recordTape(this.engine.canvas, {
-        seconds: 9,
-        onFrame: (k) => {
-          // hold the finished board for the last fifth of the tape
-          const build = Math.min(1, k / 0.8)
-          const shown = Math.round(build * ordered.length)
-          for (let i = 0; i < ordered.length; i++) ordered[i].group.visible = i < shown
-          this.engine.yaw = this.engine.yawGoal = startYaw + k * Math.PI * 0.55
-          this.engine.pitch = this.engine.pitchGoal = 0.78 - k * 0.12
-          this.engine.dist = this.engine.distGoal = startDist * (1.06 - k * 0.16)
-          this.engine.render()
-        },
+      return await recordVerticalTape(this.engine.canvas, {
+        // long enough to watch, short enough to loop in a feed
+        seconds: 15,
+        title: this.level.name,
+        headline,
+        footer: 'aj8uppal.github.io/blockhold',
+        onFrame,
       })
     } finally {
       for (const t of ordered) t.group.visible = true
@@ -531,6 +585,41 @@ export class Game implements World {
       this.engine.pitch = this.engine.pitchGoal = startPitch
       this.engine.dist = this.engine.distGoal = startDist
       this.paused = paused
+      this.hud.setChrome(wasChrome)
+    }
+  }
+
+  /**
+   * A shareable picture of the player's Hold, posed and captioned.
+   *
+   * Rendered from the live menu backdrop, so what is captured is the keep the
+   * player is looking at. The interface is hidden for the shot and put back
+   * exactly as it was, the same way a Siege Tape does it.
+   */
+  async captureHoldPostcard(): Promise<Blob | null> {
+    if (!this.holdGroup) return null
+    const wasChrome = this.hud.chromeVisible
+    this.hud.setChrome(false)
+    const startYaw = this.engine.yaw
+    const startTarget = this.engine.camTarget.clone()
+    const startDist = this.engine.dist
+    try {
+      // centre the keep for its portrait; the menu framing deliberately pushes
+      // it off to one side so the card can sit over the empty half
+      this.engine.camTarget.set(0, 0.6, 0)
+      this.engine.camTargetGoal.copy(this.engine.camTarget)
+      this.engine.yaw = this.engine.yawGoal = startYaw + 0.25
+      this.engine.dist = this.engine.distGoal = 12.5
+      return await capturePostcard(this.engine.canvas, {
+        summary: holdSummary(holdPieces(this.save)),
+        footer: 'aj8uppal.github.io/blockhold',
+        onFrame: () => this.engine.render(),
+      })
+    } finally {
+      this.engine.camTarget.copy(startTarget)
+      this.engine.camTargetGoal.copy(startTarget)
+      this.engine.yaw = this.engine.yawGoal = startYaw
+      this.engine.dist = this.engine.distGoal = startDist
       this.hud.setChrome(wasChrome)
     }
   }
@@ -697,6 +786,7 @@ export class Game implements World {
     this.waveTracks.clear()
     this.waveOutcomes = []
     this.replay.reset()
+    this.titheKills = 0
     this.mechanicsSeen.clear()
     this.retiredKillers = []
     const paths = buildPaths(level)
@@ -705,7 +795,7 @@ export class Game implements World {
     this.engine.scene.add(this.terrain.group)
     this.engine.scene.add(this.dynamic)
     this.engine.scene.add(this.particles.group)
-    this.engine.scene.add(this.rangeRing, this.upgradeRing, this.selectRing, this.targetRing, this.heroRing, this.heroGuardRing)
+    this.engine.scene.add(this.rangeRing, this.upgradeRing, this.selectRing, this.targetRing, this.heroRing, this.heroGuardRing, this.rampartRing)
     this.engine.applyTheme(THEMES[level.theme], level.width, level.height)
     this.engine.resetView(level.width, level.height,
       tallestLandmark((level.landmarks ?? []).map(([, , k]) => k)))
@@ -741,6 +831,8 @@ export class Game implements World {
         }
       },
     )
+    // the preview reads this to warn that named elites walk this board
+    this.waves.eliteChance = this.eliteChance()
     // the hero starts on the road, two thirds of the way to the gate
     const lane0 = this.lanes[0]
     const hs = lane0.sample(lane0.length * 0.62, 0.7)
@@ -1052,6 +1144,20 @@ export class Game implements World {
         if (this.lives === maxLives) medals.add('noleak')
         this.save.medals[this.level.id] = [...medals]
       }
+      // experience: every wave held counts, win or lose, and the account
+      // levels on it. Ghost watches are the one thing that pays nothing extra
+      // over the first watch, so replaying a siege three times is not a farm.
+      const firstClear = won && !this.isEndless && !this.isDaily && !this.isWatches && !this.isBellfoundry
+        && (this.save.stars[this.level.id] ?? 0) === 0
+      this.lastXpBefore = this.save.xp
+      this.lastXpEarned = battleXp({
+        mode: this.isDaily ? 'daily' : this.isWatches ? 'watches' : this.isBellfoundry ? 'bellfoundry' : this.isEndless ? 'endless' : 'campaign',
+        difficulty: this.difficulty,
+        wavesHeld: this.wavesCleared(),
+        won,
+        firstClear,
+      })
+      this.save.xp += this.lastXpEarned
       if (!writeSave(this.save)) {
         telemetry.track({ type: 'save_write_failed' })
         this.hud.showToast('Could not save progress - your browser is blocking storage', 6)
@@ -1068,6 +1174,8 @@ export class Game implements World {
     this.onPhaseChange(this.phase, stars)
   }
 
+  private lastXpBefore = 0
+  private lastXpEarned = 0
   private lastScore = 0
   private lastPrevBestScore = 0
   private lastNewBestScore = false
@@ -1087,6 +1195,17 @@ export class Game implements World {
     return this.phase === 'victory' ? this.waves.totalWaves : this.waves.waveIndex
   }
 
+  /**
+   * This run's decisions, for submission alongside a score.
+   *
+   * The server stores it so a result can be verified later against a
+   * simulation that does not need a renderer. Until that exists, it is
+   * evidence being kept, not a check being performed.
+   */
+  replayLog(): { seed: number, ruleset: number, events: unknown[] } {
+    return { seed: this.runSeed, ruleset: RULESET_VERSION, events: this.replay.all() }
+  }
+
   battleStats(): {
     kills: number, gold: number, shards: number, wavesReached: number, totalWaves: number,
     /** waves actually survived; the wave you die on is reached, not held */
@@ -1094,11 +1213,14 @@ export class Game implements World {
     timeSec: number, heroLevel: number, endless: boolean, bestEndless: number,
     score: number, prevBestScore: number, newBestScore: boolean, newWaveRecord: boolean,
     perfectWaves: number, bestStreak: number, noleak: boolean,
+    /** lives still standing when the run ended, for the shareable result */
+    livesLeft: number,
     lastLeak: { name: string, wave: number } | null,
     topKiller: { name: string, kills: number } | null,
     heroKills: number,
     stamp: RunStamp,
     daily?: DailyResult,
+    xpEarned: number, levelBefore: number, levelAfter: number, newUnlocks: UnlockDef[],
   } {
     return {
       daily: this.isDaily ? {
@@ -1132,9 +1254,14 @@ export class Game implements World {
       perfectWaves: this.perfectWaves,
       bestStreak: this.bestStreak,
       noleak: this.lives === DIFFICULTIES[this.difficulty].lives,
+      livesLeft: Math.max(0, this.lives),
       lastLeak: this.lastLeak,
       topKiller: this.topKiller(),
       heroKills: this.hero?.kills ?? 0,
+      xpEarned: this.lastXpEarned,
+      levelBefore: levelForXp(this.lastXpBefore),
+      levelAfter: levelForXp(this.save.xp),
+      newUnlocks: unlocksBetween(this.lastXpBefore, this.save.xp),
     }
   }
 
@@ -1428,10 +1555,10 @@ export class Game implements World {
     this.hud.closeBuildMenu()
     this.hud.openTowerPanel(tower)
     this.rangeRing.visible = true
-    this.rangeRing.position.set(tower.pos.x, 0.04, tower.pos.z)
+    this.rangeRing.position.set(tower.pos.x, tower.pos.y - 0.06, tower.pos.z)
     this.rangeRing.scale.setScalar(tower.range)
     this.selectRing.visible = true
-    this.selectRing.position.set(tower.pos.x, 0.05, tower.pos.z)
+    this.selectRing.position.set(tower.pos.x, tower.pos.y - 0.05, tower.pos.z)
     this.sfx('click')
   }
 
@@ -1442,7 +1569,7 @@ export class Game implements World {
     const screen = this.projectToScreen(plot.pos.x, plot.pos.y + 0.2, plot.pos.z)
     this.hud.openBuildMenu(plot, screen?.x ?? sx, screen?.y ?? sy)
     this.selectRing.visible = true
-    this.selectRing.position.set(plot.pos.x, 0.12, plot.pos.z)
+    this.selectRing.position.set(plot.pos.x, plot.pos.y + 0.02, plot.pos.z)
     this.rangeRing.visible = false
     this.sfx('click')
   }
@@ -1453,6 +1580,7 @@ export class Game implements World {
     this.selectedTrapSpot = null
     this.selectedEarthSpot = null
     if (this.selectedEarthwork) { this.selectedEarthwork.showReach(false); this.selectedEarthwork = null }
+    this.clearLiftMarkers()
     this.heroSelected = false
     if (this.targetMode === 'rally') {
       // rally mode has no owner once its tower is deselected
@@ -1478,7 +1606,7 @@ export class Game implements World {
     if (!opt) {
       this.rangeRing.visible = !!this.selectedTower
       if (this.selectedTower) {
-        this.rangeRing.position.set(this.selectedTower.pos.x, 0.04, this.selectedTower.pos.z)
+        this.rangeRing.position.set(this.selectedTower.pos.x, this.selectedTower.pos.y - 0.06, this.selectedTower.pos.z)
         this.rangeRing.scale.setScalar(this.selectedTower.range)
       }
       this.upgradeRing.visible = false
@@ -1487,7 +1615,7 @@ export class Game implements World {
     // the upgrade's own multipliers ride along, so the ring is the real number
     const scale = opt.range / tower.def.range
     this.upgradeRing.visible = true
-    this.upgradeRing.position.set(tower.pos.x, 0.05, tower.pos.z)
+    this.upgradeRing.position.set(tower.pos.x, tower.pos.y - 0.05, tower.pos.z)
     this.upgradeRing.scale.setScalar(tower.range * scale)
   }
 
@@ -1500,7 +1628,7 @@ export class Game implements World {
     }
     const def = towerTrees[kind].levels[0]
     this.rangeRing.visible = true
-    this.rangeRing.position.set(this.selectedPlot.pos.x, 0.04, this.selectedPlot.pos.z)
+    this.rangeRing.position.set(this.selectedPlot.pos.x, this.selectedPlot.pos.y - 0.06, this.selectedPlot.pos.z)
     this.rangeRing.scale.setScalar(def.range)
   }
 
@@ -1508,6 +1636,9 @@ export class Game implements World {
     if (this.paused) return
     const plot = this.selectedPlot
     if (!plot || plot.occupied) return
+    // the ladder is enforced here, not only in the menu, so a stale button or a
+    // scripted call cannot build what the account has not earned
+    if (!isUnlocked(this.save, 'tower', kind)) { this.sfx('error'); return }
     const cost = towerTrees[kind].levels[0].cost
     if (this.gold < cost) { this.sfx('error'); this.hud.flashGold(); return }
     this.gold -= cost
@@ -1566,7 +1697,17 @@ export class Game implements World {
     this.clearSelection()
     this.selectedEarthSpot = spot
     const screen = this.projectToScreen(spot.pos.x, spot.pos.y + 0.15, spot.pos.z)
-    this.hud.openEarthworkMenu(spot, screen?.x ?? sx, screen?.y ?? sy)
+    // What would this rampart do? Answered on the board before the purchase:
+    // its reach as a ring, and a mark on every tower that reach covers.
+    let lifts: string[] = []
+    if (spot.kind === 'rampart') {
+      const towers = this.liftedBy(spot.pos.x, spot.pos.z)
+      for (const t of towers) t.showLift(true)
+      lifts = towers.map(t => t.def.name)
+      this.rampartRing.visible = true
+      this.rampartRing.position.set(spot.pos.x, 0.08, spot.pos.z)
+    }
+    this.hud.openEarthworkMenu(spot, screen?.x ?? sx, screen?.y ?? sy, lifts)
     this.selectRing.visible = true
     this.selectRing.position.set(spot.pos.x, 0.1, spot.pos.z)
     this.sfx('click')
@@ -1587,6 +1728,7 @@ export class Game implements World {
     this.particles.buildDust(spot.pos.x, spot.pos.y + 0.1, spot.pos.z)
     this.sfx('build')
     this.engine.addShake(0.06)
+    this.replay.record({ t: this.time, kind: 'earthwork', spot: spot.index, work: spot.kind })
     this.recomputeHighGround()
     this.clearSelection()
   }
@@ -1684,19 +1826,16 @@ export class Game implements World {
     this.clearSelection()
     this.selectedEarthwork = work
     work.showReach(true)
-    // light up the towers it is actually helping, which is the whole question
+    // mark the towers it is actually helping, which is the whole question, and
+    // keep them marked for as long as it is selected
+    let lifted: Tower[] = []
     if (work.kind === 'rampart') {
-      for (const t of this.towers) {
-        if (t.onHighGround && work.group.position.distanceTo(t.pos) <= RAMPART_REACH) {
-          this.particles.healSparkle(t.pos.x, t.pos.y + 0.8, t.pos.z)
-        }
-      }
+      lifted = this.liftedBy(work.group.position.x, work.group.position.z)
+      for (const t of lifted) t.showLift(true)
     }
     this.selectRing.visible = true
     this.selectRing.position.set(work.group.position.x, 0.1, work.group.position.z)
-    this.hud.openEarthworkPanel(work, this.towers.filter(
-      t => work.kind === 'rampart' && t.onHighGround && work.group.position.distanceTo(t.pos) <= RAMPART_REACH,
-    ).length)
+    this.hud.openEarthworkPanel(work, lifted.map(t => t.def.name))
     this.sfx('click')
   }
 
@@ -1713,6 +1852,7 @@ export class Game implements World {
     this.traps.push(trap)
     this.dynamic.add(trap.group)
     this.sfx('build')
+    this.replay.record({ t: this.time, kind: 'trap', spot: spot.index, trap: kind })
     this.clearSelection()
   }
 
@@ -1815,7 +1955,60 @@ export class Game implements World {
       t.resonance = t.reactions.size
       t.refreshSoldierStats(this)  // live soldiers pick up the change immediately
     }
+    this.recomputeAuras()
   }
+
+  /**
+   * Which beacon lights each tower.
+   *
+   * The strongest single beacon in reach applies; they do not stack. Stacking
+   * would make a ring of beacons around one Kingsreach the dominant build on
+   * every map, which is exactly the "one solved build" problem more families
+   * were meant to break. One beacon per tower keeps the question spatial.
+   */
+  recomputeAuras(): void {
+    const beacons = this.towers.filter(t => t.isBeacon && t.def.aura)
+    for (const t of this.towers) {
+      t.auraDamage = t.auraRange = t.auraRate = 0
+      if (t.isBeacon) continue
+      let best = -1
+      for (const b of beacons) {
+        if (Math.hypot(b.pos.x - t.pos.x, b.pos.z - t.pos.z) > b.auraReach) continue
+        const a = b.def.aura!
+        const dmg = a.damage + (b.perk?.id === 'zeal' ? 0.08 : 0)
+        if (dmg > best) {
+          best = dmg
+          t.auraDamage = dmg
+          t.auraRange = a.range
+          t.auraRate = a.rate
+        }
+      }
+    }
+  }
+
+  /**
+   * Watchfire: phasing enemies inside a revealing beacon's light can be shot.
+   * Recomputed every tick, since both the enemies and the flag are transient.
+   */
+  private revealPhasing(): void {
+    const eyes = this.towers.filter(t => t.isBeacon && t.def.aura?.reveal && !t.isGhost)
+    for (const e of this.enemies) {
+      if (!e.def.phasing) continue
+      e.revealed = eyes.some(b => Math.hypot(b.pos.x - e.pos.x, b.pos.z - e.pos.z) <= b.auraReach + e.radius)
+    }
+  }
+
+  /** the bounty multiplier a kill at this point earns from any Tithe Hall lighting it */
+  private tithePremium(x: number, z: number): number {
+    let best = 0
+    for (const b of this.towers) {
+      const bonus = b.isBeacon ? (b.def.aura?.bounty ?? 0) : 0
+      if (bonus > best && Math.hypot(b.pos.x - x, b.pos.z - z) <= b.auraReach) best = bonus
+    }
+    return 1 + best
+  }
+  /** the Exchequer's count toward its next shard */
+  private titheKills = 0
 
   upgradeTower(tower: Tower, optionIndex: number): void {
     if (this.paused) return
@@ -1825,6 +2018,10 @@ export class Game implements World {
     this.gold -= opt.cost
     tower.upgrade(tower.level === 3 ? optionIndex : 0, this)
     this.replay.record({ t: this.time, kind: 'upgrade', plot: tower.plot.index, level: tower.level, branch: tower.branch })
+    // a beacon's light grows with its tier, and the towers it lights only learn
+    // that here: reactions were already recomputed on build and sell, never on
+    // upgrade, so an upgraded beacon lit nothing new until something else changed
+    this.recomputeResonance()
     this.selectTower(tower)
   }
 
@@ -1863,6 +2060,7 @@ export class Game implements World {
     this.shards -= ASCEND_SHARD_COST
     this.gold -= ASCEND_GOLD_COST
     tower.ascend(perkIndex, this)
+    this.recomputeResonance()   // Far Sight and Zeal change what a beacon lights
     this.selectTower(tower)
   }
 
@@ -1871,6 +2069,9 @@ export class Game implements World {
     const secondsLeft = this.waves.countdown
     const surgeNext = this.waves.nextWaveIsSurge()
     const bonus = this.waves.callNext()
+    // when a wave was called is a player decision like any other, and a replay
+    // that cannot reproduce the timing cannot reproduce the run
+    this.replay.record({ t: this.time, kind: 'wave', index: this.waves.waveIndex })
     if (bonus > 0) {
       this.addGold(bonus)
       this.earlyCallSeconds += Math.max(0, secondsLeft)
@@ -2043,6 +2244,7 @@ export class Game implements World {
         this.enemies.splice(i, 1)
       }
     }
+    this.revealPhasing()
     for (const s of this.soldiers) s.update(dt, this)
     for (let i = this.soldiers.length - 1; i >= 0; i--) {
       const s = this.soldiers[i]

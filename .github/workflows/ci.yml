@@ -15,8 +15,59 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
-      - run: npx vitest run
-      - run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: Build
+        run: npm run build
+
       # the sync service has no dependencies; Node 24 runs its TypeScript directly
-      - run: npx tsc -p server/tsconfig.json
+      - name: Sync service typecheck
+        run: npx tsc -p server/tsconfig.json
+
+      # the service owns account linking, the event sink and the leaderboard,
+      # all of which can lose player progress if they regress
+      - name: Sync service tests
+        run: npm test
+        working-directory: server
+
+      # what a first-time visitor downloads before anything is playable
+      - name: Bundle budget
+        run: npm run bundle:budget
+
+      # keyed on the lockfile, so it re-downloads exactly when the pinned
+      # Playwright version changes and never otherwise
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # the built bundle, driven in a real browser: menu, a battle, a tower
+      # built by touch, and the daily's share link. Uses the dist/ produced by
+      # the Build step above.
+      - name: Smoke tests
+        run: npx playwright test -c tests/smoke/playwright.config.ts
+
+      # screenshots, traces and the collected browser console for whatever failed
+      - name: Upload smoke failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-failures
+          path: |
+            tests/smoke/output
+            tests/smoke/report
+          if-no-files-found: ignore
+          retention-days: 7

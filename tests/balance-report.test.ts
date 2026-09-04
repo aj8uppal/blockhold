@@ -71,7 +71,9 @@ function tierDps(level: TowerLevelDef): number {
 }
 
 function averageTierOneToThreeDpsPerGold(): number {
-  const rates = Object.values(towerTrees).flatMap(tree => {
+  // a beacon buys no damage of its own, so it has no DPS-per-gold to average;
+  // counting it as zero would understate every tower that does
+  const rates = Object.values(towerTrees).filter(tree => !tree.levels[0].aura).flatMap(tree => {
     let cumulativeCost = 0
     return tree.levels.map(level => {
       cumulativeCost += level.cost

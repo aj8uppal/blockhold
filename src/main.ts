@@ -1,12 +1,15 @@
 import { requestDurableStorage, writeSave } from './core/save.ts'
+import { hasWebGL, safeLocal, showFatal } from './core/boot.ts'
 import { cloud } from './core/cloud.ts'
-import { readCheckpoint } from './game/checkpoint.ts'
+import { clearCheckpoint, readCheckpoint } from './game/checkpoint.ts'
 import { telemetry } from './core/telemetry.ts'
+import { initTelemetryConsent } from './core/sink.ts'
+import { leaderboardEnabled, submitDaily } from './core/leaderboard.ts'
 import { acquisitionSource, isEmbedded } from './core/platform.ts'
 import { dailySeed, dailyNumber, newRunSeed } from './game/ruleset.ts'
 import { dailyLevel } from './game/levels.ts'
-import { readChallengeSeed } from './game/share.ts'
-import { canRecordTape, downloadTape, tapeFileExtension } from './core/capture.ts'
+import { challengeIsCurrent, readChallenge } from './game/share.ts'
+import { canRecordTape, downloadTape, sharePostcard, shareTape, tapeFileExtension } from './core/capture.ts'
 import { Game } from './game/game.ts'
 import { HUD } from './ui/hud.ts'
 import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
@@ -15,9 +18,43 @@ import { audio } from './core/audio.ts'
 import './style.css'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
-const game = new Game(canvas)
+
+/**
+ * Fail loudly and early rather than into a black rectangle. Both checks run
+ * before anything else boots; see `core/boot.ts` for why each one exists.
+ */
+if (!hasWebGL()) {
+  showFatal(
+    'Blockhold needs 3D graphics',
+    'This browser cannot open a WebGL context, so the battlefield cannot be drawn.',
+    'Hardware acceleration being switched off is the usual cause. Chrome, Edge, Firefox and Safari all support it when it is on.',
+  )
+  throw new Error('WebGL unavailable')
+}
+
+function createGame(): Game {
+  try {
+    return new Game(canvas)
+  } catch (err) {
+    // the probe passed but the real context still failed: a driver blocklist, a
+    // GPU process that died, or memory. Say so instead of showing nothing.
+    showFatal(
+      'Blockhold could not start',
+      'The 3D battlefield failed to open on this device.',
+      'Reloading the page usually fixes it. If it does not, try another browser.',
+    )
+    throw err
+  }
+}
+
+const game = createGame()
 const hud = new HUD(game)
 const screens = new Screens(() => game.save)
+// storage that throws is a browser setting, not a bug; the game still plays,
+// but the player deserves to know their campaign is not being kept
+const storageWorks = safeLocal.available()
+// apply the player's stored telemetry choice before a single event is recorded
+initTelemetryConsent()
 
 /**
  * `?unlock` opens the whole campaign, for looking at the later boards without
@@ -66,8 +103,8 @@ screens.onPlayLevel = (id, difficulty, hero, mode) => {
   if (isTouchDevice()) {
     if (fullscreenSupported() && !isIPadOS()) {
       enterFullscreen()
-    } else if (needsInstallGuide() && !localStorage.getItem('blockhold.a2hs-hint')) {
-      localStorage.setItem('blockhold.a2hs-hint', '1')
+    } else if (needsInstallGuide() && !safeLocal.get('blockhold.a2hs-hint')) {
+      safeLocal.set('blockhold.a2hs-hint', '1')
       setTimeout(() => hud.showToast('Tip: "Play fullscreen" on the main menu shows how to install Blockhold as a real fullscreen app', 8), 1500)
     }
   }
@@ -80,7 +117,8 @@ screens.onPlayLevel = (id, difficulty, hero, mode) => {
   )
 }
 // a challenge link drops the visitor straight onto the sender's exact board
-const challengeSeed = readChallengeSeed()
+const challenge = readChallenge()
+const challengeSeed = challenge?.levelId ? null : (challenge?.seed ?? null)
 
 screens.onPlayDaily = () => {
   const seed = challengeSeed ?? dailySeed()
@@ -92,6 +130,31 @@ screens.onPlayDaily = () => {
     { seed, daily: dailyNumber() })
 }
 screens.onShared = (kind) => telemetry.track({ type: 'share_copied', kind })
+/**
+ * Post the finished Daily to the leaderboard.
+ *
+ * An account is created silently if this device has none: it is the same
+ * anonymous token the cloud save uses, holds no personal data, and without one
+ * there is nothing to key "your best today" against. Entirely best-effort - a
+ * failure here returns null and the card simply shows no rank.
+ */
+screens.onSubmitDaily = async (r) => {
+  if (!leaderboardEnabled()) return null
+  try {
+    if (!cloud.signedIn) await cloud.createAccount(game.save)
+    return await submitDaily({
+      day: r.day,
+      seed: screens.dailySeedForShare,
+      wave: r.wavesReached,
+      lives: r.lives,
+      won: r.won,
+      score: game.battleStats().score,
+      replay: game.replayLog(),
+    })
+  } catch {
+    return null
+  }
+}
 screens.onRestore = (restored) => {
   Object.assign(game.save, restored)
   writeSave(game.save)
@@ -100,12 +163,21 @@ screens.onRestore = (restored) => {
   hud.showToast('Progress restored', 3)
 }
 
+screens.onSharePostcard = async () => {
+  const blob = await game.captureHoldPostcard()
+  if (!blob) return false
+  if (!await sharePostcard(blob, 'my-blockhold.png')) downloadTape(blob, 'my-blockhold.png')
+  telemetry.track({ type: 'share_copied', kind: 'hold_postcard' })
+  return true
+}
 screens.canRecordTape = () => canRecordTape()
 screens.onRecordTape = async () => {
   const blob = await game.recordSiegeTape()
   if (!blob) return false
-  const stamp = game.level?.id ?? 'blockhold'
-  downloadTape(blob, `blockhold-${stamp}.${tapeFileExtension(blob.type)}`)
+  const name = `blockhold-${game.level?.id ?? 'hold'}.${tapeFileExtension(blob.type)}`
+  // the share sheet first, because that is where a clip actually goes; a
+  // download is the fallback for desktops and for a sheet that refuses files
+  if (!await shareTape(blob, name)) downloadTape(blob, name)
   telemetry.track({ type: 'share_copied', kind: 'siege_tape' })
   return true
 }
@@ -141,6 +213,9 @@ screens.onNextWatch = () => {
 screens.onResume = () => {
   const cp = readCheckpoint()
   if (!cp) return
+  // stale checkpoints outlive the build that wrote them; drop one whose level
+  // is gone rather than throwing out of `levelById` on the player's tap
+  if (!levels.some(l => l.id === cp.levelId)) { clearCheckpoint(); screens.show('menu'); return }
   hud.reset()
   hud.setChrome(true)
   screens.show('none')
@@ -165,13 +240,35 @@ hud.onHome = () => {
 game.onPhaseChange = (phase, stars) => {
   // a finished run is exactly when progress is worth getting off this device
   if (phase === 'victory' || phase === 'defeat') syncNow()
+  // the seed that produced this board, so the result card can hand it on
+  screens.runSeedForShare = game.runSeed
   if (phase === 'victory') screens.show('victory', { stars, levelId: game.level!.id, stats: game.battleStats() })
   else if (phase === 'defeat') screens.show('defeat', { levelId: game.level!.id, stats: game.battleStats() })
 }
 
-if (challengeSeed !== null) {
+// the boot screen has done its job the moment there is a menu behind it
+document.getElementById('loading')?.remove()
+
+if (challenge) {
   // arriving from someone else's link: play their board, skip the menu
-  screens.onPlayDaily()
+  if (challenge.levelId && levels.some(l => l.id === challenge.levelId)) {
+    // a campaign or Long Night challenge: the same map from the same seed
+    hud.reset()
+    hud.setChrome(true)
+    screens.show('none')
+    game.startLevel(
+      levelById(challenge.levelId), 'normal', (game.save.lastHero as never) ?? 'aldric',
+      challenge.endless ? 'endless' : 'campaign',
+      { seed: challenge.seed },
+    )
+  } else {
+    screens.onPlayDaily()
+  }
+  // an older link still opens and still plays; it just cannot promise it is the
+  // identical board any more, so say that rather than quietly implying it
+  if (!challengeIsCurrent()) {
+    setTimeout(() => hud.showToast('This challenge was made under older rules, so it may not play out identically.', 7), 1800)
+  }
 } else {
   screens.show('menu')
   game.showMenuBackdrop()
@@ -333,7 +430,17 @@ document.addEventListener('visibilitychange', () => {
 // best-effort storage really is evicted; ask to keep the campaign
 void requestDurableStorage()
 
-telemetry.track({ type: 'session_start', firstRun: !localStorage.getItem('blockhold.save.v1'), source: acquisitionSource(), embedded: isEmbedded() })
+// Storage can be blocked outright rather than merely full. The game is still
+// completely playable, so this is a warning and not a wall - but a player who
+// is going to lose a campaign should hear it before they earn one.
+if (!storageWorks) {
+  setTimeout(
+    () => hud.showToast('This browser is blocking storage, so progress will not be kept between visits.', 8),
+    2500,
+  )
+}
+
+telemetry.track({ type: 'session_start', firstRun: !safeLocal.get('blockhold.save.v1'), source: acquisitionSource(), embedded: isEmbedded() })
 
 // Cloud saves are best-effort and never block play: if the service is off,
 // unreachable or disabled at build time, this is a no-op and the game runs
@@ -347,6 +454,12 @@ function syncNow(): void {
 }
 if (cloud.signedIn) syncNow()
 window.addEventListener('error', (e) => telemetry.track({ type: 'error', message: String(e.message).slice(0, 200) }))
+// a rejected promise never reached the error handler above, so every failure in
+// an async path - sync, capture, fullscreen - was invisible in production
+window.addEventListener('unhandledrejection', (e) => {
+  const reason = e.reason instanceof Error ? e.reason.message : String(e.reason)
+  telemetry.track({ type: 'error', message: `unhandled: ${reason}`.slice(0, 200) })
+})
 window.addEventListener('pagehide', () => telemetry.flush())
 
 window.addEventListener('keydown', (e) => {

@@ -105,10 +105,18 @@ function sharpshooterTower(): VoxModel {
     box(0, 1.6, 0, 6, 1.4, 6, W.stone),
     ...stilts(h, 0x4a3b28),
     box(0, h + 0.4, 0, 7, 0.8, 7, 0x4a3b28),
-    box(0, h + 1.3, 0, 5.4, 1.2, 5.4, 0x3a2e1f),               // enclosed hide
-    box(0, h + 2.9, 0, 0.5, 2.2, 0.5, 0x3a2e1f),
-    box(0, h + 4.4, 0, 2.6, 1.0, 1.0, W.iron),                  // telescope
-    box(0, h + 4.4, 0.85, 0.9, 0.7, 0.3, 0x7fe8ff, true),       // lens
+    // The hide used to be one solid 5.4-wide block, and the archer stood
+    // *inside* it: only head and shoulders showed above a box of timber. It
+    // is a parapet now - four low walls the archer stands within - so the
+    // figure reads as a marksman in a hide rather than a bust on a plinth.
+    box(0, h + 1.3, -2.45, 5.4, 1.2, 0.5, 0x3a2e1f),
+    box(0, h + 1.3, 2.45, 5.4, 1.2, 0.5, 0x3a2e1f),
+    box(-2.45, h + 1.3, 0, 0.5, 1.2, 4.4, 0x3a2e1f),
+    box(2.45, h + 1.3, 0, 0.5, 1.2, 4.4, 0x3a2e1f),
+    // the telescope on its post, off-centre so it never shares the archer's column
+    box(1.9, h + 2.4, -1.6, 0.5, 2.6, 0.5, 0x3a2e1f),
+    box(1.9, h + 4.0, -1.6, 2.6, 1.0, 1.0, W.iron),               // telescope
+    box(1.9, h + 4.0, -0.75, 0.9, 0.7, 0.3, 0x7fe8ff, true),      // lens
   ]
   const fig = archerFigure(h + 0.9, 0x2f4f28, 0x1e3319)
   return { parts: { base, turret: fig.part }, pivots: { turret: fig.pivot } }
@@ -428,6 +436,198 @@ function oathgateCitadel(branch: 0 | 1): VoxModel {
   return m
 }
 
+// ---------------- Beacons ----------------
+// A support building has to look like it *does* something without ever
+// firing. The tell is the light: every tier is a taller brazier, and the fire
+// itself is the animated 'crystal' part so it flickers and turns.
+
+function beaconTower(level: 1 | 2 | 3): VoxModel {
+  const h = 3.6 + level * 1.7
+  const stone = level === 3 ? W.stoneLight : W.stone
+  const base: VoxBox[] = [
+    box(0, 0.5, 0, 7.4, 1, 7.4, W.stoneDark),
+    box(0, h / 2 + 1, 0, 3.4, h, 3.4, stone),                 // the column
+    box(0, h + 1.25, 0, 4.4, 0.5, 4.4, W.stoneDark),           // cap
+    box(0, h + 1.9, 0, 3.0, 0.9, 3.0, W.iron),                 // the basket
+  ]
+  // steps and a low ring wall, so it reads as a place rather than a post
+  base.push(box(0, 1.35, 2.9, 3.2, 0.7, 1.2, W.stoneDark))
+  if (level >= 2) {
+    for (const [x, z] of [[-2.9, -2.9], [2.9, 2.9], [-2.9, 2.9], [2.9, -2.9]]) {
+      base.push(box(x, 1.6, z, 0.9, 1.2, 0.9, W.stoneDark))
+      base.push(box(x, 2.5, z, 0.6, 0.6, 0.6, 0xffb23c, true))   // corner lamps
+    }
+  }
+  if (level >= 3) {
+    // a signal platform with rails: the high beacon is a watchtower too
+    base.push(box(0, h + 0.55, 0, 6.2, 0.6, 6.2, W.woodDark))
+    for (const [x, z, w, d] of [[0, -3.0, 6.2, 0.4], [0, 3.0, 6.2, 0.4], [-3.0, 0, 0.4, 6.2], [3.0, 0, 0.4, 6.2]] as const) {
+      base.push(box(x, h + 1.3, z, w, 0.9, d, W.woodDark))
+    }
+    base.push(box(0, h + 0.2, 0, 3.8, 0.4, 3.8, W.gold))
+  }
+  const fy = h + 2.9
+  const crystal: VoxBox[] = [
+    box(0, fy, 0, 2.0, 1.8, 2.0, 0xff7a3c, true),
+    box(0, fy + 1.1, 0, 1.2, 1.2, 1.2, 0xffb23c, true),
+    box(0, fy + 1.9, 0, 0.6, 0.8, 0.6, 0xffe89f, true),
+  ]
+  return { parts: { base, crystal }, pivots: { crystal: [0, fy, 0] } }
+}
+
+function watchfire(): VoxModel {
+  const m = beaconTower(3)
+  // a pale, searching light: white-blue, with mirrored shutters that turn with it
+  m.parts.crystal = [
+    box(0, 10.0, 0, 2.2, 2.0, 2.2, 0x9fe8ff, true),
+    box(0, 11.3, 0, 1.3, 1.3, 1.3, 0xffffff, true),
+    box(-1.5, 10.0, 0, 0.3, 2.4, 2.6, W.iron),
+    box(1.5, 10.0, 0, 0.3, 2.4, 2.6, W.iron),
+  ]
+  m.pivots = { crystal: [0, 10.0, 0] }
+  m.parts.base.push(box(0, 8.7, 0, 4.0, 0.5, 4.0, 0x3d4a5f))
+  return m
+}
+
+function titheHall(): VoxModel {
+  const m = beaconTower(3)
+  // gilded: the coin-house look, strongboxes at the foot of the column
+  m.parts.base.push(
+    box(-2.4, 1.6, 0.6, 1.5, 1.2, 1.5, 0x5c4a42),
+    box(-2.4, 2.35, 0.6, 1.6, 0.3, 1.6, W.gold),
+    box(2.4, 1.6, -0.6, 1.5, 1.2, 1.5, 0x5c4a42),
+    box(2.4, 2.35, -0.6, 1.6, 0.3, 1.6, W.gold),
+    box(0, 4.8, 1.75, 1.6, 1.6, 0.25, W.gold),               // the crown seal
+  )
+  m.parts.crystal = m.parts.crystal.map(b => ({ ...b, color: b.c === 0xff7a3c ? 0xffd24a : b.c }))
+  return m
+}
+
+function crownfire(): VoxModel {
+  const m = watchfire()
+  m.parts.base.push(...crenels(0, 9.4, 0, 5.4, 5.4, W.gold))
+  m.parts.crystal.push(box(0, 12.6, 0, 0.7, 0.9, 0.7, 0xffe89f, true))
+  return m
+}
+
+function exchequer(): VoxModel {
+  const m = titheHall()
+  m.parts.base.push(
+    box(0, 0.5, 0, 8.4, 0.4, 8.4, W.gold),
+    box(0, 9.3, 0, 4.6, 0.5, 4.6, W.gold),
+  )
+  return m
+}
+
+// ---------------- Ballistae ----------------
+// Low and wide where the arrow towers are tall: a siege engine on a mount,
+// and the whole bow is the turret so it visibly swings to aim.
+
+/**
+ * The engine itself: a stock on a swivel, a wide two-armed prod, a windlass
+ * at the back and a bolt in the groove. The first version was a thin cross
+ * of sticks that read as a fence from the distance the game is played at;
+ * this one is built for silhouette - a fat stock, thick arms with iron caps,
+ * and a span wider than the mount so the shape is unmistakably a bow.
+ */
+function ballistaBow(len: number, arm: number, wood: number, iron: number, bolt = 0xc8cdd6): VoxBox[] {
+  const y = 0.9
+  return [
+    box(0, 0.55, 0, 3.2, 1.1, 3.2, wood),                                  // swivel mount
+    box(0, y + 0.3, 0, 2.2, 0.6, 2.2, iron),                                // turntable ring
+    box(0, y + 0.9, len * 0.12, 1.3, 0.9, len, wood),                       // stock
+    box(0, y + 1.45, len * 0.12, 0.5, 0.25, len * 0.9, 0x2b2333),           // the groove
+    box(-arm / 2 - 0.2, y + 1.0, len * 0.5, arm, 0.55, 0.7, wood),          // arms
+    box(arm / 2 + 0.2, y + 1.0, len * 0.5, arm, 0.55, 0.7, wood),
+    box(-arm - 0.3, y + 1.0, len * 0.5, 0.6, 0.8, 0.9, iron),               // iron arm caps
+    box(arm + 0.3, y + 1.0, len * 0.5, 0.6, 0.8, 0.9, iron),
+    box(0, y + 1.0, len * 0.5, 1.5, 1.1, 1.2, iron),                        // the head block
+    box(0, y + 1.05, len * 0.02, arm * 2 + 1.0, 0.16, 0.16, 0x2b2333),      // the string, drawn back
+    box(0, y + 1.55, len * 0.18, 0.3, 0.3, len * 0.72, 0x6d4f2a),           // the loaded bolt
+    box(0, y + 1.55, len * 0.5 + 0.3, 0.5, 0.5, 0.6, bolt),                 // its head
+    box(0, y + 1.2, -len * 0.42, 1.8, 0.5, 0.6, iron),                      // windlass drum
+    box(-1.2, y + 1.2, -len * 0.42, 0.25, 1.3, 0.25, iron),                 // crank handles
+    box(1.2, y + 1.2, -len * 0.42, 0.25, 1.3, 0.25, iron),
+  ]
+}
+
+function ballistaTower(level: 1 | 2 | 3): VoxModel {
+  const baseH = 1.2 + level * 0.6
+  const base: VoxBox[] = [
+    box(0, 0.6, 0, 7.5, 1.2, 7.5, W.stoneDark),
+    box(0, baseH / 2 + 1, 0, 6.0, baseH, 6.0, level === 1 ? W.woodDark : W.stone),
+    box(0, baseH + 1.3, 0, 6.4, 0.5, 6.4, W.woodDark),
+    // a rack of spare bolts at the back rail
+    box(0, baseH + 1.9, -2.7, 2.6, 0.3, 0.5, W.woodDark),
+    ...[-0.7, 0, 0.7].map(x => box(x, baseH + 2.5, -2.7, 0.3, 1.8, 0.3, 0x6d4f2a)),
+    ...[-0.7, 0, 0.7].map(x => box(x, baseH + 3.5, -2.7, 0.45, 0.45, 0.45, 0xc8cdd6)),
+  ]
+  if (level >= 2) base.push(...crenels(0, baseH + 1.9, 0, 5.6, 5.6, W.stoneDark))
+  if (level >= 3) {
+    base.push(box(-2.8, baseH + 2.6, 2.8, 0.9, 2.4, 0.9, W.iron))
+    base.push(box(2.8, baseH + 2.6, 2.8, 0.9, 2.4, 0.9, W.iron))
+    base.push(box(0, baseH + 1.4, 0, 4.2, 0.35, 4.2, W.gold))
+  }
+  const ty = baseH + 1.6
+  const turret = ballistaBow(4.6 + level * 0.5, 2.0 + level * 0.3, W.woodDark, W.iron).map(b => ({ ...b, y: b.y + ty }))
+  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] } }
+}
+
+function skyharrow(): VoxModel {
+  const base: VoxBox[] = [
+    box(0, 0.6, 0, 7.5, 1.2, 7.5, W.stoneDark),
+    box(0, 2.4, 0, 5.4, 2.6, 5.4, W.stoneLight),
+    box(0, 3.9, 0, 6.2, 0.5, 6.2, 0x3d5a8f),
+    // sky-blue pennants on tall staves: the tower that watches upward
+    box(-2.8, 5.4, -2.8, 0.3, 3.2, 0.3, W.woodDark),
+    box(-2.2, 6.4, -2.8, 1.4, 0.9, 0.15, 0x7fd4ff),
+    box(2.8, 5.4, 2.8, 0.3, 3.2, 0.3, W.woodDark),
+    box(3.4, 6.4, 2.8, 1.4, 0.9, 0.15, 0x7fd4ff),
+  ]
+  const ty = 4.2
+  const turret = ballistaBow(6.2, 3.2, 0x3d5a8f, W.iron, 0x7fd4ff).map(b => ({ ...b, y: b.y + ty }))
+  // the bow is canted upward: raise the head end
+  turret.push(box(0, ty + 2.6, 3.4, 0.5, 0.5, 1.2, 0x7fd4ff, true))
+  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] } }
+}
+
+function wallbreaker(): VoxModel {
+  const base: VoxBox[] = [
+    box(0, 0.6, 0, 7.6, 1.2, 7.6, 0x4d3f38),
+    box(0, 2.4, 0, 6.2, 2.6, 6.2, 0x5c4a42),
+    ...crenels(0, 4.1, 0, 5.6, 5.6, 0x4d3f38),
+    // iron ram-heads stacked as ammunition
+    box(-2.6, 1.9, 2.6, 1.6, 0.8, 1.6, W.iron),
+    box(-2.6, 2.6, 2.6, 1.0, 0.6, 1.0, 0x353942),
+  ]
+  const ty = 4.6
+  const turret = ballistaBow(5.8, 2.6, 0x4a3527, 0x353942).map(b => ({ ...b, y: b.y + ty }))
+  turret.push(box(0, ty + 2.45, 3.3, 1.3, 1.3, 0.8, W.iron))   // the ram head on the bolt
+  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] } }
+}
+
+function heavensplitter(): VoxModel {
+  const m = skyharrow()
+  m.parts.base.push(
+    ...crenels(0, 4.5, 0, 6.0, 6.0, W.gold),
+    box(0, 8.6, 0, 0.35, 1.8, 0.35, W.gold),
+    box(0, 9.8, 0, 0.8, 0.8, 0.8, 0xffe89f, true),
+  )
+  m.parts.turret.push(box(0, 4.2 + 2.45, 3.6, 0.5, 0.5, 0.9, 0xffe89f, true))
+  return m
+}
+
+function godsbaneRam(): VoxModel {
+  const m = wallbreaker()
+  m.parts.base.push(
+    box(0, 1.7, 0, 8.4, 0.4, 8.4, W.gold),
+    box(2.6, 1.9, -2.6, 1.6, 0.8, 1.6, W.iron),
+    box(2.6, 2.6, -2.6, 1.0, 0.6, 1.0, 0xff7a3c, true),
+  )
+  m.parts.turret.push(box(0, 4.6 + 1.9, 2.9, 1.9, 1.5, 0.5, W.gold))
+  return m
+}
+
 // ---------------- registry ----------------
 
 export type TowerModelId =
@@ -435,6 +635,8 @@ export type TowerModelId =
   | 'mage1' | 'mage2' | 'mage3' | 'mage4a' | 'mage4b' | 'mage5a' | 'mage5b'
   | 'cannon1' | 'cannon2' | 'cannon3' | 'cannon4a' | 'cannon4b' | 'cannon5a' | 'cannon5b'
   | 'barracks1' | 'barracks2' | 'barracks3' | 'barracks4a' | 'barracks4b' | 'barracks5a' | 'barracks5b'
+  | 'beacon1' | 'beacon2' | 'beacon3' | 'beacon4a' | 'beacon4b' | 'beacon5a' | 'beacon5b'
+  | 'ballista1' | 'ballista2' | 'ballista3' | 'ballista4a' | 'ballista4b' | 'ballista5a' | 'ballista5b'
 
 const factories: Record<TowerModelId, () => VoxModel> = {
   arrow1: () => arrowTower(1), arrow2: () => arrowTower(2), arrow3: () => arrowTower(3),
@@ -449,6 +651,12 @@ const factories: Record<TowerModelId, () => VoxModel> = {
   barracks1: () => barracksTower(1), barracks2: () => barracksTower(2), barracks3: () => barracksTower(3),
   barracks4a: paladinSanctum, barracks4b: berserkerHall,
   barracks5a: () => oathgateCitadel(0), barracks5b: () => oathgateCitadel(1),
+  beacon1: () => beaconTower(1), beacon2: () => beaconTower(2), beacon3: () => beaconTower(3),
+  beacon4a: watchfire, beacon4b: titheHall,
+  beacon5a: crownfire, beacon5b: exchequer,
+  ballista1: () => ballistaTower(1), ballista2: () => ballistaTower(2), ballista3: () => ballistaTower(3),
+  ballista4a: skyharrow, ballista4b: wallbreaker,
+  ballista5a: heavensplitter, ballista5b: godsbaneRam,
 }
 
 const modelCache = new Map<TowerModelId, VoxModel>()
@@ -464,6 +672,9 @@ export const muzzleHeights: Record<TowerModelId, number> = {
   mage1: 0.95, mage2: 1.15, mage3: 1.3, mage4a: 1.25, mage4b: 1.05, mage5a: 1.3, mage5b: 1.1,
   cannon1: 0.5, cannon2: 0.6, cannon3: 0.72, cannon4a: 0.8, cannon4b: 0.62, cannon5a: 0.85, cannon5b: 0.66,
   barracks1: 0.5, barracks2: 0.5, barracks3: 0.5, barracks4a: 0.5, barracks4b: 0.5, barracks5a: 0.5, barracks5b: 0.5,
+  // a beacon fires nothing; the height is where its light is drawn from
+  beacon1: 0.85, beacon2: 1.0, beacon3: 1.2, beacon4a: 1.25, beacon4b: 1.2, beacon5a: 1.3, beacon5b: 1.25,
+  ballista1: 0.5, ballista2: 0.56, ballista3: 0.62, ballista4a: 0.65, ballista4b: 0.66, ballista5a: 0.68, ballista5b: 0.68,
 }
 
 /** Build plot marker */

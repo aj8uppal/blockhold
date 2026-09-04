@@ -28,6 +28,12 @@ export class WaveManager {
   waveIndex = -1                // index of last started wave
   phase: WavePhase = 'countdown'
   countdown = 14
+  /**
+   * The chance a given spawn is a named elite, set by the Game from the chosen
+   * difficulty. The manager does not roll it - spawning does - but the preview
+   * has to be able to warn that elites are on this board at all.
+   */
+  eliteChance = 0
   private queue: QueuedSpawn[] = []
   private elapsed = 0
 
@@ -89,6 +95,10 @@ export class WaveManager {
     if (p.some(e => e.phasing)) out.push('Phasing')
     if (p.some(e => e.healer)) out.push('Healers')
     if (p.some(e => e.summoner)) out.push('Spawns')
+    // elites are rolled per spawn, so the roster cannot say which enemy will
+    // carry which affix - but it can say that named elites are possible here,
+    // which is the part a player plans around
+    if (this.eliteChance > 0) out.push('Elites')
     return out
   }
 

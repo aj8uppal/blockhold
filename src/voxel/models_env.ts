@@ -302,6 +302,19 @@ export function arrowProjectile(): VoxModel {
   }
 }
 
+/** a ballista bolt: longer and heavier than an arrow, with a fat iron head */
+export function spearProjectile(head: number): VoxModel {
+  return {
+    parts: {
+      base: [
+        box(0, 0, 0.2, 0.24, 0.24, 3.6, 0x6d4f2a),
+        box(0, 0, 2.2, 0.5, 0.5, 0.8, head),
+        box(0, 0, -1.6, 0.55, 0.55, 0.5, 0x8f2f2f),
+      ],
+    },
+  }
+}
+
 export function boltProjectile(color: number): VoxModel {
   return {
     parts: {

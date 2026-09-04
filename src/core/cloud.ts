@@ -44,8 +44,13 @@ function dropLocal(key: string): void {
   try { localStorage.removeItem(key) } catch { /* nothing to drop */ }
 }
 
-/** the syncable half of a save; device settings stay on the device */
-export function toCloud(save: SaveData, updatedAt = Date.now()): CloudSave {
+/**
+ * The syncable half of a save; device settings stay on the device.
+ *
+ * `updatedAt` defaults to when the save last changed, not to now, so the
+ * "newest wins" fields resolve by when the player made the choice.
+ */
+export function toCloud(save: SaveData, updatedAt = save.changedAt ?? Date.now()): CloudSave {
   return sanitizeCloudSave({
     unlocked: save.unlocked,
     stars: save.stars,
@@ -55,6 +60,7 @@ export function toCloud(save: SaveData, updatedAt = Date.now()): CloudSave {
     medals: save.medals,
     lastHero: save.lastHero,
     dailyBest: save.dailyBest,
+    xp: save.xp,
     updatedAt,
   })
 }
@@ -71,6 +77,7 @@ export function applyCloud(save: SaveData, cloud: CloudSave): SaveData {
     medals: cloud.medals,
     lastHero: cloud.lastHero,
     dailyBest: cloud.dailyBest,
+    xp: Math.max(save.xp, cloud.xp),
   }
 }
 
@@ -83,6 +90,15 @@ export class Cloud {
 
   get enabled(): boolean { return API.length > 0 }
   get signedIn(): boolean { return this.enabled && !!this.token }
+
+  /**
+   * The Authorization header for this device, or nothing when it has no token.
+   * Exposed so the leaderboard can authenticate as the same anonymous account
+   * without a second identity system.
+   */
+  authHeader(): Record<string, string> {
+    return this.token ? { Authorization: `Bearer ${this.token}` } : {}
+  }
 
   status(): CloudStatus {
     return {
@@ -108,9 +124,14 @@ export class Cloud {
         },
       })
       if (res.status === 401) {
-        // the account is gone or the token was revoked: fall back to local
-        this.signOut()
-        throw new Error('This device is no longer linked.')
+        // The token is no longer accepted. Drop it so this device stops trying,
+        // but KEEP the link code: dropping both used to make one bad 401 - a
+        // restored volume, a bad migration, a machine booted on the wrong
+        // database - permanently unrecoverable, because the code the player
+        // needed to link again had been deleted from their device along with
+        // the token. Local progress is untouched either way.
+        this.dropToken()
+        throw new Error('This device was signed out. Your code still works - restore with it to sync again.')
       }
       if (!res.ok) throw new Error(`Sync failed (${res.status})`)
       return await res.json()
@@ -139,8 +160,16 @@ export class Cloud {
     return this.status()
   }
 
-  /** adopt an existing account on this device using its link code */
-  async linkDevice(linkCode: string): Promise<{ ok: boolean, save?: CloudSave, error?: string }> {
+  /**
+   * Adopt an existing account on this device using its link code.
+   *
+   * Linking merges, in both directions. The account's progress comes down and
+   * this device's progress goes up, so a player who beat three maps here before
+   * remembering they had an account keeps those three maps - and the account
+   * gains them too. Taking the server copy wholesale, which is what this used
+   * to do, silently deleted whatever had been earned on this device first.
+   */
+  async linkDevice(linkCode: string, save: SaveData): Promise<{ ok: boolean, save?: CloudSave, error?: string }> {
     if (!this.enabled) return { ok: false, error: 'Cloud saves are not enabled.' }
     try {
       const res = await fetch(`${API}/v1/link`, {
@@ -157,10 +186,16 @@ export class Cloud {
       // player is not shown dots on the device they just restored onto
       this.code = linkCode.trim().toUpperCase()
       writeLocal(CODE_KEY, this.code)
-      const cloud = sanitizeCloudSave(out.save)
+      const local = toCloud(save)
+      const merged = mergeSaves(local, sanitizeCloudSave(out.save))
       this.lastError = null
       this.lastSyncedAt = Date.now()
-      return { ok: true, save: cloud }
+      // push the union straight back up so the account is not one device behind
+      // until the next sync. Best-effort: the local half is already correct.
+      try {
+        await this.call('/v1/save', { method: 'PUT', body: JSON.stringify({ save: merged }) })
+      } catch { /* the next sync carries it */ }
+      return { ok: true, save: merged }
     } catch {
       return { ok: false, error: 'Could not reach the sync service.' }
     }
@@ -223,6 +258,17 @@ export class Cloud {
     this.code = null
     dropLocal(TOKEN_KEY)
     dropLocal(CODE_KEY)
+  }
+
+  /**
+   * Stop using a token the server rejected, while keeping the link code.
+   *
+   * The player did not ask for this, so it must stay recoverable: the code is
+   * the only thing that can get the account back.
+   */
+  private dropToken(): void {
+    this.token = null
+    dropLocal(TOKEN_KEY)
   }
 }
 

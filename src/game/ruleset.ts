@@ -9,8 +9,16 @@
  * cannot silently rewrite an old result.
  *
  * Cosmetic changes - models, particles, sounds, UI - do not require a bump.
+ *
+ * History:
+ *   1  first seeded build.
+ *   2  the late-map enemy HP ramp, the ten-map campaign, and the Armory retune
+ *      from a 25-star board to a 37-star one. All three change what a seed
+ *      produces, and all three shipped while this constant still said 1 - so
+ *      results from those builds are recorded under a version whose rules they
+ *      were not played by. Bumping here is what stops that compounding.
  */
-export const RULESET_VERSION = 1
+export const RULESET_VERSION = 2
 
 /** identifies a reproducible run */
 export interface RunStamp {

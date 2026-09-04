@@ -1,3 +1,4 @@
+@import './fonts.css';
 /* ---------- Blockhold UI ---------- */
 
 :root {
@@ -407,7 +408,11 @@ button:disabled { cursor: not-allowed; }
 .floater.gold { color: var(--gold-bright); }
 .floater.shard { color: #8fdfff; }
 .floater.crit { color: #ff6a4a; font-size: 19px; }
-.floater.float-up { animation: float-up 1.05s ease-out forwards; }
+/* ordinary damage: legible, but quieter than gold, shards and crits, so the
+   constant readout never competes with the events worth looking up for */
+.floater.damage { color: #ffe9cf; font-size: 13px; font-weight: 700; opacity: 0.92; }
+/* duration is set per floater from the game speed; see HUD.spawnFloater */
+.floater.float-up { animation: float-up var(--float-life, 1.05s) ease-out forwards; }
 @keyframes float-up {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
   15% { opacity: 1; transform: translate(-50%, -70%) scale(1.1); }
@@ -433,6 +438,17 @@ button:disabled { cursor: not-allowed; }
 .enemy-tip b { color: #ff9f8f; font-size: 13.5px; }
 .enemy-tip .et-hp { color: var(--parchment); font-weight: 700; }
 .enemy-tip .et-traits { display: block; color: #e8c95f; font-weight: 700; font-size: 11.5px; margin-top: 2px; }
+/* an affix is the headline fact about an enemy, so it gets its own line above
+   the ordinary traits rather than being buried among them */
+.enemy-tip .et-affix {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 3px; padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(159, 58, 255, 0.18);
+  border: 1px solid rgba(190, 130, 255, 0.5);
+  color: #e2c6ff; font-weight: 800; font-size: 11px;
+  letter-spacing: 0.03em; text-transform: uppercase;
+}
 .enemy-tip .et-desc { display: block; font-style: italic; color: rgba(244, 232, 207, 0.75); margin-top: 3px; }
 
 .damage-vignette {
@@ -866,7 +882,11 @@ button:focus-visible {
  * becomes a narrow column here: two stat chips a row at a smaller size,
  * tighter padding, and its own scroll.
  */
-@media (pointer: coarse) and (max-height: 430px), (max-height: 430px) and (min-width: 700px) {
+/* Landscape phones are not all 430px tall. The compact rules used to start at
+   exactly 430, so every device in the 431-480 band - a very common landscape
+   height, and the 800x450 portal iframe size - got the wide tablet panel on a
+   short screen: it covered 57% of the board and clipped its own action row. */
+@media (pointer: coarse) and (max-height: 500px), (max-height: 500px) and (min-width: 700px) {
   .tower-panel {
     width: min(300px, 40vw);
     max-height: calc(100vh - 96px - env(safe-area-inset-bottom));
@@ -891,6 +911,13 @@ button:focus-visible {
   .u-desc { font-size: 10px; line-height: 1.3; }
   .btn.small { padding: 6px 7px; font-size: 11px; min-height: 34px; }
   .btn { min-height: 34px; }
+  /* ...but not for fingers. A mouse can hit 34px on a short desktop window; a
+     thumb cannot, and this is the breakpoint the phone build actually uses.
+     The menu scrolls, so taller buttons cost reachability, never access. */
+  @media (pointer: coarse) {
+    .btn, .btn.small, .mode-option { min-height: 44px; }
+    .tp-close { min-width: 44px; min-height: 44px; }
+  }
   /* the coach mark is centre-bottom and the panel is right-bottom; on a short
      wide screen they meet, so the mark yields the corner the panel needs */
   #hud:has(.tower-panel:not(.hidden)) .coach-mark { left: 34%; max-width: 46vw; }
@@ -928,7 +955,7 @@ button:focus-visible {
 /* Phone landscape is the orientation this game is actually played in, and the
    menu card is the tallest thing in it: trim the hero down so every option,
    including the ones below the fold, is reachable without a scroll. */
-@media (max-height: 430px) {
+@media (max-height: 500px) {
   .menu-hero { padding: 9px 24px; gap: 4px; border-radius: 16px; }
   .menu-crest { font-size: 22px; }
   .game-title { font-size: 22px; letter-spacing: 3px; }
@@ -1166,6 +1193,11 @@ button:focus-visible {
   animation: coach-in 0.28s ease both;
 }
 .coach-mark.hidden { display: none; }
+/* An open build menu draws over the bottom centre, which is where the coach
+   mark lives: the "call the wave in early" tip landed directly on top of the
+   tower stats a player had just opened the menu to read. The menu is the thing
+   being acted on, so the mark steps aside for as long as it is open. */
+#hud:has(.build-menu:not(.hidden)) .coach-mark { opacity: 0; pointer-events: none; }
 .coach-text { font-size: 13.5px; line-height: 1.45; color: var(--parchment); }
 .coach-skip {
   flex: none;
@@ -1183,3 +1215,210 @@ button:focus-visible {
   .coach-mark { bottom: calc(76px + env(safe-area-inset-bottom)); padding: 7px 10px; }
   .coach-text { font-size: 12px; }
 }
+
+/* ---------- the privacy control ---------- */
+
+/* One line on the menu, because a consent control nobody can find is not
+   consent. Deliberately quiet: it is honest, not a demand for attention. */
+.menu-privacy { display: flex; justify-content: center; margin-top: 4px; }
+.privacy-toggle {
+  background: none;
+  border: 1px solid rgba(244, 232, 207, 0.18);
+  border-radius: 999px;
+  padding: 3px 11px;
+  color: rgba(244, 232, 207, 0.5);
+  font-family: inherit; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  min-height: 26px;
+}
+.privacy-toggle:hover { color: rgba(244, 232, 207, 0.8); border-color: rgba(244, 232, 207, 0.35); }
+.privacy-toggle.on { color: var(--gold); border-color: rgba(232, 178, 60, 0.45); }
+@media (pointer: coarse) { .privacy-toggle { min-height: 34px; padding: 6px 14px; } }
+
+/* ---------- where today's result placed ---------- */
+
+/* A wave number alone is a fact; the same number beside everyone else's is a
+   reason to come back tomorrow. Appears only once a board actually answers. */
+.daily-rank {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center;
+  gap: 4px 10px;
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid rgba(232, 178, 60, 0.22);
+  color: rgba(244, 232, 207, 0.75);
+  font-size: 12px;
+}
+.daily-rank .dr-rank {
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 20px; font-weight: 800; color: var(--gold-bright);
+  font-variant-numeric: tabular-nums;
+}
+.daily-rank .dr-of { font-weight: 700; }
+.daily-rank .dr-top {
+  flex-basis: 100%;
+  font-size: 11px; color: rgba(244, 232, 207, 0.5);
+  white-space: pre; overflow-x: auto;
+}
+.daily-rank .dr-name {
+  flex-basis: 100%;
+  background: none; border: none; padding: 4px 0 0;
+  color: rgba(127, 212, 255, 0.85);
+  font-family: inherit; font-size: 11px; font-weight: 700;
+  text-decoration: underline; text-underline-offset: 2px;
+  min-height: 24px;
+}
+@media (pointer: coarse) { .daily-rank .dr-name { min-height: 34px; } }
+
+/* ---------- the offline backup code ---------- */
+
+.account-backup {
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid rgba(232, 178, 60, 0.2);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.account-backup-head {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--gold);
+}
+.account-backup-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.account-code {
+  width: 100%; min-height: 62px;
+  background: rgba(10, 6, 3, 0.6);
+  border: 1px solid rgba(232, 178, 60, 0.3);
+  border-radius: 8px;
+  color: var(--parchment);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding: 7px;
+  resize: vertical;
+  word-break: break-all;
+}
+
+/* ---------- a legibility floor ---------- */
+
+/*
+  Nothing in the interface may be smaller than 12px on a touch screen.
+
+  The compact landscape rules had walked several labels down to 8.5-11px, which
+  is where a stat chip stops being information and becomes texture. Type that
+  small is also unreadable to a large share of players outright, and the
+  viewport is locked against pinch-zoom, so they have no way to fix it
+  themselves. These overrides come last so they win on order, and they raise
+  only the offenders rather than resetting the whole compact layout.
+*/
+@media (pointer: coarse) {
+  .chip-label { font-size: 12px; }
+  .chip-value { font-size: 13px; }
+  .tp-traits, .tp-stats, .tp-level { font-size: 12px; }
+  .u-name, .u-cost, .u-desc { font-size: 12px; }
+  .b-cost, .b-name { font-size: 12px; }
+  .build-tooltip { font-size: 12px; }
+  .wp-label, .wp-tag { font-size: 12px; }
+  .call-sub { font-size: 12px; }
+  .hero-level { font-size: 12px; }
+  .ability .hotkey { font-size: 12px; }
+  .menu-footer { font-size: 12px; }
+  .enemy-tip .et-traits, .enemy-tip .et-affix { font-size: 12px; }
+  .level-meta, .level-goal { font-size: 12px; }
+  .btn.small { font-size: 12px; }
+}
+
+/* the Hold's own portrait, offered under the summary line that describes it */
+.hold-share {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-left: 8px; padding: 2px 10px;
+  border: 1px solid rgba(232, 178, 60, 0.4);
+  border-radius: 999px;
+  background: none;
+  color: var(--gold);
+  font-family: inherit; font-size: 12px; font-weight: 700;
+  min-height: 26px;
+}
+.hold-share:hover { border-color: var(--gold); color: var(--gold-bright); }
+.hold-share:disabled { opacity: 0.6; }
+@media (pointer: coarse) { .hold-share { min-height: 34px; padding: 6px 12px; } }
+
+/* ---------- what an upgrade buys, in numbers ---------- */
+
+/* Hidden until the option is being read (hover, or a press-and-hold on touch)
+   so the panel stays the height it was; then each line is now -> after, with
+   the after in green whenever it is an improvement. */
+.btn.upgrade .u-delta {
+  display: none;
+  margin-top: 5px; padding-top: 5px;
+  border-top: 1px dashed rgba(244, 232, 207, 0.18);
+  font-size: 11.5px; font-weight: 700; line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  color: rgba(244, 232, 207, 0.72);
+}
+.btn.upgrade:hover:not(:disabled) .u-delta,
+.btn.upgrade.armed .u-delta,
+.btn.upgrade.confirming .u-delta { display: block; }
+.btn.upgrade .d-row { display: block; }
+.btn.upgrade .d-label {
+  display: inline-block; min-width: 5.6em;
+  color: rgba(244, 232, 207, 0.5);
+  font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase;
+}
+.btn.upgrade .d-arrow { color: rgba(244, 232, 207, 0.35); }
+.btn.upgrade .d-up { color: #8fe08a; font-weight: 800; }
+.btn.upgrade .d-same { color: rgba(244, 232, 207, 0.85); }
+/* an ascension is a lateral change, so its "after" is cyan rather than green */
+.btn.upgrade.ascend .d-up { color: #9fe8ff; }
+@media (pointer: coarse) {
+  .btn.upgrade .u-delta { font-size: 12px; }
+  .btn.upgrade .d-label { font-size: 12px; }
+}
+.build-tooltip .tip-warn { color: #ffb37a; }
+/* a chip carrying a bonus from a beacon, a rampart or a perk: the number shown
+   is the true one, and the tint says it is more than the tower's own */
+.chip.lit { border-color: rgba(255, 178, 60, 0.55); background: rgba(255, 178, 60, 0.10); }
+.chip.lit .chip-value { color: #ffd98f; }
+
+/* ---------- account level ---------- */
+
+.level-row {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: 6px 10px; margin-top: 8px;
+  font-size: 12px; color: rgba(244, 232, 207, 0.75);
+}
+.level-badge { font-weight: 800; color: var(--gold-bright); letter-spacing: 0.02em; }
+.level-bar {
+  display: inline-block; width: 120px; height: 7px;
+  background: rgba(10, 6, 3, 0.55);
+  border: 1px solid rgba(232, 178, 60, 0.35);
+  border-radius: 999px; overflow: hidden; vertical-align: middle;
+}
+.level-bar i { display: block; height: 100%; background: linear-gradient(90deg, #c98d2a, var(--gold-bright)); border-radius: 999px; }
+.level-xp { font-variant-numeric: tabular-nums; font-weight: 700; }
+.level-next { color: rgba(244, 232, 207, 0.55); font-weight: 700; }
+.level-next svg { vertical-align: -2px; }
+
+/* what the account has not reached yet: present, named, and priced in levels */
+.hero-option.locked { opacity: 0.55; filter: grayscale(0.8); cursor: not-allowed; }
+.hero-option.locked:hover { transform: none; border-color: inherit; }
+.hero-option .hero-lock { display: block; margin-top: 6px; font-size: 11.5px; font-weight: 800; color: var(--gold); }
+.build-option.locked { opacity: 0.5; filter: grayscale(0.6); cursor: not-allowed; }
+.build-option.locked:hover { transform: none; border-color: inherit; background: inherit; }
+.build-option.locked .b-cost { color: var(--gold); }
+
+/* the end card: experience and the level it made */
+.end-xp {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: 6px 12px; margin-top: 10px; font-size: 13px; color: rgba(244, 232, 207, 0.85);
+}
+.end-xp-gain { font-weight: 800; color: var(--gold-bright); font-size: 15px; font-variant-numeric: tabular-nums; }
+.end-xp-level { font-weight: 800; }
+.end-unlock {
+  margin-top: 10px; padding: 10px 14px;
+  border: 1px solid rgba(255, 232, 159, 0.55); border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 232, 159, 0.14), rgba(255, 232, 159, 0.04));
+  text-align: center;
+  animation: unlock-in 0.5s ease both;
+}
+.end-unlock-eyebrow { font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255, 232, 159, 0.7); }
+.end-unlock-name { font-family: 'Cinzel', Georgia, serif; font-size: 17px; font-weight: 800; color: #ffe89f; margin-top: 2px; }
+.end-unlock-blurb { font-size: 12px; color: rgba(244, 232, 207, 0.8); margin-top: 3px; }
+@keyframes unlock-in { from { transform: scale(0.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .end-unlock { animation: none; } }
+@media (pointer: coarse) { .level-row, .end-xp { font-size: 12.5px; } .hero-option .hero-lock { font-size: 12px; } }

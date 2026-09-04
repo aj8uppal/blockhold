@@ -72,6 +72,14 @@ class ArrowProjectile extends Ballistic {
         world.particles.hitSpark(target.pos.x, target.pos.y + 0.4, target.pos.z)
         world.sfx('hit', 0.5)
       }
+    } else {
+      // The target died while this was in the air. The arrow already flies on to
+      // where it was aimed rather than blinking out - but it used to arrive at
+      // nothing and simply disappear, so a volley loosed at a dying enemy ended
+      // in silence. It lands: a spark in the dirt and a quieter thud.
+      const p = this.mesh.position
+      world.particles.hitSpark(p.x, p.y, p.z)
+      world.sfx('hit', 0.22)
     }
   }
 }
@@ -103,6 +111,10 @@ class BoltProjectile implements Projectile {
           world.particles.magicImpact(to.x, to.y, to.z, this.spec.color)
           world.sfx('hit', 0.4)
         }
+      } else {
+        // outlived its target: the bolt still breaks where it was aimed
+        world.particles.magicImpact(to.x, to.y, to.z, this.spec.color)
+        world.sfx('hit', 0.18)
       }
       return
     }
@@ -323,6 +335,97 @@ class Meteor implements Projectile {
   }
 }
 
+/**
+ * A ballista bolt.
+ *
+ * Every other projectile in the game resolves at a point: an arrow at its
+ * target, a shell at a spot on the ground. This one resolves along a line. It
+ * flies straight from the muzzle through where it was aimed and on to the
+ * tower's full reach, and anything whose body it passes through is struck -
+ * once, the first at full weight and the rest at `falloff`. That is what makes
+ * a ballista's placement a question of *direction*: the same plot is worthless
+ * across a road and superb along one.
+ */
+class SpearProjectile implements Projectile {
+  mesh: THREE.Object3D
+  done = false
+  private pos: THREE.Vector3
+  private dir: THREE.Vector3
+  private travelled = 0
+  private hits = 0
+  private struck = new Set<Enemy>()
+  private static readonly SPEED = 14
+  private static readonly HIT_RADIUS = 0.42
+
+  constructor(private spec: Extract<ProjectileSpec, { kind: 'spear' }>) {
+    this.mesh = buildModel(env.spearProjectile(spec.pierceAll ? 0xffd24a : 0xc8cdd6), `proj:spear:${spec.pierceAll ? 'great' : 'bolt'}`, { castShadow: false })
+    this.pos = spec.from.clone()
+    this.dir = spec.aim.clone().sub(spec.from)
+    this.dir.y = 0
+    if (this.dir.lengthSq() < 1e-6) this.dir.set(0, 0, 1)
+    this.dir.normalize()
+    this.mesh.position.copy(this.pos)
+    this.mesh.lookAt(this.pos.clone().add(this.dir))
+  }
+
+  update(dt: number): void {
+    const { world } = this.spec
+    const step = SpearProjectile.SPEED * dt
+    const next = this.pos.clone().addScaledVector(this.dir, step)
+    // sweep the segment we just crossed, so a fast bolt cannot skip a body
+    for (const e of world.enemies) {
+      if (!e.targetable || this.struck.has(e)) continue
+      if (e.def.flying && !this.spec.hitsAir) continue
+      const d = distToSegmentXZ(e.pos, this.pos, next)
+      if (d > SpearProjectile.HIT_RADIUS + e.radius) continue
+      this.strike(e)
+    }
+    this.pos.copy(next)
+    this.travelled += step
+    this.mesh.position.copy(this.pos)
+    if (this.travelled >= this.spec.reach) {
+      this.done = true
+      // it lands somewhere: a bolt that hit nothing still thuds into the dirt
+      if (this.hits === 0) {
+        world.particles.hitSpark(this.pos.x, 0.05, this.pos.z)
+        world.sfx('hit', 0.18)
+      }
+    }
+  }
+
+  private strike(e: Enemy): void {
+    const { world, credit, armorPierce } = this.spec
+    this.struck.add(e)
+    const order = this.hits++
+    let dmg = this.spec.damage * (this.spec.pierceAll || order === 0 ? 1 : Math.pow(this.spec.falloff, order))
+    if (e.def.flying && this.spec.airMult) dmg *= this.spec.airMult
+    const dealt = e.takeDamage(dmg, 'physical', world, { credit, armorPierce })
+    if (dealt <= 0) return
+    world.particles.hitSpark(e.pos.x, e.pos.y + 0.4, e.pos.z)
+    world.sfx('hit', order === 0 ? 0.6 : 0.35)
+    if (this.spec.knockback) {
+      e.shove(this.spec.knockback)
+      world.particles.buildDust(e.pos.x, e.pos.y + 0.1, e.pos.z)
+    }
+    // Heavensplitter: a flyer struck is knocked out of the air
+    if (this.spec.skyfall && e.def.flying && e.alive) {
+      e.applyStun(1.5, world)
+    }
+  }
+
+  dispose(): void { /* the mesh is a cached model; nothing instance-owned */ }
+}
+
+/** distance from a point to a segment, on the ground plane */
+function distToSegmentXZ(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
+  const abx = b.x - a.x, abz = b.z - a.z
+  const apx = p.x - a.x, apz = p.z - a.z
+  const len2 = abx * abx + abz * abz
+  const t = len2 > 0 ? Math.max(0, Math.min(1, (apx * abx + apz * abz) / len2)) : 0
+  const cx = a.x + abx * t, cz = a.z + abz * t
+  return Math.hypot(p.x - cx, p.z - cz)
+}
+
 export function createProjectile(spec: ProjectileSpec): Projectile {
   switch (spec.kind) {
     case 'arrow': return new ArrowProjectile(spec)
@@ -331,6 +434,7 @@ export function createProjectile(spec: ProjectileSpec): Projectile {
     case 'chain': return new ChainLightning(spec)
     case 'warlockBolt': return new WarlockBolt(spec)
     case 'meteor': return new Meteor(spec)
+    case 'spear': return new SpearProjectile(spec)
   }
 }
 

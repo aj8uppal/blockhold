@@ -5,9 +5,10 @@ import { World, KillCredit } from './world.ts'
 import type { Tower } from './towers.ts'
 import { buildModel, setFlash, getPart, VoxModel } from '../voxel/builder.ts'
 import * as units from '../voxel/models_units.ts'
-import { clamp, lerpAngle, randRange, simRandom } from '../core/utils.ts'
+import { clamp, isCoarsePointer, lerpAngle, randRange, simRandom } from '../core/utils.ts'
 import { CUTTING_SLOW, CUTTING_VULN } from './earthworks.ts'
 import { HP_BAR_NAME } from './debris.ts'
+import { AFFIXES, COMMANDER_RADIUS, COMMANDER_WARD, ELITE_HP, type AffixDef, type AffixId } from './affixes.ts'
 
 /** how often a boss throws its blockers off */
 export const BOSS_SWEEP_INTERVAL = 5.5
@@ -114,6 +115,7 @@ export interface EnemySpawnOpts {
   hpMult?: number
   speedMult?: number
   elite?: boolean
+  affix?: AffixId | null
   surged?: boolean
   /** which wave this enemy belongs to (streak/promise tracking); -1 = untracked */
   waveTag?: number
@@ -124,6 +126,26 @@ export interface EnemySpawnOpts {
 }
 
 const ELITE_TINT = 0x9f3aff
+
+/**
+ * How large a unit is drawn, over and above its own authored scale.
+ *
+ * On a phone in landscape the board is roughly 13 screen pixels per world
+ * unit, which put a Husk at about twelve pixels tall - two millimetres on the
+ * device this game forces into landscape and ships as an installed app. At that
+ * size a Husk, a Sprinter and a Shieldbearer are the same grey smudge, and the
+ * whole readable-counters design goes with them.
+ *
+ * The camera cannot fix this alone: pulling in far enough to read a unit loses
+ * the lanes, and a tower defense played without seeing the road is a worse
+ * trade than a slightly toy-like scale. So models are simply drawn larger where
+ * the pixels are small. It is a rendering constant only - it touches no
+ * collision radius, no lane offset, no targeting distance, and therefore no
+ * balance: the simulation keeps using the authored size (see `sim` in the Enemy
+ * constructor) and only the drawn mesh is affected. Health bars derive from
+ * measured model height, so they follow on their own.
+ */
+const UNIT_SCALE = isCoarsePointer() ? 1.28 : 1
 
 export class Enemy {
   group: THREE.Group
@@ -141,6 +163,8 @@ export class Enemy {
   slowUntil = 0
   slowFactor = 1
   readonly elite: boolean
+  /** which named elite this is, when it is one; see game/affixes.ts */
+  readonly affix: AffixDef | null
   readonly surged: boolean
   readonly waveTag: number
   readonly noReward: boolean
@@ -177,24 +201,33 @@ export class Enemy {
 
   constructor(readonly def: EnemyDef, readonly lane: LanePath, readonly laneIndex: number, startDist = 0, opts: EnemySpawnOpts = {}) {
     this.elite = opts.elite ?? false
+    this.affix = opts.affix ? AFFIXES[opts.affix] : null
     this.surged = opts.surged ?? false
     this.waveTag = opts.waveTag ?? -1
     this.noReward = opts.noReward ?? false
-    this.speedMult = opts.speedMult ?? 1
-    const hpMult = (opts.hpMult ?? 1) * (this.elite ? 1.9 : 1)
+    this.speedMult = (opts.speedMult ?? 1) * (this.affix?.speed ?? 1)
+    const hpMult = (opts.hpMult ?? 1) * (this.elite ? ELITE_HP * (this.affix?.hp ?? 1) : 1)
     this.hp = this.maxHp = Math.round(def.hp * hpMult)
     // deep-endless hardening: the same creatures, but progressively harder to
     // hurt, so one damage type stops being an answer forever
     const tough = opts.toughness ?? 0
-    this.armor = Math.min(0.8, def.armor + tough)
-    this.magicResistNow = Math.min(0.8, def.magicResist + tough)
+    // an affix shifts what beats this enemy, so it lands on the resistances
+    // themselves rather than on a flat damage multiplier; the same 0.8 ceiling
+    // applies, and the floor stops a negative affix creating healing
+    this.armor = Math.max(0, Math.min(0.8, def.armor + tough + (this.affix?.armor ?? 0)))
+    this.magicResistNow = Math.max(0, Math.min(0.8, def.magicResist + tough + (this.affix?.magicResist ?? 0)))
     this.dist = startDist
     this.offset = randRange(-0.27, 0.27)
     this.attackTimer = def.attackInterval * simRandom()
     this.summonTimer = (def.summons?.interval ?? 0) * 0.6
     const factory = enemyModelFactories[def.model]
     this.group = buildModel(factory(), `enemy:${def.model}`, { cloneMaterials: true })
-    const s = (def.scale ?? 1) * 1.12 * (this.elite ? 1.15 : 1)
+    // `sim` is the authored size the simulation reasons about; `s` is what gets
+    // drawn. They differ only by UNIT_SCALE, and nothing derived from `sim` may
+    // ever be computed from `s` - a collision radius that grew on phones would
+    // make blocking, and therefore balance, different on a phone than a laptop.
+    const sim = (def.scale ?? 1) * 1.12 * (this.elite ? 1.15 : 1)
+    const s = sim * UNIT_SCALE
     this.group.scale.setScalar(s)
     if (this.elite || this.surged || def.tint !== undefined) this.applyTint()
     // Sit the bar just above whatever this thing actually is, measured rather
@@ -207,7 +240,7 @@ export class Enemy {
     // boss bars were enormous. barY stays in world units for floaters; the
     // bar's own transform is divided back out.
     this.barY = measuredBarHeight(this.group) + (def.yOffset ?? 0)
-    this.radius = 0.22 * s
+    this.radius = 0.22 * sim
     this.parts = {}
     for (const name of ['body', 'head', 'legL', 'legR', 'armL', 'armR', 'wingL', 'wingR', 'legsL', 'legsR', 'legFL', 'legFR', 'legBL', 'legBR']) {
       this.parts[name] = getPart(this.group, name)
@@ -225,13 +258,15 @@ export class Enemy {
   get pos(): THREE.Vector3 { return this.group.position }
   get alive(): boolean { return this.state === 'walking' }
   /** alive AND currently hittable (mistwalkers phase out) */
-  get targetable(): boolean { return this.alive && !this.phased }
+  /** standing in a Watchfire's light: a phasing enemy can still be shot */
+  revealed = false
+  get targetable(): boolean { return this.alive && (!this.phased || this.revealed) }
   /** perched out of melee reach (soldiers must not chase a hexing imp) */
   get unreachable(): boolean { return this.hexTarget !== null }
   get remaining(): number { return this.lane.length - this.dist }
 
   private applyTint(): void {
-    const color = this.elite ? ELITE_TINT : this.surged ? 0x6f2aaf : this.def.tint
+    const color = this.affix ? this.affix.tint : this.elite ? ELITE_TINT : this.surged ? 0x6f2aaf : this.def.tint
     if (color === undefined) return
     const intensity = this.elite ? 0.32 : this.surged ? 0.2 : 0.28
     this.group.traverse(o => {
@@ -254,7 +289,7 @@ export class Enemy {
 
   /** returns damage actually dealt */
   takeDamage(amount: number, type: DamageType, world: World, opts: { crit?: boolean, silent?: boolean, mrPierce?: number, armorPierce?: number, credit?: KillCredit } = {}): number {
-    if (!this.alive || this.phased) return 0
+    if (!this.alive || (this.phased && !this.revealed)) return 0
     let mult = 1
     if (type === 'physical') mult = 1 - this.armor * (1 - (opts.armorPierce ?? 0))
     else if (type === 'magic') mult = 1 - this.magicResistNow * (1 - (opts.mrPierce ?? 0))
@@ -275,14 +310,55 @@ export class Enemy {
       setFlash(this.group, 0.65)
     }
     if (opts.crit) {
+      // a crit is its own event and always gets its own number, immediately
+      this.pendingDamage = 0
       world.floater(this.pos.x, this.pos.y + this.barY + 0.15, this.pos.z, `${Math.round(dealt)}!`, 'crit')
       world.sfx('crit', 0.8)
+    } else if (!opts.silent && dealt > 0) {
+      this.showDamage(dealt, world)
     }
     if (this.hp <= 0) {
       if (opts.credit) opts.credit.kills++
       this.die(world)
     }
     return dealt
+  }
+
+  /** damage taken since the last number was shown above this enemy */
+  private pendingDamage = 0
+  private nextDamageFloaterAt = 0
+
+  /**
+   * The player's own effectiveness, in numbers, for every hit and not only crits.
+   *
+   * Until now the only readout of how hard a tower hit was an 8-pixel health
+   * bar, and the one time a number appeared was a crit - so the most common
+   * event in the game, a tower doing its job, produced no legible feedback at
+   * all.
+   *
+   * The reason it was only crits is real, though: forty arrows a second against
+   * a swarm would empty a forty-element floater pool instantly and read as
+   * confetti. So damage accumulates per enemy and surfaces as one number a few
+   * times a second. That is also *better* than one number per hit - "148" tells
+   * a player how fast something is dying; four separate "37"s do not.
+   */
+  private showDamage(dealt: number, world: World): void {
+    this.pendingDamage += dealt
+    if (world.time < this.nextDamageFloaterAt) return
+    this.nextDamageFloaterAt = world.time + 0.26
+    const n = Math.round(this.pendingDamage)
+    this.pendingDamage = 0
+    if (n < 1) return
+    world.floater(this.pos.x, this.pos.y + this.barY + 0.1, this.pos.z, `${n}`, 'damage')
+  }
+
+  /**
+   * Shoved back along the road by a ballista bolt. Bosses are too heavy to
+   * move; a shove on a boss is simply a hit. Never pushes past the spawn.
+   */
+  shove(dist: number): void {
+    if (this.def.boss || !this.alive) return
+    this.dist = Math.max(0, this.dist - dist)
   }
 
   applyPoison(dps: number, duration: number, world: World, credit?: KillCredit): void {
@@ -415,7 +491,7 @@ export class Enemy {
       const t = this.dyingT / 0.55
       this.group.rotation.x = -t * Math.PI / 2 * 0.9
       this.group.position.y = Math.max((this.def.yOffset ?? 0) * (1 - t * 2), 0) + Math.sin(Math.min(t, 1) * Math.PI) * 0.1
-      const s = (this.def.scale ?? 1) * Math.max(0.01, 1 - Math.max(0, t - 0.5) * 2)
+      const s = (this.def.scale ?? 1) * UNIT_SCALE * Math.max(0.01, 1 - Math.max(0, t - 0.5) * 2)
       this.group.scale.setScalar(s)
       if (this.dyingT > 0.7) this.state = 'gone'
       return
@@ -507,6 +583,22 @@ export class Enemy {
             && e.remaining < this.remaining
             && e.pos.distanceTo(this.pos) < a.radius) {
             e.wardedUntil = world.time + 0.45
+          }
+        }
+      }
+    }
+
+    // A Commander elite carries the same shield a Wardbearer does, in every
+    // direction rather than only forward, and dies with it. It reuses the ward
+    // rather than inventing a second shield mechanic, so a player who has
+    // already learned "kill the banner" reads this instantly.
+    if (this.affix?.id === 'commander') {
+      this.wardTimer -= dt
+      if (this.wardTimer <= 0) {
+        this.wardTimer = 0.25
+        for (const e of world.enemies) {
+          if (e !== this && e.alive && !e.def.boss && e.pos.distanceTo(this.pos) < COMMANDER_RADIUS) {
+            e.wardedUntil = world.time + COMMANDER_WARD
           }
         }
       }
@@ -771,7 +863,9 @@ export class Soldier {
     this.home = home.clone()
     const factory = soldierModelFactories[def.model]
     this.group = buildModel(factory(), `soldier:${def.model}`, { cloneMaterials: true })
-    if (def.scale) this.group.scale.setScalar(def.scale)
+    // soldiers share the board with enemies, so they share the legibility scale;
+    // their own `radius` is a fixed constant and is deliberately left alone
+    this.group.scale.setScalar((def.scale ?? 1) * UNIT_SCALE)
     this.group.position.copy(spawnPos)
     this.bar = new HealthBar(0.45)
     this.bar.group.name = HP_BAR_NAME
@@ -909,6 +1003,13 @@ export class Soldier {
     }
 
     const pos = this.group.position
+    // Movement decisions are made on the ground plane only. A soldier spawns
+    // at its barracks door, which sits on the plot at y=0.1, while its home is
+    // authored at y=0 - so the 3D distance between "here" and "home" could
+    // never drop below 0.1, the arrival test never passed, and every idle
+    // soldier in the game marched in place forever, a tenth of a unit from
+    // where it was trying to stand.
+    const flat = (a: THREE.Vector3, b: THREE.Vector3) => Math.hypot(a.x - b.x, a.z - b.z)
     if (this.target) {
       /**
        * Take a fixed slot in front of the enemy and hold it.
@@ -931,7 +1032,7 @@ export class Soldier {
         0,
         this.target.pos.z + Math.cos(angle) * standOff,
       )
-      const d = pos.distanceTo(standAt)
+      const d = flat(pos, standAt)
       if (d > 0.1) {
         const step = Math.min(d, 1.5 * dt)
         pos.x += (standAt.x - pos.x) / d * step
@@ -939,7 +1040,7 @@ export class Soldier {
         this.animWalk()
       }
       this.yaw = lerpAngle(this.yaw, Math.atan2(this.target.pos.x - pos.x, this.target.pos.z - pos.z), dt * 9)
-      if (pos.distanceTo(this.target.pos) < standOff + 0.22) {
+      if (flat(pos, this.target.pos) < standOff + 0.22) {
         this.animFight(dt)
         this.attackTimer -= dt
         if (this.attackTimer <= 0) {
@@ -953,7 +1054,7 @@ export class Soldier {
         }
       }
     } else {
-      const d = pos.distanceTo(this.home)
+      const d = flat(pos, this.home)
       if (d > 0.08) {
         const step = Math.min(d, 1.5 * dt)
         pos.x += (this.home.x - pos.x) / d * step
@@ -965,6 +1066,10 @@ export class Soldier {
       }
     }
     this.group.rotation.y = this.yaw
+    // height is composed here and nowhere else: the ground under the unit plus
+    // whatever its walk cycle adds, so a terrace lifts it and a hop stays a hop
+    this.baseY = world.groundY(pos.x, pos.z)
+    pos.y = this.baseY + this.bobY
     this.bar.set(this.hp / this.maxHp, world.cameraQuat)
   }
 

@@ -2,14 +2,18 @@ import { levels } from '../game/levels.ts'
 import { Difficulty, DIFFICULTIES, HeroId } from '../game/types.ts'
 import { HERO_DEFS } from '../game/hero.ts'
 import { ARMORY_TRACKS, starsAvailable, starsEarned, buyTier, respec, armoryTier } from '../game/armory.ts'
-import { writeSave } from '../core/save.ts'
+import { exportSave, importSave, writeSave } from '../core/save.ts'
 import type { SaveData } from '../core/save.ts'
 import { icon } from './icons.ts'
 import { readCheckpoint } from '../game/checkpoint.ts'
+import { setTelemetryAllowed, telemetryAllowed } from '../core/sink.ts'
+import { fetchDaily, leaderboardEnabled, nickname, setNickname } from '../core/leaderboard.ts'
 import { dailyNumber } from '../game/ruleset.ts'
 import { holdPieces, holdSummary } from '../game/hold.ts'
-import { cloud, applyCloud } from '../core/cloud.ts'
-import { dailyShareText, challengeUrl, type DailyResult } from '../game/share.ts'
+import { isUnlocked, levelProgress, nextUnlock, unlockLevel, MAX_LEVEL, type UnlockDef } from '../game/progress.ts'
+import { cloud, applyCloud, toCloud } from '../core/cloud.ts'
+import { mergeSaves } from '../core/saveMerge.ts'
+import { dailyShareText, challengeUrl, runChallengeUrl, runShareText, type DailyResult } from '../game/share.ts'
 
 export type ScreenName = 'menu' | 'levels' | 'victory' | 'defeat' | 'none'
 
@@ -22,6 +26,20 @@ const THEME_ART: Record<string, string> = {
   highland: 'linear-gradient(160deg, #a8c8e4 0%, #6f8f5e 55%, #3d4a3a 100%)',
   ashfall: 'linear-gradient(160deg, #ffb070 0%, #b0502a 55%, #3f1c14 100%)',
   tidal: 'linear-gradient(160deg, #9fd0cf 0%, #3f97a8 55%, #1d3f4e 100%)',
+}
+
+/**
+ * Escape a string that came from somewhere other than this codebase.
+ *
+ * Leaderboard nicknames are written by other players and land in `innerHTML`.
+ * The server already restricts them to letters, numbers, spaces, hyphens and
+ * underscores, but a client that renders remote text into markup must not
+ * depend on a server rule staying correct forever - that is exactly the class
+ * of assumption that turns one relaxed validator into stored XSS for everyone.
+ */
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, html?: string): HTMLElementTagNameMap[K] {
@@ -38,11 +56,12 @@ export interface BattleStats {
   kills: number, gold: number, shards: number, wavesReached: number, wavesCleared: number, totalWaves: number,
   timeSec: number, heroLevel: number, endless: boolean, bestEndless: number,
   score: number, prevBestScore: number, newBestScore: boolean, newWaveRecord: boolean,
-  perfectWaves: number, bestStreak: number, noleak: boolean,
+  perfectWaves: number, bestStreak: number, noleak: boolean, livesLeft: number,
   lastLeak: { name: string, wave: number } | null,
   topKiller: { name: string, kills: number } | null,
   heroKills: number,
   daily?: DailyResult,
+  xpEarned: number, levelBefore: number, levelAfter: number, newUnlocks: UnlockDef[],
 }
 
 const fmtTime = (sec: number) => `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`
@@ -122,10 +141,12 @@ export class Screens {
     }
     // a battle interrupted mid-campaign is worth more than a fresh one
     const cp = readCheckpoint()
-    if (cp) {
-      const lvl = levels.find(l => l.id === cp.levelId)
+    // a checkpoint whose level no longer exists (an older build saved one for
+    // the Daily, or a map was renamed) must not offer a button that cannot open
+    const cpLevel = cp ? levels.find(l => l.id === cp.levelId) : undefined
+    if (cp && cpLevel) {
       const resume = el('button', 'btn primary', card,
-        `${icon('respawn')} Resume ${lvl?.name ?? 'battle'} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
+        `${icon('respawn')} Resume ${cpLevel.name} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
     }
     // one battle, the same one for everyone in the world today
@@ -165,7 +186,71 @@ export class Screens {
       const install = el('button', 'btn ghost', card, `${icon('fullscreen')} Play fullscreen`) as HTMLButtonElement
       install.onclick = () => this.renderInstallGuide()
     }
-    el('div', 'menu-footer', wrap, holdSummary(holdPieces(save)))
+    this.renderLevelBar(wrap, save)
+    const footer = el('div', 'menu-footer', wrap, holdSummary(holdPieces(save)))
+    // A keep nobody else can see is not a trophy. Offered only once there is
+    // something standing, so a bare Hold never invites a picture of nothing.
+    if (holdPieces(save).towers > 0) {
+      const shot = el('button', 'hold-share', footer, `${icon('share')} Share my Hold`) as HTMLButtonElement
+      shot.onclick = async () => {
+        shot.disabled = true
+        shot.textContent = 'Painting\u2026'
+        try {
+          const ok = await this.onSharePostcard()
+          shot.textContent = ok ? 'Saved' : 'Could not save'
+        } catch {
+          shot.textContent = 'Could not save'
+        }
+        setTimeout(() => {
+          shot.disabled = false
+          shot.innerHTML = `${icon('share')} Share my Hold`
+        }, 2600)
+      }
+    }
+    this.renderPrivacyRow(wrap)
+  }
+
+  /**
+   * Account level, experience toward the next, and what that next level opens.
+   *
+   * The one line on the menu that answers "why play the next map": the bar is
+   * the goal gradient, and the name beside it is the reason to want it.
+   */
+  private renderLevelBar(wrap: HTMLElement, save: SaveData): void {
+    const { level, into, span } = levelProgress(save.xp)
+    const next = nextUnlock(level)
+    const row = el('div', 'level-row', wrap)
+    el('span', 'level-badge', row, `${icon('sparkle')} Level ${level}`)
+    const bar = el('span', 'level-bar', row)
+    const fill = el('i', '', bar)
+    fill.style.width = `${Math.round(Math.min(1, into / span) * 100)}%`
+    el('span', 'level-xp', row, level >= MAX_LEVEL ? `${save.xp.toLocaleString()} XP` : `${into}/${span} XP`)
+    if (next) {
+      el('span', 'level-next', row, `${icon(next.kind === 'hero' ? 'helmPlume' : 'castle')} ${next.name} at ${next.level}`)
+    }
+  }
+
+  /**
+   * The whole of the privacy surface, in one line on the menu.
+   *
+   * Telemetry is off until this is switched on. It is here rather than buried
+   * in a settings screen because a control nobody can find is not consent, and
+   * the sentence says what is collected in the words a player would use.
+   */
+  private renderPrivacyRow(wrap: HTMLElement): void {
+    const row = el('div', 'menu-privacy', wrap)
+    const on = telemetryAllowed()
+    const btn = el('button', 'privacy-toggle', row) as HTMLButtonElement
+    const paint = () => {
+      const isOn = telemetryAllowed()
+      btn.textContent = isOn ? 'Anonymous play data: on' : 'Anonymous play data: off'
+      btn.classList.toggle('on', isOn)
+      btn.setAttribute('aria-pressed', String(isOn))
+    }
+    btn.title = 'Sends which wave you reached and which towers you built. No account, no cookies, no advertising, and never anything that identifies you.'
+    btn.onclick = () => { setTelemetryAllowed(!telemetryAllowed()); paint() }
+    void on
+    paint()
   }
 
   /** iOS has no fullscreen API — walk the player through installing instead */
@@ -265,11 +350,122 @@ export class Screens {
     again.onclick = () => this.onPlayDaily()
     const menu = el('button', 'btn ghost', row, 'Menu') as HTMLButtonElement
     menu.onclick = () => { this.show('menu'); this.onMenu() }
+
+    this.renderDailyRank(card, r)
   }
+
+  /**
+   * Experience earned, the level it made, and anything that level opened.
+   *
+   * A level-up with an unlock is the biggest reward the game hands out, so it
+   * gets the biggest treatment on the card - above the share row, since a new
+   * hero is exactly the thing a player will want to tell someone about.
+   */
+  private renderXp(card: HTMLElement, stats: BattleStats): void {
+    if (stats.xpEarned <= 0 && stats.newUnlocks.length === 0) return
+    const box = el('div', 'end-xp', card)
+    const leveled = stats.levelAfter > stats.levelBefore
+    el('span', 'end-xp-gain', box, `+${stats.xpEarned} XP`)
+    const { into, span } = levelProgress(this.save().xp)
+    const bar = el('span', 'level-bar', box)
+    el('i', '', bar).style.width = `${Math.round(Math.min(1, into / span) * 100)}%`
+    el('span', 'end-xp-level', box, leveled
+      ? `${icon('sparkle')} Level ${stats.levelAfter}!`
+      : `Level ${stats.levelAfter} · ${into}/${span}`)
+    for (const u of stats.newUnlocks) {
+      const row = el('div', 'end-unlock', card)
+      el('div', 'end-unlock-eyebrow', row, u.kind === 'hero' ? 'A champion answers the call' : 'A new engine of war')
+      el('div', 'end-unlock-name', row, `${icon(u.kind === 'hero' ? 'helmPlume' : 'castle')} ${u.name} unlocked`)
+      el('div', 'end-unlock-blurb', row, u.blurb)
+    }
+  }
+
+  /**
+   * Where today's result sits among everyone else's.
+   *
+   * A wave number on its own is a fact. The same number next to "142nd of 1,880
+   * today" is a reason to come back tomorrow, and it is what turns the result
+   * block from a souvenir into an argument. Rendered after the card is already
+   * complete and standing on its own, so a slow or absent service costs the
+   * player nothing but a line that never appears.
+   */
+  private renderDailyRank(card: HTMLElement, r: DailyResult): void {
+    if (!leaderboardEnabled()) return
+    const slot = el('div', 'daily-rank', card, 'Placing today\u2026')
+    void (async () => {
+      const placed = await this.onSubmitDaily(r)
+      const board = await fetchDaily(r.day)
+      if (!board) { slot.remove(); return }
+      const you = placed ?? board.you
+      slot.innerHTML = ''
+      if (you) {
+        el('span', 'dr-rank', slot, `#${you.rank.toLocaleString()}`)
+        el('span', 'dr-of', slot, `of ${board.total.toLocaleString()} today`)
+      } else {
+        el('span', 'dr-of', slot, `${board.total.toLocaleString()} have played today`)
+      }
+      const top = board.top.slice(0, 3)
+      if (top.length) {
+        el('span', 'dr-top', slot,
+          top.map(t => `${t.rank}. ${escapeHtml(t.nickname)} \u00b7 wave ${t.wave}`).join('   '))
+      }
+      // naming yourself is optional, and asked for only once there is a board
+      // to be named on - nobody wants a "choose a handle" box before they play
+      const name = el('button', 'dr-name', slot,
+        nickname() ? `Playing as ${escapeHtml(nickname())}` : 'Add a name') as HTMLButtonElement
+      name.onclick = () => {
+        const next = prompt('A name for the leaderboard (letters, numbers, spaces):', nickname())
+        if (next === null) return
+        setNickname(next)
+        name.textContent = nickname() ? `Playing as ${nickname()}` : 'Add a name'
+      }
+    })()
+  }
+
+  /** posts the finished daily and returns the placing, if there is one */
+  onSubmitDaily: (r: DailyResult) => Promise<{ rank: number } | null> = async () => null
 
   /** the seed the daily just played, so the share link points at that board */
   dailySeedForShare = 0
   onShared: (kind: string) => void = () => {}
+  /** the seed of the run that just ended, so its result can be handed on */
+  runSeedForShare = 0
+
+  /**
+   * Hand a block of text to whoever the player wants to hand it to.
+   *
+   * Three routes, in order of how well they work on the device in hand: the
+   * native share sheet on a phone (which reaches the chat app the link is
+   * actually going to), the clipboard on a desktop, and a selectable textarea
+   * when both are blocked - which they are inside some portal iframes, where
+   * silently failing would look exactly like a broken button.
+   */
+  private async shareText(text: string, btn: HTMLButtonElement, card: HTMLElement, kind: string, label: string): Promise<void> {
+    const nav = navigator as Navigator & { share?: (d: { text: string }) => Promise<void> }
+    if (nav.share && window.matchMedia('(pointer: coarse)').matches) {
+      try {
+        await nav.share({ text })
+        this.onShared(kind)
+        btn.textContent = 'Shared'
+        setTimeout(() => { btn.innerHTML = label }, 2500)
+        return
+      } catch {
+        // a cancelled share sheet is not a failure; fall through to the clipboard
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      btn.textContent = 'Copied'
+      this.onShared(kind)
+    } catch {
+      const box = el('textarea', 'daily-fallback', card) as HTMLTextAreaElement
+      box.value = text
+      box.readOnly = true
+      box.select()
+      btn.textContent = 'Select and copy'
+    }
+    setTimeout(() => { btn.innerHTML = label }, 2500)
+  }
 
   private showDifficultyPicker(levelId: string, levelName: string): void {
     const save = this.save()
@@ -298,8 +494,19 @@ export class Screens {
     el('div', 'diff-sub', card, 'Choose your champion')
     const heroRow = el('div', 'hero-row', card)
     const heroBtns = new Map<HeroId, HTMLButtonElement>()
+    // a hero the account has not reached is shown, named and priced in levels,
+    // rather than hidden: the ladder only pulls if the rungs can be seen
+    if (!isUnlocked(save, 'hero', hero)) hero = 'aldric'
     for (const def of Object.values(HERO_DEFS)) {
-      const btn = el('button', 'hero-option', heroRow) as HTMLButtonElement
+      const locked = !isUnlocked(save, 'hero', def.id)
+      const btn = el('button', `hero-option${locked ? ' locked' : ''}`, heroRow) as HTMLButtonElement
+      if (locked) {
+        btn.innerHTML = `<img class="hero-portrait" src="art/hero-${def.id}.webp" alt="">` +
+          `<span class="hero-name">${def.name}</span><span class="hero-title">${def.title}</span>` +
+          `<span class="hero-lock">${icon('lock')} Unlocks at level ${unlockLevel('hero', def.id)}</span>`
+        btn.disabled = true
+        continue
+      }
       btn.innerHTML = `<img class="hero-portrait" src="art/hero-${def.id}.webp" alt="">` +
         `<span class="hero-name">${def.name}</span><span class="hero-title">${def.title}</span>` +
         `<span class="hero-blurb">${def.blurb}</span>` +
@@ -374,6 +581,7 @@ export class Screens {
         el('div', 'end-topkiller', card, `${icon('trophy')} Deadliest building: <b>${stats.topKiller.name}</b> — ${stats.topKiller.kills} slain`)
       }
     }
+    if (stats) this.renderXp(card, stats)
     const row = el('div', 'end-actions', card)
     if (hasNext) {
       const next = el('button', 'btn primary', row, 'Next battle →') as HTMLButtonElement
@@ -388,6 +596,29 @@ export class Screens {
     }
     const menu = el('button', 'btn ghost', row, 'Level select') as HTMLButtonElement
     menu.onclick = () => { this.onMenu(); this.show('levels') }
+
+    // Every finished run is worth handing on, not only the Daily's. The Long
+    // Night record in particular is the number players most want to argue
+    // about, and it used to have no way off the device that set it.
+    if (stats && this.runSeedForShare) {
+      const shareLabel = `${icon('share')} ${endless ? 'Share your depth' : 'Share this hold'}`
+      const share = el('button', 'btn ghost', row, shareLabel) as HTMLButtonElement
+      share.title = 'Copy a result and a link that drops a friend onto this exact board'
+      share.onclick = () => {
+        const url = runChallengeUrl(this.runSeedForShare, levelId, endless)
+        const text = runShareText({
+          levelName: levels[idx]?.name ?? 'Blockhold',
+          endless,
+          won,
+          wave: stats.wavesReached,
+          totalWaves: stats.totalWaves,
+          lives: stats.livesLeft,
+          score: stats.score,
+          best: stats.bestEndless,
+        }, url)
+        void this.shareText(text, share, card, endless ? 'endless' : 'campaign', shareLabel)
+      }
+    }
 
     // a result card is a claim; a clip is evidence
     if (this.canRecordTape()) {
@@ -507,11 +738,61 @@ export class Screens {
         out.onclick = () => { cloud.signOut(); draw() }
         if (st.lastError) el('div', 'account-warn', card, st.lastError)
       }
+      this.renderBackupCode(card)
       const close = el('button', 'btn ghost', card, 'Back') as HTMLButtonElement
       close.onclick = () => { overlay.remove(); this.show('menu') }
     }
     draw()
     overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); this.show('menu') } }
+  }
+
+  /**
+   * A save as a block of text the player owns outright.
+   *
+   * `exportSave` and `importSave` have existed and been tested for a long time
+   * with nothing anywhere calling them, so the offline half of "your progress
+   * cannot be lost" was a promise made only in a comment. This is the escape
+   * hatch for everyone the cloud does not suit: no account, no service, no
+   * network - paste the code somewhere and it will still restore in a year.
+   */
+  private renderBackupCode(card: HTMLElement): void {
+    const wrap = el('div', 'account-backup', card)
+    el('div', 'account-backup-head', wrap, 'Or keep a backup code')
+    el('p', 'account-body', wrap,
+      'A copy of your progress as text. It needs no account and no connection - paste it back on any device to restore.')
+    const row = el('div', 'account-backup-row', wrap)
+
+    const copy = el('button', 'btn ghost small', row, 'Copy my code') as HTMLButtonElement
+    copy.onclick = async () => {
+      const code = exportSave(this.save())
+      try {
+        await navigator.clipboard.writeText(code)
+        copy.textContent = 'Copied'
+      } catch {
+        const box = el('textarea', 'account-code', wrap) as HTMLTextAreaElement
+        box.value = code
+        box.readOnly = true
+        box.select()
+        copy.textContent = 'Select and copy'
+      }
+      setTimeout(() => { copy.textContent = 'Copy my code' }, 2500)
+    }
+
+    const paste = el('button', 'btn ghost small', row, 'Restore from a code') as HTMLButtonElement
+    const warn = el('div', 'account-warn', wrap, '')
+    paste.onclick = () => {
+      const box = el('textarea', 'account-code', wrap) as HTMLTextAreaElement
+      box.placeholder = 'Paste your backup code here'
+      box.focus()
+      paste.textContent = 'Restore'
+      paste.onclick = () => {
+        const restored = importSave(box.value)
+        if (!restored) { warn.textContent = 'That does not look like a Blockhold code.'; return }
+        // the same merge the cloud uses, so restoring never costs this device
+        // whatever it earned since the backup was taken
+        this.onRestore(applyCloud(this.save(), mergeSaves(toCloud(this.save()), toCloud(restored))))
+      }
+    }
   }
 
   private renderLinkEntry(overlay: HTMLElement, back: () => void): void {
@@ -529,7 +810,7 @@ export class Screens {
     go.onclick = async () => {
       go.disabled = true
       warn.textContent = ''
-      const res = await cloud.linkDevice(input.value)
+      const res = await cloud.linkDevice(input.value, this.save())
       if (!res.ok || !res.save) {
         warn.textContent = res.error ?? 'That did not work.'
         go.disabled = false
@@ -551,6 +832,8 @@ export class Screens {
   watchesRemaining = 0
 
   /** wired by main so screens never import the capture layer directly */
+  /** paint the Hold as a picture and hand it to the player */
+  onSharePostcard: () => Promise<boolean> = async () => false
   canRecordTape: () => boolean = () => false
   onRecordTape: () => Promise<boolean> = async () => false
 

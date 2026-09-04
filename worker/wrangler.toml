@@ -1,0 +1,12 @@
+name = "blockhold"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+# where the real game is served from; the Worker is a proxy in front of it
+ORIGIN = "https://aj8uppal.github.io/blockhold"
+
+# To serve this on your own domain instead of a workers.dev subdomain, add the
+# route here and update og:url in index.html and ALLOWED_ORIGINS in
+# server/fly.toml to match the new origin.
+# routes = [{ pattern = "blockhold.example.com", custom_domain = true }]

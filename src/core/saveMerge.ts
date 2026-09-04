@@ -29,6 +29,8 @@ export interface CloudSave {
   medals: Record<string, string[]>
   lastHero: string
   dailyBest?: { day: number, wave: number, won: boolean, score: number }
+  /** account experience: monotonic, the higher copy wins */
+  xp: number
   /** epoch ms of the write this copy came from; decides the mutable fields */
   updatedAt: number
 }
@@ -85,6 +87,7 @@ export function sanitizeCloudSave(v: unknown): CloudSave {
       won: !!d.won,
       score: clampInt(d.score, 0, 99_999_999, 0),
     } : undefined,
+    xp: clampInt(o.xp, 0, 99_999_999, 0),
     updatedAt: clampInt(o.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
   }
 }
@@ -119,6 +122,7 @@ export function mergeSaves(a: CloudSave, b: CloudSave): CloudSave {
     bestScore: maxMerge(a.bestScore, b.bestScore),
     medals,
     dailyBest: betterDaily(a.dailyBest, b.dailyBest),
+    xp: Math.max(a.xp, b.xp),
     // choices, not achievements: a respec must survive the merge
     armory: { ...recent.armory },
     lastHero: recent.lastHero,

@@ -5,3 +5,8 @@ dist/
 # Midjourney originals stay local; the game ships processed webp from public/art
 art/*.png
 .env.local
+
+# a local server run drops its SQLite file here; it is never source
+*.db
+*.db-shm
+*.db-wal

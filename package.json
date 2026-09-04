@@ -8,15 +8,22 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test:smoke": "vite build && playwright test -c tests/smoke/playwright.config.ts",
+    "bundle:budget": "node scripts/bundle-budget.mjs"
   },
   "dependencies": {
     "three": "^0.169.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
     "@types/node": "^26.3.0",
     "@types/three": "^0.169.0",
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0",
     "typescript": "^5.6.0",
+    "typescript-eslint": "^8.69.0",
     "vite": "^5.4.0",
     "vitest": "^4.1.10"
   },

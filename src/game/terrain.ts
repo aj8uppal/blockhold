@@ -490,9 +490,14 @@ export class Terrain {
     level.plots.forEach(([c, r], i) => {
       const [x, z] = gridToWorld(c, r, level.width, level.height)
       const mesh = buildModel(plotVox(), 'plot', { castShadow: false, receiveShadow: true, cloneMaterials: true })
-      mesh.position.set(x, 0, z)
+      // A foundation stands on whatever the ground is there. Plateaus lift the
+      // terrain itself, and a marker placed at y=0 under a raised shelf was
+      // simply inside the hill: the mesa's foundations were invisible until a
+      // player happened to click the empty-looking ground above them.
+      const top = this.cellTop(c, r)
+      mesh.position.set(x, top, z)
       this.group.add(mesh)
-      this.plots.push({ index: i, cell: [c, r], pos: new THREE.Vector3(x, 0.1, z), occupied: false, mesh })
+      this.plots.push({ index: i, cell: [c, r], pos: new THREE.Vector3(x, top + 0.1, z), occupied: false, mesh })
     })
     ;(level.trapSpots ?? []).forEach(([c, r], i) => {
       if (!this.paths.roadCells.has(`${c},${r}`)) {

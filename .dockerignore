@@ -1,0 +1,14 @@
+# The sync service image copies exactly three paths: server/package.json,
+# server/src, and src/core/saveMerge.ts. Everything else in the repository is
+# build context that gets uploaded to the Fly builder on every deploy - 152 MB
+# of it, nearly all node_modules - and then never used. Excluding it turns a
+# slow upload into a fast one and keeps the image honest about its inputs.
+#
+# The Dockerfile itself has to stay in: a remote builder reads it from the
+# uploaded context, so excluding it produces "dockerfile not found".
+*
+!server/Dockerfile
+!server/package.json
+!server/src/
+!server/src/**
+!src/core/saveMerge.ts

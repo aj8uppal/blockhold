@@ -14,5 +14,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "../src/core/saveMerge.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "../src/core/saveMerge.ts"]
 }

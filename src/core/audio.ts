@@ -51,13 +51,71 @@ export class AudioSystem {
   isMuted(): boolean { return this.muted }
   isMusicMuted(): boolean { return this.musicMuted }
 
-  /** Fire-and-forget SFX. Rate-limited per name so swarms don't clip. */
+  /**
+   * How much a sound is worth keeping when there is not room for all of them.
+   *
+   * Higher wins. The numbers are a ranking, not a volume: they only ever get
+   * compared with each other.
+   */
+  private static readonly PRIORITY: Record<SfxName, number> = {
+    // the run is being decided
+    defeat: 100, victory: 100, leak: 90, horn: 85,
+    // the player did something, and needs to know it registered
+    build: 70, upgrade: 70, sell: 70, error: 70, click: 60,
+    meteor: 65, reinforce: 65, heal: 60, coin: 40,
+    // big combat events
+    explosion: 55, crit: 50, lightning: 45, die: 35,
+    // the constant background of a battle
+    cannon: 30, magic: 25, poison: 20, arrow: 15, hit: 10,
+  }
+
+  /** how many voices may start in one window before the budget starts refusing */
+  private static readonly VOICE_BUDGET = 6
+  private static readonly VOICE_WINDOW = 90   // ms
+  /** what is currently sounding, newest last; never longer than VOICE_BUDGET */
+  private voices: { t: number, pri: number }[] = []
+
+  /**
+   * Fire-and-forget SFX, budgeted by importance.
+   *
+   * This used to be a flat per-name gate: the same name could not play twice
+   * within 45ms. That throttled by coincidence rather than by significance. A
+   * boss landing a hit and a Husk landing a hit are both 'hit', so at swarm
+   * density the interesting one was silently dropped because an uninteresting
+   * one happened to arrive a frame earlier - and meanwhile fifteen *different*
+   * names could all fire at once, because the gate never looked across names.
+   *
+   * Now a short window has a voice budget. Everything plays while there is
+   * room; once the window is full, a sound only gets in by displacing the
+   * quietest thing recently allowed. Crits, explosions and leaks survive a
+   * swarm; the swarm's own arrow-on-armour chatter is what gets thinned.
+   */
   play(name: SfxName, volume = 1): void {
     if (!this.ctx || !this.master || this.muted) return
     const now = performance.now()
+    const pri = AudioSystem.PRIORITY[name] ?? 30
+
+    // an identical sound twice in the same few milliseconds is a flam, not a
+    // second event; this is the only per-name gate left and it is much shorter
     const last = this.lastPlay.get(name) ?? 0
-    const minGap = name === 'hit' || name === 'arrow' ? 45 : 25
-    if (now - last < minGap) return
+    if (now - last < 22) return
+
+    // drop everything that has aged out of the window
+    const cutoff = now - AudioSystem.VOICE_WINDOW
+    while (this.voices.length && this.voices[0].t < cutoff) this.voices.shift()
+
+    if (this.voices.length >= AudioSystem.VOICE_BUDGET) {
+      // The window is full. Only something that matters more than the least
+      // important sound in it gets in, and it takes that one's place.
+      let weakest = 0
+      for (let i = 1; i < this.voices.length; i++) {
+        if (this.voices[i].pri < this.voices[weakest].pri) weakest = i
+      }
+      if (pri <= this.voices[weakest].pri) return
+      this.voices.splice(weakest, 1)
+    }
+    this.voices.push({ t: now, pri })
+
     this.lastPlay.set(name, now)
     try { this.synth(name, volume) } catch { /* audio must never crash the game */ }
   }

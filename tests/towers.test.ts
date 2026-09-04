@@ -59,7 +59,7 @@ describe('tower economy', () => {
         seen.add(cap.signature!)
       }
     }
-    expect(seen.size).toBe(8)
+    expect(seen.size).toBe(12)
   })
 
   it('lets exactly one barracks capstone answer flyers', () => {

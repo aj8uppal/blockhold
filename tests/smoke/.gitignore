@@ -1,0 +1,4 @@
+# Playwright's per-test artifacts: screenshots, videos and error context for
+# failed smoke runs. Useful locally and uploaded by CI, never committed.
+output/
+report/

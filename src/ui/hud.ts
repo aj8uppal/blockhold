@@ -16,15 +16,16 @@ import { EARTHWORK_DEFS, type EarthworkSpot, type Earthwork } from '../game/eart
 import { beatIndex, BEATS_PER_BAR } from '../game/beat.ts'
 import { traitsOf, counterFor } from '../game/dossier.ts'
 import { HERO_RANK_MAX, heroRankCost } from '../game/hero.ts'
-import type { EnemyDef } from '../game/types.ts'
+import type { EnemyDef, TowerAura } from '../game/types.ts'
 import { icon, BOSS_ART } from './icons.ts'
+import { isUnlocked, unlockLevel } from '../game/progress.ts'
 
 function chip(label: string, value: string, cls = ''): string {
   return `<span class="chip${cls ? ' ' + cls : ''}"><span class="chip-label">${label}</span><span class="chip-value">${value}</span></span>`
 }
 
-const TOWER_ICONS: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm' }
-const TOWER_NAMES: Record<TowerKind, string> = { arrow: 'Arrow', mage: 'Mage', cannon: 'Cannon', barracks: 'Barracks' }
+const TOWER_ICONS: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm', beacon: 'flame', ballista: 'target' }
+const TOWER_NAMES: Record<TowerKind, string> = { arrow: 'Arrow', mage: 'Mage', cannon: 'Cannon', barracks: 'Barracks', beacon: 'Beacon', ballista: 'Ballista' }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, html?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag)
@@ -479,25 +480,30 @@ export class HUD {
   openBuildMenu(plot: PlotInfo, x: number, y: number): void {
     this.armedBuild = null
     this.buildMenu.innerHTML = ''
-    const kinds: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks']
+    const kinds: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks', 'ballista', 'beacon']
     for (const kind of kinds) {
       const def = towerTrees[kind].levels[0]
+      // a tower the account has not reached stays on the menu, greyed and
+      // labelled with its level, so the player knows the roster is bigger
+      // than what they can build today and what it takes to grow it
+      if (!isUnlocked(this.game.save, 'tower', kind)) {
+        const lockBtn = el('button', 'build-option locked', this.buildMenu) as HTMLButtonElement
+        lockBtn.innerHTML = `<span class="b-icon">${icon('lock')}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">Lv ${unlockLevel('tower', kind)}</span>`
+        lockBtn.disabled = true
+        lockBtn.title = `${TOWER_NAMES[kind]} unlocks at account level ${unlockLevel('tower', kind)}`
+        continue
+      }
       const btn = el('button', 'build-option', this.buildMenu) as HTMLButtonElement
       btn.dataset.cost = `${def.cost}`
       btn.innerHTML = `<span class="b-icon">${icon(TOWER_ICONS[kind])}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
-      btn.onclick = this.menuGuard(() => this.commitBuild(kind, btn, () => {
+      this.bindSpend(kind, btn, () => {
         this.game.previewRange(kind)
         this.showBuildTooltip(def, kind)
-      }, () => this.game.buildTower(kind)))
-      btn.onmouseenter = () => {
-        this.game.previewRange(kind)
-        this.showBuildTooltip(def, kind)
-      }
-      btn.onmouseleave = () => {
+      }, () => {
         if (this.armedBuild) return   // keep an armed touch selection visible
         this.game.previewRange(null)
         this.hideBuildTooltip()
-      }
+      }, () => this.game.buildTower(kind))
       btn.classList.toggle('poor', this.game.gold < def.cost)
     }
     const tip = el('div', 'build-tooltip hidden', this.buildMenu)
@@ -538,6 +544,28 @@ export class HUD {
     // has decided. See `tapOrHold`.
     if (this.heldFor === key) { this.heldFor = null; return }
     build()
+  }
+
+  /**
+   * Bind one option that spends gold: hold to read it, tap to buy it.
+   *
+   * Every such option has to register BOTH halves. `commitBuild` only knows to
+   * swallow the tap that ends a hold if `tapOrHold` set `heldFor` first, and
+   * for a long while the build, trap, earthwork and upgrade buttons wired the
+   * commit half alone - so on touch, where there is no hover, the only way to
+   * see a tower's stats was to buy it and read them afterwards. Going through
+   * one helper is what keeps the two halves from drifting apart again.
+   */
+  private bindSpend(
+    key: string,
+    btn: HTMLButtonElement,
+    inspect: () => void,
+    release: () => void,
+    build: () => void,
+  ): void {
+    // fine pointers get hover from `tapOrHold`; coarse ones get press-and-hold
+    this.tapOrHold(key, btn, inspect, release)
+    btn.onclick = this.menuGuard(() => this.commitBuild(key, btn, inspect, build))
   }
 
   /**
@@ -625,25 +653,32 @@ export class HUD {
   }
 
   /** one option: this ground can take exactly one kind of work */
-  openEarthworkMenu(spot: EarthworkSpot, x: number, y: number): void {
+  openEarthworkMenu(spot: EarthworkSpot, x: number, y: number, lifts: string[] = []): void {
     this.armedBuild = null
     this.buildMenu.innerHTML = ''
     const def = EARTHWORK_DEFS[spot.kind]
     const btn = el('button', 'build-option trap-option', this.buildMenu) as HTMLButtonElement
     btn.dataset.cost = `${def.cost}`
     btn.innerHTML = `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
+    // the concrete answer, not the general rule: which towers, by name, this
+    // particular bank of earth would lift - or a plain warning that it lifts
+    // none yet, so nobody pays 70 gold for a hill that helps nothing
+    const effect = spot.kind !== 'rampart' ? ''
+      : lifts.length
+        ? `<br><span class="tip-stats">${icon('range')} Would lift: <b>${lifts.join(', ')}</b></span>`
+        : `<br><span class="tip-stats tip-warn">${icon('range')} Lifts nothing yet. Build a tower inside the ring first, or pick a site nearer your towers.</span>`
     const showTip = () => {
       const tip = document.getElementById('build-tip')
       if (tip) {
-        tip.innerHTML = `<b>${def.name}</b><br>${def.description}`
+        tip.innerHTML = `<b>${def.name}</b><br>${def.description}${effect}`
         tip.classList.remove('hidden')
       }
     }
-    btn.onclick = this.menuGuard(() => this.commitBuild(
-      `earth:${spot.kind}`, btn, showTip, () => this.game.buildEarthwork(),
-    ))
-    btn.onmouseenter = showTip
-    btn.onmouseleave = () => { if (!this.armedBuild) this.hideBuildTooltip() }
+    this.bindSpend(
+      `earth:${spot.kind}`, btn, showTip,
+      () => { if (!this.armedBuild) this.hideBuildTooltip() },
+      () => this.game.buildEarthwork(),
+    )
     btn.classList.toggle('poor', this.game.gold < def.cost)
     const tip = el('div', 'build-tooltip hidden', this.buildMenu)
     tip.id = 'build-tip'
@@ -651,7 +686,8 @@ export class HUD {
   }
 
   /** what an existing earthwork is doing, and what it is doing it to */
-  openEarthworkPanel(work: Earthwork, towersHelped: number): void {
+  openEarthworkPanel(work: Earthwork, lifted: string[]): void {
+    const towersHelped = lifted.length
     this.closeTowerPanel()
     this.currentTower = null
     const p = this.towerPanel
@@ -672,7 +708,7 @@ export class HUD {
     el('div', 'tp-traits', p, work.def.description)
     if (work.kind === 'rampart') {
       el('div', 'tp-traits', p, towersHelped > 0
-        ? `${icon('range')} Lifting <b>${towersHelped}</b> tower${towersHelped === 1 ? '' : 's'} onto the high ground.`
+        ? `${icon('range')} Lifting <b>${towersHelped}</b> tower${towersHelped === 1 ? '' : 's'}: <b>${lifted.join(', ')}</b>. Each gains +15% range and +10% damage; they are ringed in gold on the board.`
         : `${icon('range')} No tower is close enough to use it yet — build inside the ring.`)
     }
   }
@@ -694,11 +730,11 @@ export class HUD {
           tip.classList.remove('hidden')
         }
       }
-      btn.onclick = this.menuGuard(() => this.commitBuild(
-        `trap:${kind}`, btn, showTrapTip, () => this.game.buildTrap(kind),
-      ))
-      btn.onmouseenter = showTrapTip
-      btn.onmouseleave = () => { if (!this.armedBuild) this.hideBuildTooltip() }
+      this.bindSpend(
+        `trap:${kind}`, btn, showTrapTip,
+        () => { if (!this.armedBuild) this.hideBuildTooltip() },
+        () => this.game.buildTrap(kind),
+      )
       btn.classList.toggle('poor', this.game.gold < def.cost)
     }
     const tip = el('div', 'build-tooltip hidden', this.buildMenu)
@@ -754,7 +790,22 @@ export class HUD {
     // labeled stat chips read faster than an inline icon run
     const m = this.mults(tower.kind)
     const def = tower.def
-    if (def.soldier) {
+    if (def.aura) {
+      const a = def.aura
+      el('div', 'stat-chips', p,
+        chip('Reach', `${icon('range')} ${tower.auraReach.toFixed(1)}`) +
+        chip('Damage', `${icon('sword')} +${Math.round((a.damage + (tower.perk?.id === 'zeal' ? 0.08 : 0)) * 100)}%`) +
+        chip('Range', `${icon('range')} +${Math.round(a.range * 100)}%`) +
+        chip('Speed', `${icon('hourglass')} +${Math.round(a.rate * 100)}%`))
+      const lit = this.game.towers.filter(t => t !== tower && !t.isBeacon
+        && Math.hypot(t.pos.x - tower.pos.x, t.pos.z - tower.pos.z) <= tower.auraReach)
+      const traits = [
+        lit.length ? `${icon('flame')} lighting <b>${lit.length}</b>: ${lit.map(t => t.def.name).join(', ')}` : `${icon('flame')} lighting nothing yet — build inside the ring`,
+      ]
+      if (a.reveal) traits.push(`${icon('eye')} phasing enemies in the light can be shot`)
+      if (a.bounty) traits.push(`${icon('coin')} kills in the light pay +${Math.round(a.bounty * 100)}%`)
+      el('div', 'tp-traits', p, traits.join('<br>'))
+    } else if (def.soldier) {
       const s = def.soldier
       el('div', 'stat-chips', p,
         chip('Squad', `${icon('soldiers')} ${def.soldierCount ?? 3}× ${s.name}`, 'wide') +
@@ -763,14 +814,18 @@ export class HUD {
         chip('Armor', `${icon('shield')} ${Math.round(s.armor * 100)}%`) +
         chip('Respawn', `${icon('respawn')} ${def.respawnTime}s`))
     } else {
-      const lo = Math.round(def.damage![0] * m.dmg), hi = Math.round(def.damage![1] * m.dmg)
+      // the numbers this tower fights with, not the ones in its definition
+      const [lo, hi] = tower.effectiveDamage()!.map(v => Math.round(v * m.dmg)) as [number, number]
+      const interval = tower.effectiveInterval()!
       const typeIco = def.damageType === 'magic' ? 'sparkle' : def.splash ? 'blast' : 'sword'
+      const boosted = tower.damageMult !== 1 || tower.rateMult !== 1 || tower.range !== def.range
       el('div', 'stat-chips', p,
-        chip('Damage', `${icon(typeIco)} ${lo}–${hi}`) +
-        chip('Rate', `${icon('hourglass')} ${def.attackInterval}s`) +
-        chip('Range', `${icon('range')} ${def.range}`) +
-        chip('DPS', `${icon('swords')} ${((lo + hi) / 2 / def.attackInterval!).toFixed(1)}`))
+        chip('Damage', `${icon(typeIco)} ${lo}–${hi}`, tower.damageMult > 1 ? 'lit' : '') +
+        chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`, tower.rateMult > 1 ? 'lit' : '') +
+        chip('Range', `${icon('range')} ${fmtNum(tower.range)}`, tower.range > def.range ? 'lit' : '') +
+        chip('DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : ''))
       const traits: string[] = []
+      for (const note of tower.modifierNotes()) traits.push(`${icon('flame')} ${note}`)
       if (def.splash) traits.push(`${icon('blast')} blast r${Math.round(def.splash * m.splash * 100) / 100}`)
       if (def.damageType === 'magic') traits.push(`${icon('sparkle')} ignores armor`)
       traits.push(def.flying ? `${icon('feather')} hits flyers` : 'no flyers')
@@ -798,31 +853,37 @@ export class HUD {
     tower.upgradeOptions.forEach((opt, i) => {
       const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, actions) as HTMLButtonElement
       btn.dataset.cost = `${opt.cost}`
-      btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span><span class="u-desc">${opt.description}</span>`
+      btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span><span class="u-desc">${opt.description}</span>` +
+        `<span class="u-delta">${deltaLines(tower, opt, m)}</span>`
       // show what the upgrade actually buys in range terms, on both pointers:
       // hover for a mouse, and the first tap for touch (which arms before it
       // commits, so the preview is visible before any gold is spent)
       const preview = () => this.game.previewUpgradeRange(tower, opt)
       const clearPreview = () => { if (!this.armedBuild) this.game.previewUpgradeRange(tower, null) }
-      btn.onmouseenter = preview
-      btn.onmouseleave = clearPreview
-      btn.onclick = this.menuGuard(() => this.commitBuild(
-        `upgrade:${tower.plot.index}:${i}`, btn, preview,
+      this.bindSpend(
+        `upgrade:${tower.plot.index}:${i}`, btn, preview, clearPreview,
         () => { this.game.previewUpgradeRange(tower, null); this.game.upgradeTower(tower, i) },
-      ))
+      )
       btn.disabled = this.game.gold < opt.cost
     })
     // ascension: tier-4+ towers pick one of two shard-bought perks
     if (tower.level >= 4 && !tower.perk) {
       PERKS[tower.kind].forEach((perk, i) => {
         const btn = el('button', 'btn upgrade ascend', actions) as HTMLButtonElement
-        btn.innerHTML = `<span class="u-name">${icon(perk.icon)} Ascend: ${perk.name}</span><span class="u-cost">${icon('gem')}${ASCEND_SHARD_COST} ${icon('coin')}${ASCEND_GOLD_COST}</span><span class="u-desc">${perk.description}</span>`
+        btn.innerHTML = `<span class="u-name">${icon(perk.icon)} Ascend: ${perk.name}</span><span class="u-cost">${icon('gem')}${ASCEND_SHARD_COST} ${icon('coin')}${ASCEND_GOLD_COST}</span><span class="u-desc">${perk.description}</span>` +
+          `<span class="u-delta">${perkDeltaLines(tower, perk.id, m)}</span>`
+        // a perk that reaches further draws the reach it would buy, the same
+        // way a tier upgrade does; the others have nothing spatial to show
+        if (perk.id === 'hawkeye') {
+          btn.onmouseenter = () => this.game.previewUpgradeRange(tower, { range: tower.def.range + 0.8 })
+          btn.onmouseleave = () => this.game.previewUpgradeRange(tower, null)
+        }
         this.confirmOnTouch(btn, `Ascend to ${perk.name}? Tap again`, () => this.game.ascendTower(tower, i as 0 | 1))
         btn.disabled = this.game.shards < ASCEND_SHARD_COST || this.game.gold < ASCEND_GOLD_COST
       })
     }
     const row = el('div', 'tp-row', actions)
-    if (!tower.isBarracks) {
+    if (!tower.isBarracks && !tower.isBeacon) {
       const oc = el('button', 'btn small overcharge', row, `${icon('lightning')} Overcharge ${icon('gem')}${OVERCHARGE_SHARD_COST}`) as HTMLButtonElement
       oc.title = `+60% attack speed for ${OVERCHARGE_DURATION}s`
       oc.id = 'oc-btn'
@@ -833,7 +894,8 @@ export class HUD {
     if (tower.isBarracks) {
       const rally = el('button', 'btn small', row, `${icon('flag')} Rally point`) as HTMLButtonElement
       rally.onclick = this.menuGuard(() => this.game.setTargetMode('rally'))
-    } else {
+    } else if (!tower.isBeacon) {
+      // a beacon aims at nothing, so it has no targeting rule to cycle
       const tgt = el('button', 'btn small', row,
         `${icon('target')} ${TARGET_POLICY_LABEL[tower.targetPolicy]}`) as HTMLButtonElement
       tgt.title = 'Which enemy this tower shoots: closest to the gate, furthest from it, the toughest, or the weakest'
@@ -960,18 +1022,29 @@ export class HUD {
     const d = enemy.def
     const traits: string[] = []
     if (d.flying) traits.push(`${icon('feather')} flying`)
+    // the enemy's own numbers, not the definition's: an affix, a shred or deep
+    // endless toughness all move these, and the tip has to show what is true now
     if (enemy.armor > 0.005) traits.push(`${icon('shield')} ${Math.round(enemy.armor * 100)}% armor`)
-    if (d.magicResist > 0) traits.push(`${icon('sparkle')} ${Math.round(d.magicResist * 100)}% magic resist`)
+    if (enemy.magicResistNow > 0.005) traits.push(`${icon('sparkle')} ${Math.round(enemy.magicResistNow * 100)}% magic resist`)
     if (d.regen) traits.push('regenerates')
     if (d.healAura) traits.push('heals allies')
     if (d.spawnOnDeath) traits.push('spawns brood')
     if (d.ranged) traits.push('ranged caster')
+    if (d.phasing) traits.push(`${icon('veil')} phases out of reach`)
+    if (d.summons) traits.push('sings reinforcements')
+    if (enemy.surged) traits.push(`${icon('veil')} Veiltide-empowered`)
     if (d.boss) traits.push(`${icon('crown')} BOSS`)
     this.tipArmorShown = Math.round(enemy.armor * 100)
     const portrait = BOSS_ART.has(d.id) ? `<img class="et-portrait" src="art/boss-${d.id}.webp" alt="">` : ''
+    // an affix renames the thing, because that is what makes it recognisable
+    // the next time it appears - and says in one line what to do about it
+    const af = enemy.affix
+    const title = af ? `${af.name} ${d.name}` : d.name
     this.enemyTip.innerHTML = portrait +
-      `<b>${d.name}</b> ${icon('heart')}<span class="et-hp"></span>` +
+      `<b>${title}</b> ${icon('heart')}<span class="et-hp"></span>` +
+      (af ? `<span class="et-affix">${icon(af.icon)} ${af.name} elite</span>` : '') +
       (traits.length ? `<span class="et-traits">${traits.join(' · ')}</span>` : '') +
+      (af ? `<span class="et-desc">${af.blurb}</span>` : '') +
       `<span class="et-desc">${d.description}</span>`
   }
 
@@ -1001,6 +1074,13 @@ export class HUD {
    * hurry - and it is DOM, so it works the same on a phone as on a desktop.
    */
   showDossier(def: EnemyDef, onClose: () => void): void {
+    // A dossier interrupts mid-wave, and it used to open *over* whatever the
+    // player already had open: the tower panel stayed visible behind it and
+    // floaters kept drawing on top of it. Clear the board furniture first, so
+    // the one thing asking to be read is the only thing on screen.
+    this.closeTowerPanel()
+    this.closeBuildMenu()
+    this.hideEnemyTip()
     const overlay = el('div', 'help-overlay dossier-overlay', this.root)
     const card = el('div', 'help-card dossier-card', overlay)
     el('div', 'dossier-eyebrow', card, def.boss ? 'A boss walks the road' : 'Something new is coming')
@@ -1082,15 +1162,27 @@ export class HUD {
     this.goldEl.classList.add('pulse')
   }
 
+  /**
+   * A number that rises off the board and fades.
+   *
+   * Its life is measured in *simulation* time, not wall-clock. Everything else
+   * about a kill - the death animation, the particles, the debris - runs inside
+   * the accelerated simulation, so at 2x these were the one thing still taking
+   * a full real second: twice as many arrived in the same window and each one
+   * outlived the event that caused it, which is what made double speed read as
+   * mush rather than as speed.
+   */
   spawnFloater(x: number, y: number, text: string, cls: string): void {
     let f = this.floaterPool.pop()
     if (!f) {
       f = el('div', 'floater', this.root)
     }
+    const life = 1100 / this.game.speed
     f.innerHTML = text
     f.className = `floater ${cls}`
     f.style.left = `${x}px`
     f.style.top = `${y}px`
+    f.style.setProperty('--float-life', `${(life - 50) / 1000}s`)
     f.style.display = 'block'
     void f.offsetWidth
     f.classList.add('float-up')
@@ -1098,7 +1190,7 @@ export class HUD {
       f!.style.display = 'none'
       f!.classList.remove('float-up')
       if (this.floaterPool.length < 40) this.floaterPool.push(f!)
-    }, 1100)
+    }, life)
   }
 
   /** show/hide the battle chrome (topbar, abilities, wave button) */
@@ -1129,7 +1221,150 @@ export class HUD {
 interface StatMults { dmg: number, splash: number, soldierHp: number }
 
 /** stats shown in menus include armory bonuses, matching real combat numbers */
+/**
+ * What an upgrade changes, as numbers the player can compare.
+ *
+ * An upgrade button used to show its flavour text and its price and nothing
+ * else: the only way to learn that the Marksman Tower shoots faster was to
+ * buy it and read the chips afterwards. Each line here is "now -> after", with
+ * the after in green when it is better, so the decision can be made on the
+ * numbers rather than on faith.
+ */
+/** formatting shared by the chips and the deltas */
+const fmtNum = (n: number, dp = 1) => Number.isInteger(n) ? `${n}` : n.toFixed(dp)
+const fmtSecs = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(2).replace(/0$/, '')}s`
+
+function deltaLines(tower: Tower, to: TowerLevelDef, m: StatMults): string {
+  const from = tower.def
+  const rows: string[] = []
+  const up = (label: string, a: string, b: string, better: boolean) =>
+    rows.push(`<span class="d-row"><span class="d-label">${label}</span>${a} <span class="d-arrow">\u2192</span> <span class="${better ? 'd-up' : 'd-same'}">${b}</span></span>`)
+  const fmt = (n: number, dp = 1) => Number.isInteger(n) ? `${n}` : n.toFixed(dp)
+
+  if (to.aura && from.aura) {
+    const a = from.aura, b = to.aura
+    const pct = (n: number) => `+${Math.round(n * 100)}%`
+    up('Reach', fmt(tower.rangeFor(from)), fmt(tower.rangeFor(to)), to.range > from.range)
+    up('Damage', pct(a.damage), pct(b.damage), b.damage > a.damage)
+    if (a.range !== b.range) up('Range', pct(a.range), pct(b.range), b.range > a.range)
+    if (a.rate !== b.rate) up('Speed', pct(a.rate), pct(b.rate), b.rate > a.rate)
+    if (!!a.reveal !== !!b.reveal) up('Reveals', a.reveal ? 'yes' : 'no', b.reveal ? 'yes' : 'no', !!b.reveal)
+    if ((a.bounty ?? 0) !== (b.bounty ?? 0)) up('Bounty', pct(a.bounty ?? 0), pct(b.bounty ?? 0), (b.bounty ?? 0) > (a.bounty ?? 0))
+    return rows.join('')
+  }
+  if (to.soldier && from.soldier) {
+    const a = from.soldier, b = to.soldier
+    const ahp = Math.round(a.hp * m.soldierHp), bhp = Math.round(b.hp * m.soldierHp)
+    const acount = from.soldierCount ?? 3, bcount = to.soldierCount ?? 3
+    if (acount !== bcount) up('Squad', `${acount}`, `${bcount}`, bcount > acount)
+    up('Health', `${ahp}`, `${bhp}`, bhp > ahp)
+    up('Damage', `${a.damage[0]}\u2013${a.damage[1]}`, `${b.damage[0]}\u2013${b.damage[1]}`, (b.damage[0] + b.damage[1]) > (a.damage[0] + a.damage[1]))
+    if (a.armor !== b.armor) up('Armor', `${Math.round(a.armor * 100)}%`, `${Math.round(b.armor * 100)}%`, b.armor > a.armor)
+    if (a.attackInterval !== b.attackInterval) up('Swing', `${a.attackInterval}s`, `${b.attackInterval}s`, b.attackInterval < a.attackInterval)
+    if ((from.respawnTime ?? 10) !== (to.respawnTime ?? 10)) up('Respawn', `${from.respawnTime}s`, `${to.respawnTime}s`, (to.respawnTime ?? 10) < (from.respawnTime ?? 10))
+    return rows.join('')
+  }
+  if (to.damage && to.attackInterval) {
+    // both sides carry every bonus this plot grants, so a lit tower's upgrade
+    // is compared lit-to-lit rather than against a number it never dealt
+    const fe = tower.effectiveDamage(from) ?? [0, 0]
+    const te = tower.effectiveDamage(to)!
+    const fi = tower.effectiveInterval(from) ?? tower.effectiveInterval(to)!
+    const ti = tower.effectiveInterval(to)!
+    const alo = Math.round(fe[0] * m.dmg), ahi = Math.round(fe[1] * m.dmg)
+    const blo = Math.round(te[0] * m.dmg), bhi = Math.round(te[1] * m.dmg)
+    const adps = (alo + ahi) / 2 / fi, bdps = (blo + bhi) / 2 / ti
+    up('Damage', `${alo}\u2013${ahi}`, `${blo}\u2013${bhi}`, (blo + bhi) > (alo + ahi))
+    up('Rate', fmtSecs(fi), fmtSecs(ti), ti < fi)
+    up('DPS', fmt(adps), fmt(bdps), bdps > adps)
+  }
+  const ar = tower.rangeFor(from), br = tower.rangeFor(to)
+  if (Math.abs(ar - br) > 1e-6) up('Range', fmt(ar), fmt(br), br > ar)
+  if ((to.splash ?? 0) !== (from.splash ?? 0)) {
+    up('Blast', fmt((from.splash ?? 0) * m.splash, 2), fmt((to.splash ?? 0) * m.splash, 2), (to.splash ?? 0) > (from.splash ?? 0))
+  }
+  if (!!to.flying !== !!from.flying) up('Air', from.flying ? 'yes' : 'no', to.flying ? 'yes' : 'no', !!to.flying)
+  return rows.join('')
+}
+
+/**
+ * The same comparison for an ascension perk.
+ *
+ * A perk is a modifier on the tower as it stands, so "after" is the current
+ * tier with the perk applied. The whole stat block is shown, not only the line
+ * the perk touches: a player weighing Serrated Arrows against Hawkeye wants to
+ * see both towers side by side, and a single "+0.8 range" line does not let
+ * them. Changed values are highlighted; unchanged ones are shown as they are.
+ */
+function perkDeltaLines(tower: Tower, perkId: string, m: StatMults): string {
+  const def = tower.def
+  const rows: string[] = []
+  const row = (label: string, a: string, b: string) =>
+    rows.push(`<span class="d-row"><span class="d-label">${label}</span>${a} <span class="d-arrow">\u2192</span> <span class="${a === b ? 'd-same' : 'd-up'}">${b}</span></span>`)
+  const fmt = (n: number, dp = 1) => Number.isInteger(n) ? `${n}` : n.toFixed(dp)
+  const pct = (n: number) => `+${Math.round(n * 100)}%`
+
+  if (def.aura) {
+    const a = def.aura
+    const reach = tower.auraReach
+    row('Reach', fmt(reach), fmt(reach + (perkId === 'farsight' ? 0.6 : 0)))
+    row('Damage', pct(a.damage), pct(a.damage + (perkId === 'zeal' ? 0.08 : 0)))
+    if (a.range) row('Range', pct(a.range), pct(a.range))
+    if (a.rate) row('Speed', pct(a.rate), pct(a.rate))
+    return rows.join('')
+  }
+
+  if (def.soldier) {
+    const sd = def.soldier
+    const hp = Math.round(sd.hp * m.soldierHp)
+    const hpMult = perkId === 'vanguard' ? 1.25 : 1
+    const dmgMult = perkId === 'whetstone' ? 1.25 : 1
+    row('Squad', `${def.soldierCount ?? 3}`, `${def.soldierCount ?? 3}`)
+    row('Health', `${hp}`, `${Math.round(hp * hpMult)}`)
+    row('Damage', `${sd.damage[0]}\u2013${sd.damage[1]}`, `${Math.round(sd.damage[0] * dmgMult)}\u2013${Math.round(sd.damage[1] * dmgMult)}`)
+    row('Armor', `${Math.round(sd.armor * 100)}%`, `${Math.round(sd.armor * 100)}%`)
+    // the Warcamp also throws; its own numbers ride below the soldiers'
+    if (!def.damage || !def.attackInterval) return rows.join('')
+  }
+
+  if (def.damage && def.attackInterval) {
+    const [lo, hi] = tower.effectiveDamage()!.map(v => Math.round(v * m.dmg)) as [number, number]
+    const dmgMult = perkId === 'serrated' || perkId === 'heavybolts' ? 1.2 : 1
+    const intMult = perkId === 'windlass' ? 0.85 : 1
+    const rangeAdd = perkId === 'hawkeye' ? 0.8 : 0
+    const echo = perkId === 'echo' ? 1.18 : 1
+    const blo = Math.round(lo * dmgMult), bhi = Math.round(hi * dmgMult)
+    const ai = tower.effectiveInterval()!, bi = ai * intMult
+    const adps = (lo + hi) / 2 / ai
+    const bdps = (blo + bhi) / 2 / bi * echo
+    row('Damage', `${lo}\u2013${hi}`, `${blo}\u2013${bhi}`)
+    row('Rate', fmtSecs(ai), fmtSecs(bi))
+    row('Range', fmt(tower.range), fmt(tower.range + rangeAdd))
+    row('DPS', fmt(adps), echo > 1 ? `${fmt(bdps)} avg` : fmt(bdps))
+    if (def.splash) {
+      const sp = def.splash * m.splash
+      row('Blast', fmt(sp, 2), fmt(sp * (perkId === 'napalm' ? 1.3 : 1), 2))
+    }
+  }
+  // the two perks that change a rule rather than a number
+  if (perkId === 'tremor') row('Stun', 'none', '30% for 0.5s')
+  if (perkId === 'deepveil') row('Magic resist', 'full', 'half')
+  return rows.join('')
+}
+
+/** an aura in the player's words: what it adds, and to what */
+function auraLine(a: TowerAura, reach: number): string {
+  const parts = [`${icon('range')} lights ${reach.toFixed(1)}`]
+  if (a.damage) parts.push(`${icon('sword')} +${Math.round(a.damage * 100)}% damage`)
+  if (a.range) parts.push(`${icon('range')} +${Math.round(a.range * 100)}% range`)
+  if (a.rate) parts.push(`${icon('hourglass')} +${Math.round(a.rate * 100)}% attack speed`)
+  if (a.reveal) parts.push(`${icon('eye')} reveals phasing`)
+  if (a.bounty) parts.push(`${icon('coin')} +${Math.round(a.bounty * 100)}% bounty`)
+  return parts.join(' \u00b7 ')
+}
+
 function statLine(def: TowerLevelDef, m: StatMults): string {
+  if (def.aura) return auraLine(def.aura, def.range) + ' \u00b7 does not attack'
   if (def.soldier) {
     const s = def.soldier
     const hp = Math.round(s.hp * m.soldierHp)

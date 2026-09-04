@@ -1,6 +1,8 @@
 import { TowerTree, TowerKind, TowerLevelDef, SoldierDef } from './types.ts'
 
 export const towerTrees: Record<TowerKind, TowerTree> = {
+  // beacon and ballista are assigned below, after their own definition
+  ...({} as Pick<Record<TowerKind, TowerTree>, 'beacon' | 'ballista'>),
   arrow: {
     kind: 'arrow',
     levels: [
@@ -217,6 +219,125 @@ export const towerTrees: Record<TowerKind, TowerTree> = {
     ],
   },
 }
+
+/**
+ * Two families that do something the first four did not.
+ *
+ * The four originals all answer the same question - how much damage, in what
+ * shape, at what range - and a player who has solved that once has solved it
+ * for every map. These two change the question.
+ *
+ * The Beacon has no attack. It makes the plots around it worth more, which
+ * turns "where do I put my damage" into "where do I put the thing that makes
+ * damage better", and gives the extra foundations a reason to exist.
+ *
+ * The Ballista shoots in a line rather than at a point: one bolt, everything
+ * along its path. Both are priced a third above the families they sit beside:
+ * they are late unlocks (see game/progress.ts), and in play the line pierce and
+ * the aura each turned out to be worth more than their first prices said. It is the only tower whose value depends on which *way* the
+ * road runs past it, so a plot that was mediocre for an arrow tower can be the
+ * best one on the board for this.
+ */
+const BEACON_AND_BALLISTA: Pick<Record<TowerKind, TowerTree>, 'beacon' | 'ballista'> = {
+  beacon: {
+    kind: 'beacon',
+    levels: [
+      {
+        name: 'Signal Beacon', cost: 150, model: 'beacon1', range: 2.6,
+        aura: { damage: 0.10, range: 0, rate: 0 },
+        description: 'A lit brazier. Every tower within its light deals +10% damage. It does not attack.',
+      },
+      {
+        name: "Warden's Beacon", cost: 220, model: 'beacon2', range: 2.9,
+        aura: { damage: 0.16, range: 0.05, rate: 0 },
+        description: 'The light reaches further and burns brighter: +16% damage and +5% range to towers within it.',
+      },
+      {
+        name: 'High Beacon', cost: 320, model: 'beacon3', range: 3.2,
+        aura: { damage: 0.22, range: 0.08, rate: 0.08 },
+        description: 'A tower of signal fire. +22% damage, +8% range and +8% attack speed to everything it lights.',
+      },
+    ],
+    branches: [
+      {
+        name: 'Watchfire', cost: 440, model: 'beacon4a', range: 3.4,
+        aura: { damage: 0.22, range: 0.08, rate: 0.20, reveal: true },
+        description: 'Nothing hides in its light. +20% attack speed, and phasing enemies inside the aura can be shot while they phase.',
+      },
+      {
+        name: 'Tithe Hall', cost: 440, model: 'beacon4b', range: 3.4,
+        aura: { damage: 0.18, range: 0.08, rate: 0, bounty: 0.30 },
+        description: 'The crown takes its share. Enemies killed within the light pay 30% more gold.',
+      },
+    ],
+    capstones: [
+      {
+        name: 'Crownfire', cost: 1100, model: 'beacon5a', range: 3.7,
+        aura: { damage: 0.28, range: 0.10, rate: 0.25, reveal: true },
+        signature: 'kindling',
+        description: 'The fire that lights the others. Every 20s, every tower in its light is Overcharged for 5s at no cost.',
+      },
+      {
+        name: 'The Exchequer', cost: 1100, model: 'beacon5b', range: 3.7,
+        aura: { damage: 0.22, range: 0.10, rate: 0.08, bounty: 0.45 },
+        signature: 'tithe',
+        description: 'Kills within the light pay 45% more, and every twelfth one yields a Veilshard.',
+      },
+    ],
+  },
+  ballista: {
+    kind: 'ballista',
+    levels: [
+      {
+        name: 'Ballista', cost: 160, model: 'ballista1', range: 4.6,
+        damage: [16, 26], damageType: 'physical', attackInterval: 2.0, flying: true,
+        description: 'A heavy bolt that flies in a straight line and strikes everything along it. Slow, long, and best down the length of a road.',
+      },
+      {
+        name: 'Siege Ballista', cost: 230, model: 'ballista2', range: 5.0,
+        damage: [36, 58], damageType: 'physical', attackInterval: 1.9, flying: true,
+        description: 'Heavier bolts on a longer arm.',
+      },
+      {
+        name: 'Greatbow', cost: 330, model: 'ballista3', range: 5.4,
+        damage: [60, 96], damageType: 'physical', attackInterval: 1.8, flying: true,
+        description: 'A bow the size of a house. Its bolts go through ranks.',
+      },
+    ],
+    branches: [
+      {
+        name: 'Skyharrow', cost: 460, model: 'ballista4a', range: 6.2,
+        damage: [70, 110], damageType: 'physical', attackInterval: 1.6, flying: true,
+        special: { kind: 'airbane', mult: 2.0 },
+        description: 'Built for the sky. Enormous range, and anything airborne takes double damage.',
+      },
+      {
+        name: 'Wallbreaker', cost: 460, model: 'ballista4b', range: 5.2,
+        damage: [110, 170], damageType: 'physical', attackInterval: 2.2, flying: true,
+        special: { kind: 'knockback', dist: 0.7, armorPierce: 0.5 },
+        description: 'A bolt like a battering ram. Ignores half of armor and shoves what it hits back down the road.',
+      },
+    ],
+    capstones: [
+      {
+        name: 'Heavensplitter', cost: 1150, model: 'ballista5a', range: 7.0,
+        damage: [110, 170], damageType: 'physical', attackInterval: 1.5, flying: true,
+        special: { kind: 'airbane', mult: 2.2 },
+        signature: 'skyfall',
+        description: 'Half the sky is in range, flyers take 2.2x, and anything airborne it strikes is knocked out of the air: stunned for 1.5s.',
+      },
+      {
+        name: 'Godsbane Ram', cost: 1150, model: 'ballista5b', range: 5.6,
+        damage: [170, 260], damageType: 'physical', attackInterval: 2.0, flying: true,
+        special: { kind: 'knockback', dist: 1.0, armorPierce: 0.6 },
+        signature: 'greatbolt',
+        description: 'Shoves a full stride, ignores 60% of armor, and every fourth shot is a Great Bolt that pierces the whole line at double damage.',
+      },
+    ],
+  },
+}
+
+Object.assign(towerTrees, BEACON_AND_BALLISTA)
 
 /** the tier-5 tower a given tier-4 branch leads to */
 export function resolveCapstone(kind: TowerKind, branch: 0 | 1): TowerLevelDef {

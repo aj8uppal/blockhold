@@ -35,7 +35,7 @@ export const REACTION_RADIUS = 3.1
 /** how fast a tower works while a hazard is sitting on top of it */
 export const SUPPRESSED_RATE = 0.55
 
-export type ReactionId = 'enchanted' | 'runic' | 'ranging' | 'shieldwall'
+export type ReactionId = 'enchanted' | 'runic' | 'ranging' | 'shieldwall' | 'longshot'
 
 export interface ReactionDef {
   id: ReactionId
@@ -54,6 +54,8 @@ export const REACTIONS: ReactionDef[] = [
     description: 'Both towers gain +12% range.' },
   { id: 'shieldwall', name: 'Shield Wall', icon: 'shield', pair: ['barracks', 'barracks'],
     description: 'Soldiers guarded by a neighbouring tower gain +18% health.' },
+  { id: 'longshot', name: 'Longshot Drill', icon: 'target', pair: ['ballista', 'arrow'],
+    description: 'Archers spot for the engine: both gain +10% range.' },
 ]
 
 /** the reaction a pair of adjacent families produces, if any */
@@ -117,6 +119,8 @@ function towerCrownHeight(model: string): number {
   if (model.startsWith('arrow')) return t5 ? 2.1 : 1.6
   if (model.startsWith('mage')) return t5 ? 2.0 : 1.75
   if (model.startsWith('cannon')) return t5 ? 1.35 : 1.15
+  if (model.startsWith('beacon')) return t5 ? 1.75 : 1.5
+  if (model.startsWith('ballista')) return t5 ? 1.2 : 1.0
   return t5 ? 1.45 : 1.25
 }
 
@@ -150,6 +154,16 @@ export class Tower {
   resonance = 0
   /** cross-family reactions currently active on this tower */
   reactions = new Set<ReactionId>()
+  /**
+   * What the strongest beacon in reach is doing for this tower. Beacons do not
+   * stack: two next to each other light the same towers, they do not double
+   * the light. Set by Game.recomputeResonance alongside the reactions.
+   */
+  auraDamage = 0
+  auraRange = 0
+  auraRate = 0
+  /** Crownfire: when this beacon next kindles the towers in its light */
+  private kindleAt = 0
   has(r: ReactionId): boolean { return this.reactions.has(r) }
   /** enemies this building (and its soldiers) has slain */
   kills = 0
@@ -161,6 +175,8 @@ export class Tower {
   /** riftlight: empowered attack rate while world.time < riftUntil */
   riftUntil = 0
   private hexRing: THREE.Mesh | null = null
+  /** shown while a rampart (or a rampart site) is selected: this tower is lifted by it */
+  private liftRing: THREE.Mesh | null = null
   private crownMesh: THREE.Mesh | null = null
   private chargeRing: THREE.Mesh | null = null
   private turretYaw = 0
@@ -179,6 +195,11 @@ export class Tower {
 
   get pos(): THREE.Vector3 { return this.group.position }
   get isBarracks(): boolean { return this.kind === 'barracks' }
+  get isBeacon(): boolean { return this.kind === 'beacon' }
+  /** the beacon's light reaches this far; the perk widens it */
+  get auraReach(): number {
+    return this.def.range + (this.perk?.id === 'farsight' ? 0.6 : 0)
+  }
 
   /**
    * Tier presence. Tiers 1-3 were distinguished only by model and a little
@@ -217,9 +238,7 @@ export class Tower {
 
   /** effective range including perks */
   get range(): number {
-    return (this.def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0))
-      * (this.has('ranging') ? 1.12 : 1)
-      * (this.onHighGround ? 1 + RAMPART_RANGE_BONUS : 1)
+    return this.rangeFor(this.def)
   }
 
   /** retained so capstone specials keep a single damage scalar to multiply by */
@@ -227,15 +246,107 @@ export class Tower {
     return 1
   }
 
+  /**
+   * The stats this tower actually fights with.
+   *
+   * The panel used to print the definition's numbers, which is what a tower
+   * would do standing alone on flat ground with nothing next to it - and no
+   * tower in a real defense is that. A beacon, a rampart, a perk and a
+   * reaction all change the answer, and a panel that ignored them told the
+   * player their lit tower was doing exactly what an unlit one does. These
+   * are the same multipliers `fire()` and `update()` apply, kept in one place
+   * so the panel cannot drift from the fight.
+   */
+  get damageMult(): number {
+    return (1 + this.auraDamage)
+      * (this.onHighGround ? 1 + RAMPART_DAMAGE_BONUS : 1)
+      * (this.perk?.id === 'serrated' || this.perk?.id === 'heavybolts' ? 1.2 : 1)
+      * (this.isGhost ? GHOST_POWER : 1)
+  }
+
+  /** shots per second, relative to the definition's own rate */
+  get rateMult(): number {
+    return (1 + this.auraRate) * (this.perk?.id === 'windlass' ? 1 / 0.85 : 1)
+  }
+
+  /** what a given tier would deal from this plot, with everything that applies */
+  effectiveDamage(def: TowerLevelDef = this.def): [number, number] | null {
+    if (!def.damage) return null
+    return [Math.round(def.damage[0] * this.damageMult), Math.round(def.damage[1] * this.damageMult)]
+  }
+
+  effectiveInterval(def: TowerLevelDef = this.def): number | null {
+    if (!def.attackInterval) return null
+    return def.attackInterval / this.rateMult
+  }
+
+  /** the reach a given tier would have from this plot */
+  rangeFor(def: TowerLevelDef): number {
+    if (def.aura) return def.range + (this.perk?.id === 'farsight' ? 0.6 : 0)
+    return (def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0))
+      * (this.has('ranging') ? 1.12 : 1)
+      * (this.has('longshot') ? 1.10 : 1)
+      * (this.onHighGround ? 1 + RAMPART_RANGE_BONUS : 1)
+      * (1 + this.auraRange)
+  }
+
+  /** where the bonuses come from, in the player's words; empty when there are none */
+  modifierNotes(): string[] {
+    const out: string[] = []
+    if (this.auraDamage || this.auraRange || this.auraRate) {
+      const bits: string[] = []
+      if (this.auraDamage) bits.push(`+${Math.round(this.auraDamage * 100)}% damage`)
+      if (this.auraRange) bits.push(`+${Math.round(this.auraRange * 100)}% range`)
+      if (this.auraRate) bits.push(`+${Math.round(this.auraRate * 100)}% attack speed`)
+      out.push(`Lit by a beacon: ${bits.join(', ')}`)
+    }
+    if (this.onHighGround) out.push(`High ground: +${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range`)
+    return out
+  }
+
   /** where a hexling sits when it silences this tower */
   get perchY(): number {
     return towerCrownHeight(this.def.model) * this.sizeMult * 0.8
   }
 
+  /**
+   * Mark this tower as one a rampart lifts.
+   *
+   * Ramparts were the least legible thing on the board: a bank of earth with
+   * an invisible radius, and the only sign it was doing anything was a
+   * one-off sparkle on selection. The ring is persistent for as long as the
+   * rampart, or the site where one could go, is selected - so the question
+   * "which of my towers does this help" is answered by looking.
+   */
+  showLift(on: boolean): void {
+    if (!on) { if (this.liftRing) this.liftRing.visible = false; return }
+    if (!this.liftRing) {
+      const geo = new THREE.RingGeometry(0.36, 0.46, 32)
+      geo.rotateX(-Math.PI / 2)
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xe8c24a, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false,
+      })
+      this.liftRing = new THREE.Mesh(geo, mat)
+      this.liftRing.position.y = 0.06
+      this.liftRing.renderOrder = 4
+      this.group.add(this.liftRing)
+    }
+    this.liftRing.visible = true
+  }
+
   isOvercharged(world: World): boolean { return world.time < this.overchargeUntil }
 
   canOvercharge(world: { time: number, shards: number }): boolean {
-    return !this.isBarracks && world.time >= this.overchargeCdUntil && world.shards >= OVERCHARGE_SHARD_COST
+    return !this.isBarracks && !this.isBeacon && world.time >= this.overchargeCdUntil && world.shards >= OVERCHARGE_SHARD_COST
+  }
+
+  /** Crownfire's gift: five free seconds of Overcharge, no shard, no cooldown */
+  kindle(world: World): void {
+    this.overchargeUntil = Math.max(this.overchargeUntil, world.time + 5)
+    if (!this.chargeRing) this.overcharge(world)   // builds the ring; then undo the cooldown it set
+    this.overchargeUntil = Math.max(this.overchargeUntil, world.time + 5)
+    this.overchargeCdUntil = Math.min(this.overchargeCdUntil, world.time)
+    this.chargeRing!.visible = true
   }
 
   overcharge(world: World): void {
@@ -342,7 +453,7 @@ export class Tower {
       this.hexedBy.dropFromPerch()
       this.hexedBy = null
     }
-    for (const m of [this.crownMesh, this.chargeRing, this.hexRing]) {
+    for (const m of [this.crownMesh, this.chargeRing, this.hexRing, this.liftRing]) {
       if (m) {
         m.geometry.dispose()
         ;(m.material as THREE.Material).dispose()
@@ -351,6 +462,7 @@ export class Tower {
     this.crownMesh = null
     this.chargeRing = null
     this.hexRing = null
+    this.liftRing = null
   }
 
   /** live-update soldier max HP when resonance or perks change */
@@ -548,6 +660,27 @@ export class Tower {
       // camp itself throws. Every other barracks stops here.
       if (!this.def.damage) return
     }
+    if (this.isBeacon) {
+      // Crownfire: on a timer, every tower in the light is overcharged for free
+      if (this.def.signature === 'kindling' && !this.isGhost) {
+        if (this.kindleAt === 0) this.kindleAt = world.time + 20
+        if (world.time >= this.kindleAt) {
+          this.kindleAt = world.time + 20
+          let lit = 0
+          for (const t of world.towers) {
+            if (t === this || t.isBeacon || t.isBarracks) continue
+            if (Math.hypot(t.pos.x - this.pos.x, t.pos.z - this.pos.z) > this.auraReach) continue
+            t.kindle(world); lit++
+          }
+          if (lit) {
+            world.sfx('upgrade', 0.7)
+            world.particles.magicImpact(this.pos.x, this.pos.y + 1.2, this.pos.z, 0xffe89f)
+            world.floater(this.pos.x, this.pos.y + 1.4, this.pos.z, 'Crownfire!', 'gold')
+          }
+        }
+      }
+      return
+    }
 
     // hexed: the perched imp silences the tower until dislodged
     if (this.hexedBy && (!this.hexedBy.alive || this.hexedBy.hexTarget !== this)) this.hexedBy = null
@@ -605,7 +738,8 @@ export class Tower {
           this.isOvercharged(world) ? OVERCHARGE_RATE_BONUS : 0,
           world.time < this.riftUntil ? 0.4 : 0))
           * (this.suppressed ? SUPPRESSED_RATE : 1)
-        this.cooldown = this.def.attackInterval! / rate
+        this.cooldown = this.def.attackInterval! / (rate * (1 + this.auraRate))
+          * (this.perk?.id === 'windlass' ? 0.85 : 1)
         this.fire(t, world)
         this.recoil = 1
       }
@@ -667,8 +801,34 @@ export class Tower {
       world.particles.hitSpark(this.pos.x, this.pos.y + 0.9, this.pos.z, 0xffd24a)
     }
     if (this.perk?.id === 'serrated') dmg *= 1.2
+    if (this.perk?.id === 'heavybolts') dmg *= 1.2
+    dmg *= 1 + this.auraDamage
     const from = this.muzzle()
     switch (this.kind) {
+      case 'beacon': break   // a beacon never reaches fire(); guarded in update()
+      case 'ballista': {
+        // Aim through the target and out to full reach: the bolt is a line.
+        const aim = new THREE.Vector3(target.pos.x, from.y, target.pos.z)
+        const special = def.special
+        const airMult = special?.kind === 'airbane' ? special.mult : undefined
+        const knock = special?.kind === 'knockback' ? special : undefined
+        // Godsbane Ram: every fourth shot loses nothing along the line
+        const great = def.signature === 'greatbolt' && ++this.signatureCount >= 4
+        if (great) this.signatureCount = 0
+        world.fireProjectile({
+          kind: 'spear', from, aim, reach: this.range + 0.6,
+          damage: dmg * (great ? 2 : 1), falloff: 0.55, pierceAll: great,
+          hitsAir: !!def.flying, airMult,
+          armorPierce: knock?.armorPierce ?? (this.has('enchanted') ? 0.3 : undefined),
+          knockback: knock?.dist,
+          skyfall: def.signature === 'skyfall',
+          credit: this, world,
+        })
+        world.sfx('arrow', great ? 1 : 0.85)
+        world.particles.buildDust(from.x, from.y, from.z)
+        if (great) world.particles.magicImpact(from.x, from.y + 0.2, from.z, 0xffd24a)
+        break
+      }
       case 'barracks': {
         // Stormhowl Warcamp: the only barracks that answers the sky
         world.fireProjectile({

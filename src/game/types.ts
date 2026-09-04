@@ -35,7 +35,7 @@ export interface EnemyDef {
   description: string
 }
 
-export type TowerKind = 'arrow' | 'mage' | 'cannon' | 'barracks'
+export type TowerKind = 'arrow' | 'mage' | 'cannon' | 'barracks' | 'beacon' | 'ballista'
 
 /** the signature mechanic a tier-5 tower brings; one per capstone */
 export type CapstoneSignature =
@@ -47,6 +47,10 @@ export type CapstoneSignature =
   | 'twinShells'       // fires two shells per attack
   | 'lastMuster'       // retainers rush from the gate when a soldier falls
   | 'skyAxes'          // the camp itself hurls axes at flyers
+  | 'kindling'         // every tower in the aura is overcharged, free, on a timer
+  | 'tithe'            // kills in the aura pay more, and every twelfth pays a shard
+  | 'skyfall'          // a flyer struck is knocked from the air
+  | 'greatbolt'        // every fourth shot pierces the whole line at double weight
 
 export interface TowerLevelDef {
   name: string
@@ -68,7 +72,27 @@ export interface TowerLevelDef {
   soldier?: SoldierDef
   soldierCount?: number
   respawnTime?: number
+  /**
+   * Beacons: what this building does to the towers around it. `range` is the
+   * aura's reach. A beacon has no attack of its own; its whole value is that
+   * it makes the plots next to it worth more, which is why more foundations
+   * and a support tower arrived together.
+   */
+  aura?: TowerAura
   description: string
+}
+
+export interface TowerAura {
+  /** multiplier on the damage of towers in reach, e.g. 0.16 for +16% */
+  damage: number
+  /** multiplier on their range */
+  range: number
+  /** multiplier on their attack rate */
+  rate: number
+  /** phasing enemies inside the aura can be targeted while they phase */
+  reveal?: boolean
+  /** multiplier on the bounty of anything killed inside the aura */
+  bounty?: number
 }
 
 export type TowerSpecial =
@@ -78,6 +102,10 @@ export type TowerSpecial =
   | { kind: 'armorShred', amount: number }
   | { kind: 'burnGround', dps: number, duration: number, radius: number }
   | { kind: 'cluster', count: number, damage: [number, number], radius: number }
+  /** ballista: bolts weigh more against anything airborne */
+  | { kind: 'airbane', mult: number }
+  /** ballista: bolts shove what they hit back along the road and ignore some armour */
+  | { kind: 'knockback', dist: number, armorPierce: number }
 
 export interface SoldierDef {
   name: string
@@ -198,6 +226,14 @@ export const PERKS: Record<TowerKind, [PerkDef, PerkDef]> = {
   barracks: [
     { id: 'vanguard', name: 'Vanguard Oath', icon: 'shield', description: 'Soldiers gain +25% health.' },
     { id: 'whetstone', name: 'Whetstone Ritual', icon: 'sword', description: 'Soldiers deal +25% damage.' },
+  ],
+  beacon: [
+    { id: 'farsight', name: 'Far Sight', icon: 'eye', description: '+0.6 aura reach.' },
+    { id: 'zeal', name: 'Zeal', icon: 'flame', description: 'The aura grants a further +8% damage.' },
+  ],
+  ballista: [
+    { id: 'heavybolts', name: 'Heavy Bolts', icon: 'blast', description: '+20% damage.' },
+    { id: 'windlass', name: 'Windlass', icon: 'hourglass', description: 'Reloads 15% faster.' },
   ],
 }
 

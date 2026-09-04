@@ -10,10 +10,18 @@ primary_region = "iad"
   PORT = "8080"
   DB_PATH = "/data/blockhold.db"
   ALLOWED_ORIGINS = "https://aj8uppal.github.io,http://localhost:5173,http://localhost:4173"
+  # STATS_TOKEN is deliberately not here. It is a credential, so it belongs in
+  # `fly secrets set`, not in a file in the repository. With it unset,
+  # GET /v1/stats answers 404 and the dashboard simply does not exist.
 
 [[mounts]]
   source = "blockhold_data"
   destination = "/data"
+  # Fly snapshots the volume daily on its own; this is how long it keeps them.
+  # Fourteen days is chosen to outlast a quiet fortnight: the failure this
+  # guards against is a corruption nobody notices until they next look, and a
+  # five-day default would already have rolled past the last good copy.
+  snapshot_retention = 14
 
 [http_service]
   internal_port = 8080

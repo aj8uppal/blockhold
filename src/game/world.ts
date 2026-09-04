@@ -73,3 +73,9 @@ export type ProjectileSpec =
   | { kind: 'chain', from: THREE.Vector3, first: Enemy, damage: number, targets: number, falloff: number, stunChance: number, stunDur: number, mrPierce?: number, credit?: KillCredit, world: World }
   | { kind: 'warlockBolt', from: THREE.Vector3, target: Soldier, damage: number, world: World }
   | { kind: 'meteor', at: THREE.Vector3, damage: number, world: World }
+  /**
+   * A ballista bolt: flies a straight line from `from` through `aim` out to
+   * `reach`, and strikes everything it passes. `falloff` scales each hit after
+   * the first; `pierceAll` is the Great Bolt, which loses nothing.
+   */
+  | { kind: 'spear', from: THREE.Vector3, aim: THREE.Vector3, reach: number, damage: number, falloff: number, pierceAll?: boolean, hitsAir: boolean, airMult?: number, armorPierce?: number, knockback?: number, skyfall?: boolean, credit?: KillCredit, world: World }

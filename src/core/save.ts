@@ -1,3 +1,5 @@
+import { seedXpFromProgress } from '../game/progress.ts'
+
 export interface SaveData {
   unlocked: number              // number of unlocked levels (>=1)
   stars: Record<string, number>
@@ -14,6 +16,18 @@ export interface SaveData {
   dailyBest?: { day: number, wave: number, won: boolean, score: number }
   sfxMuted: boolean
   musicMuted: boolean
+  /**
+   * When this save last actually changed, stamped by `writeSave`.
+   *
+   * The fields that merge by "newest wins" - the Armory loadout, the chosen
+   * hero - used to be stamped at *sync* time instead, which made them
+   * last-synced-wins: a laptop opened after a phone respec would push its stale
+   * loadout up as if it were the newer choice. Change time is the only clock
+   * that answers the question those fields are asking.
+   */
+  changedAt?: number
+  /** account experience; levels and the roster unlocks derive from it (see game/progress.ts) */
+  xp: number
 }
 
 const KEY = 'blockhold.save.v1'
@@ -37,7 +51,7 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
 }
 
 const DEFAULT_SAVE = (): SaveData =>
-  ({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestScore: {}, medals: {}, seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false })
+  ({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestScore: {}, medals: {}, seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false, xp: 0 })
 
 /** validate anything claiming to be a save; the same gate for disk and for imports */
 export function parseSave(d: unknown): SaveData | null {
@@ -84,6 +98,10 @@ export function parseSave(d: unknown): SaveData | null {
           medals,
           lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',
           dailyBest: parseDailyBest(o.dailyBest),
+          changedAt: clampInt(o.changedAt, 0, Number.MAX_SAFE_INTEGER, 0) || undefined,
+          // a save from before experience existed is seeded from what it had
+          // already earned, so nothing a player was using becomes locked
+          xp: typeof o.xp === 'number' ? clampInt(o.xp, 0, 99_999_999, 0) : -1,
           taughtBasics: !!o.taughtBasics,
           seenEnemies: Array.isArray(o.seenEnemies)
             ? o.seenEnemies.filter((x): x is string => typeof x === 'string' && x.length < 24).slice(0, 64)
@@ -100,9 +118,15 @@ export function parseSave(d: unknown): SaveData | null {
 export function loadSave(): SaveData {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return parseSave(JSON.parse(raw)) ?? DEFAULT_SAVE()
+    if (raw) return migrate(parseSave(JSON.parse(raw)) ?? DEFAULT_SAVE())
   } catch { /* corrupted save falls through to default */ }
   return DEFAULT_SAVE()
+}
+
+/** one-time fills for fields that did not exist when the save was written */
+function migrate(save: SaveData): SaveData {
+  if (save.xp < 0) save.xp = seedXpFromProgress(save)
+  return save
 }
 
 /**
@@ -111,6 +135,9 @@ export function loadSave(): SaveData {
  * now, and the HUD surfaces the first failure.
  */
 export function writeSave(data: SaveData): boolean {
+  // stamped here, on the live object, so the cloud layer reads the moment the
+  // player's progress actually changed rather than the moment it was uploaded
+  data.changedAt = Date.now()
   try {
     localStorage.setItem(KEY, JSON.stringify(data))
     return true
@@ -147,7 +174,8 @@ export function importSave(code: string): SaveData | null {
     if (!parsed || typeof parsed !== 'object') return null
     const box = parsed as { v?: number, d?: unknown }
     if (box.v !== 1 || !box.d) return null
-    return parseSave(box.d)   // same gate the on-disk save goes through
+    const restored = parseSave(box.d)   // same gate the on-disk save goes through
+    return restored ? migrate(restored) : null
   } catch {
     return null
   }
