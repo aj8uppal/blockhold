@@ -847,11 +847,14 @@ export class Tower {
           if (d < best) { best = d; thrower = s }
         }
         const origin = thrower ? thrower.handPos : from
-        thrower?.throwAxe()
+        thrower?.throwAxe(target.pos)
         world.fireProjectile({
           kind: 'axe', from: origin, target, damage: dmg, credit: this, world,
           armorPierce: this.has('enchanted') ? 0.3 : undefined,
         })
+        // the release is marked where it happens, so the eye is drawn to the
+        // thrower's hand and not to the roof of the building
+        world.particles.hitSpark(origin.x, origin.y, origin.z, 0xff8c42)
         world.sfx('arrow', 0.8)
         break
       }

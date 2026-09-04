@@ -1422,3 +1422,30 @@ button:focus-visible {
 @keyframes unlock-in { from { transform: scale(0.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .end-unlock { animation: none; } }
 @media (pointer: coarse) { .level-row, .end-xp { font-size: 12.5px; } .hero-option .hero-lock { font-size: 12px; } }
+
+/* ---------- the experience bar in battle ---------- */
+
+.stat.xp {
+  display: inline-flex; align-items: center; gap: 7px;
+  min-width: 0; padding: 7px 11px;
+}
+.stat.xp .xp-level b { color: #c9b2ff; }
+.stat.xp .xp-bar {
+  display: inline-block; width: 64px; height: 6px;
+  background: rgba(10, 6, 3, 0.6);
+  border: 1px solid rgba(201, 178, 255, 0.35);
+  border-radius: 999px; overflow: hidden;
+}
+.stat.xp .xp-bar i {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, #7a5acc, #c9b2ff);
+  border-radius: 999px;
+  transition: width 0.25s ease-out;
+}
+.stat.xp .xp-gain {
+  min-width: 0; font-size: 11.5px; color: #c9b2ff; opacity: 0;
+  transition: opacity 0.2s;
+  font-variant-numeric: tabular-nums;
+}
+.stat.xp.gaining .xp-gain { opacity: 1; }
+@media (max-width: 700px) { .stat.xp .xp-bar { width: 44px; } .stat.xp .xp-gain { display: none; } }

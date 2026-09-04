@@ -205,6 +205,12 @@ export class Game implements World {
     this.killCount++
     // summoned-while-alive enemies pay nothing: stalling a summoner must not be a gold farm
     if (!e.noReward) {
+      // the live bar climbs with every kill; freeplay only counts past the end
+      if (e.waveTag >= 0 && (!this.isFreeplay || e.waveTag >= (this.waves?.authoredWaves ?? 0))) {
+        const gain = this.killXp(e.waveTag)
+        this.liveXp += gain
+        this.hud.xpTick(gain)
+      }
       const premium = this.tithePremium(e.pos.x, e.pos.z)
       const eliteMult = e.elite ? 1.6 * (1 + 0.25 * armoryTier(this.save, 'bountyhunter')) : 1
       const bounty = Math.max(1, Math.round(e.def.bounty * this.mods().bounty * eliteMult * premium))
@@ -454,6 +460,14 @@ export class Game implements World {
           ? `Wave held! ${icon('flame')}×${this.defenseStreak} +${bonus}${icon('coin')}`
           : `Wave held! +${bonus}${icon('coin')}`, 'gold')
         this.waveOutcomes[e.waveTag] = 'held'
+        // the wave's full worth, whatever the per-kill trickle rounded away
+        if (!this.isFreeplay || e.waveTag >= this.waves.authoredWaves) {
+          const wave = this.waves.waveAt(e.waveTag)
+          const planned = wave ? wave.groups.reduce((n, g) => n + g.count, 0) : 0
+          const paid = planned > 0 ? track.spawned * this.killXp(e.waveTag) : 0
+          const topUp = Math.max(0, this.waveXpValue() - paid)
+          if (topUp > 0.01) { this.liveXp += topUp; this.hud.xpTick(topUp) }
+        }
         telemetry.track({ type: 'wave_cleared', level: this.level.id, wave: e.waveTag + 1, lives: this.lives, leaked: false })
         if (this.defenseStreak > 0 && this.defenseStreak % 5 === 0) {
           // this is the unbroken streak, not the wave number: saying "15 WAVES
@@ -842,6 +856,7 @@ export class Game implements World {
     this.isDaily = opts.daily !== undefined
     this.dailyDay = opts.daily ?? 0
     this.isFreeplay = false
+    this.liveXp = 0
     this.isEndless = mode === 'endless'
     this.level = this.isEndless ? { ...level, waves: generateEndlessWaves(level, undefined, this.runSeed) } : level
     level = this.level
@@ -969,6 +984,7 @@ export class Game implements World {
   holdTheLine(): void {
     if (this.phase !== 'victory' || !this.level || !this.waves || this.isEndless || this.isDaily || this.isWatches || this.isBellfoundry) return
     this.isFreeplay = true
+    this.liveXp = 0
     this.phase = 'playing'
     this.paused = false
     this.hazard = this.level.hazard ? createHazard(this.level.hazard, this.level.id) : null
@@ -1308,6 +1324,37 @@ export class Game implements World {
 
   private lastXpBefore = 0
   private lastXpEarned = 0
+  /**
+   * Experience earned so far this battle, as it happens.
+   *
+   * The account is paid once, at the end, by `battleXp()` - that total is what
+   * the tests pin and what the save records. But a bar that only moves when a
+   * battle ends teaches nothing during one, so the same total is previewed
+   * live: each wave's worth is handed out per kill as its enemies fall, and
+   * topped up to the wave's full value when the wave is held. The preview and
+   * the payment agree at the end by construction.
+   */
+  private liveXp = 0
+  /** what the account will read once this battle is paid: the bar's value */
+  xpPreview(): number { return this.save.xp + Math.round(this.liveXp) }
+  /** experience previewed so far this battle */
+  get liveXpEarned(): number { return Math.round(this.liveXp) }
+
+  /** one wave's experience in this mode, before win bonuses */
+  private waveXpValue(): number {
+    const mult = { casual: 0.75, normal: 1, veteran: 1.4 }[this.difficulty]
+    if (this.isDaily) return 10
+    if (this.isWatches || this.isBellfoundry) return 8
+    return 12 * mult
+  }
+
+  /** how much of a wave each of its enemies is worth, for the live bar */
+  private killXp(tag: number): number {
+    const wave = this.waves?.waveAt(tag)
+    if (!wave) return 0
+    const planned = wave.groups.reduce((n, g) => n + g.count, 0)
+    return planned > 0 ? this.waveXpValue() / planned : 0
+  }
   private lastScore = 0
   private lastPrevBestScore = 0
   private lastNewBestScore = false

@@ -18,7 +18,7 @@ import { traitsOf, counterFor } from '../game/dossier.ts'
 import { HERO_RANK_MAX, heroRankCost } from '../game/hero.ts'
 import type { EnemyDef, TowerAura } from '../game/types.ts'
 import { icon, BOSS_ART } from './icons.ts'
-import { isUnlocked, unlockLevel } from '../game/progress.ts'
+import { isUnlocked, unlockLevel, levelProgress } from '../game/progress.ts'
 
 function chip(label: string, value: string, cls = ''): string {
   return `<span class="chip${cls ? ' ' + cls : ''}"><span class="chip-label">${label}</span><span class="chip-value">${value}</span></span>`
@@ -81,6 +81,10 @@ export class HUD {
   private floaterPool: HTMLElement[] = []
 
   private lastGold = -1
+  private xpEl!: HTMLElement
+  private lastXp = -1
+  private xpGainPending = 0
+  private xpGainTimer = 0
   private lastOcHtml = ''
   private lastShards = -1
   private lastLives = -1
@@ -126,6 +130,12 @@ export class HUD {
     this.shardsEl = el('div', 'stat shards', left, `${icon('gem')} <b>0</b>`)
     this.shardsEl.title = 'Veilshards — dropped by Shardbacks, elites, and bosses. Spend on tower Overcharge and Ascension.'
     this.waveEl = el('div', 'stat wave', left, `${icon('wave')} <b>0/10</b>`)
+    // account experience, live: the level, a bar to the next, and the gain
+    // from the last few kills. Before this the bar existed only on the menu,
+    // so a battle never showed the thing it was earning.
+    this.xpEl = el('div', 'stat xp', left,
+      `<span class="xp-level">${icon('sparkle')} <b>1</b></span><span class="xp-bar"><i></i></span><span class="xp-gain"></span>`)
+    this.xpEl.title = 'Account experience. Every wave held pays; holding the map pays more.'
     const right = el('div', 'topbar-group', bar)
     this.speedBtn = el('button', 'icon-btn', right, '1×') as HTMLButtonElement
     this.speedBtn.title = 'Game speed (F)'
@@ -312,6 +322,23 @@ export class HUD {
     if (game.lives !== this.lastLives) {
       this.lastLives = game.lives
       this.livesEl.querySelector('b')!.textContent = `${game.lives}`
+    }
+    const xp = game.xpPreview()
+    if (xp !== this.lastXp) {
+      this.lastXp = xp
+      const { level, into, span } = levelProgress(xp)
+      this.xpEl.querySelector('.xp-level b')!.textContent = `${level}`
+      ;(this.xpEl.querySelector('.xp-bar i') as HTMLElement).style.width = `${Math.round(Math.min(1, into / span) * 100)}%`
+      this.xpEl.classList.remove('pulse'); void this.xpEl.offsetWidth; this.xpEl.classList.add('pulse')
+    }
+    // the gain readout batches a burst of kills into one number and fades
+    if (this.xpGainTimer > 0) {
+      this.xpGainTimer -= dt
+      if (this.xpGainTimer <= 0) {
+        this.xpGainPending = 0
+        this.xpEl.querySelector('.xp-gain')!.textContent = ''
+        this.xpEl.classList.remove('gaining')
+      }
     }
     const w = game.waves
     if (w) {
@@ -812,11 +839,22 @@ export class HUD {
     } else if (def.soldier) {
       const s = def.soldier
       el('div', 'stat-chips', p,
-        chip('Squad', `${icon('soldiers')} ${def.soldierCount ?? 3}× ${s.name}`, 'wide') +
+        chip('Squad', `${icon('soldiers')} ${tower.squadSize}× ${s.name}`, 'wide') +
         chip('Health', `${icon('heart')} ${Math.round(s.hp * m.soldierHp)}`) +
         chip('Damage', `${icon('sword')} ${s.damage[0]}–${s.damage[1]}`) +
         chip('Armor', `${icon('shield')} ${Math.round(s.armor * 100)}%`) +
         chip('Respawn', `${icon('respawn')} ${def.respawnTime}s`))
+      // the Warcamp throws: its own attack is the whole reason to build it,
+      // and the panel used to describe only the soldiers
+      if (def.damage && def.attackInterval) {
+        const [lo, hi] = tower.effectiveDamage()!
+        const interval = tower.effectiveInterval()!
+        el('div', 'stat-chips', p,
+          chip('Axes vs air', `${icon('feather')} ${lo}–${hi}`, 'wide lit') +
+          chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`) +
+          chip('Reach', `${icon('range')} ${fmtNum(tower.range)}`))
+        el('div', 'tp-traits', p, `${icon('feather')} The camp hurls axes at anything airborne within its reach - the only barracks that can`)
+      }
     } else {
       // the numbers this tower fights with, not the ones in its definition
       const [lo, hi] = tower.effectiveDamage()!.map(v => Math.round(v * m.dmg)) as [number, number]
@@ -1176,6 +1214,15 @@ export class HUD {
    * outlived the event that caused it, which is what made double speed read as
    * mush rather than as speed.
    */
+  /** experience just earned: shown beside the bar, summed over a short burst */
+  xpTick(amount: number): void {
+    this.xpGainPending += amount
+    this.xpGainTimer = 1.6
+    const n = this.xpGainPending
+    this.xpEl.querySelector('.xp-gain')!.textContent = n >= 1 ? `+${Math.round(n)} xp` : `+${n.toFixed(1)} xp`
+    this.xpEl.classList.add('gaining')
+  }
+
   spawnFloater(x: number, y: number, text: string, cls: string): void {
     let f = this.floaterPool.pop()
     if (!f) {
@@ -1217,7 +1264,7 @@ export class HUD {
     this.modeHint.classList.add('hidden')
     this.pauseOverlay.classList.add('hidden')
     this.waveBtn.classList.add('hidden')
-    this.lastGold = this.lastLives = -1
+    this.lastGold = this.lastLives = this.lastXp = -1
     this.lastWaveText = this.lastWaveBtnText = ''
   }
 }

@@ -141,9 +141,12 @@ class AxeProjectile extends Ballistic {
       buildModel(env.axeProjectile(), 'proj:axe', { castShadow: false }),
       spec.from,
       spec.from.distanceTo(spec.target.pos),
-      7.5,
-      0.7,
+      // slower and higher than an arrow: it is thrown, and it has to be
+      // in the air long enough to be seen tumbling
+      5.2,
+      1.0,
     )
+    this.mesh.scale.setScalar(1.45)
   }
   protected targetPos(): THREE.Vector3 {
     const t = this.spec.target

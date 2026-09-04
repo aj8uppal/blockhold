@@ -980,9 +980,14 @@ export class Soldier {
    * axe, so the arm goes back and snaps forward as the projectile appears -
    * the axe visibly comes from somebody rather than from the roof.
    */
-  throwAxe(): void {
+  throwAxe(at?: THREE.Vector3): void {
     this.throwT = 1
+    // face what is being thrown at, and hold that facing for the throw
+    if (at) this.faceUntil = { yaw: Math.atan2(at.x - this.group.position.x, at.z - this.group.position.z), t: 0.6 }
   }
+
+  /** a facing the throw holds, overriding the walk/idle facing while it lasts */
+  private faceUntil: { yaw: number, t: number } | null = null
 
   /** where a thrown thing leaves this soldier's hand */
   get handPos(): THREE.Vector3 {
@@ -1122,12 +1127,22 @@ export class Soldier {
       }
     }
     if (this.throwT > 0) {
-      // wound back at 1, whipped forward by 0: a sin over the decay reads as a
-      // fast overhand throw without a keyframe
+      // A full overhand throw: the arm goes right back over the shoulder in
+      // the first third and whips through past horizontal in the rest, with
+      // the body leaning into it. Big on purpose - a subtle throw at the scale
+      // the game is played at is an invisible throw.
+      const k = 1 - this.throwT
       const armR = this.part('armR')
-      if (armR) armR.rotation.x = -Math.sin(this.throwT * Math.PI) * 2.4 + (1 - this.throwT) * 0.6
+      if (armR) armR.rotation.x = k < 0.35 ? -2.6 * (k / 0.35) : -2.6 + (k - 0.35) / 0.65 * 4.0
+      const armL = this.part('armL')
+      if (armL) armL.rotation.x = -0.8 * Math.sin(k * Math.PI)
       const body = this.part('body')
-      if (body) body.rotation.x = Math.sin(this.throwT * Math.PI) * 0.25
+      if (body) body.rotation.x = k < 0.35 ? -0.25 : 0.35 * Math.sin((k - 0.35) / 0.65 * Math.PI)
+    }
+    if (this.faceUntil) {
+      this.faceUntil.t -= dt
+      this.yaw = lerpAngle(this.yaw, this.faceUntil.yaw, dt * 14)
+      if (this.faceUntil.t <= 0) this.faceUntil = null
     }
     this.group.rotation.y = this.yaw
     // height is composed here and nowhere else: the ground under the unit plus
