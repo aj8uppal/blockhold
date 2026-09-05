@@ -34,6 +34,8 @@ export interface HoldPieces {
   gilding: number
   /** daily wins: veilcrystal set into the gate */
   relics: number
+  /** one per family whose both capstones have won a battle: pennants over the courtyard */
+  pennants: number
 }
 
 export function holdPieces(save: SaveData): HoldPieces {
@@ -47,7 +49,20 @@ export function holdPieces(save: SaveData): HoldPieces {
     if (medals.includes('veteran')) gilding++
   }
   const relics = save.dailyBest?.won ? 1 : 0
-  return { towers, banners, statues, gilding, relics }
+  return { towers, banners, statues, gilding, relics, pennants: familiesCompleted(save.capstones ?? []) }
+}
+
+/** families with both capstone cards stamped */
+export function familiesCompleted(cards: readonly string[]): number {
+  const byFamily = new Map<string, Set<string>>()
+  for (const id of cards) {
+    const [kind, branch] = id.split(':')
+    if (!byFamily.has(kind)) byFamily.set(kind, new Set())
+    byFamily.get(kind)!.add(branch)
+  }
+  let n = 0
+  for (const branches of byFamily.values()) if (branches.has('0') && branches.has('1')) n++
+  return n
 }
 
 /**
@@ -56,11 +71,11 @@ export function holdPieces(save: SaveData): HoldPieces {
  * would be handed back for every later save, and the Hold would never grow.
  */
 export function holdCacheKey(p: HoldPieces): string {
-  return `hold:${p.towers}.${p.banners}.${p.statues}.${p.gilding}.${p.relics}`
+  return `hold:${p.towers}.${p.banners}.${p.statues}.${p.gilding}.${p.relics}.${p.pennants}`
 }
 
 export function holdIsEmpty(p: HoldPieces): boolean {
-  return p.towers + p.banners + p.statues + p.gilding + p.relics === 0
+  return p.towers + p.banners + p.statues + p.gilding + p.relics + p.pennants === 0
 }
 
 /** a short line describing what the keep is made of, for the menu */
@@ -72,6 +87,7 @@ export function holdSummary(p: HoldPieces): string {
   if (p.statues) bits.push(`${p.statues} statue${p.statues === 1 ? '' : 's'}`)
   if (p.gilding) bits.push(`${p.gilding} gilded roof${p.gilding === 1 ? '' : 's'}`)
   if (p.relics) bits.push('a veilcrystal')
+  if (p.pennants) bits.push(`${p.pennants} pennant${p.pennants === 1 ? '' : 's'}`)
   return bits.join(' · ')
 }
 
@@ -79,6 +95,7 @@ const C = {
   stone: 0x8d8f96, stoneDark: 0x6d6f77, stoneLight: 0xa8aab1,
   roof: 0x5a3f6b, roofGilt: 0xe8b23c,
   banner: 0xb03a4a, bannerPole: 0x5a4326,
+  pennant: 0xe8b23c, pennantDark: 0x9a6a1c,
   statue: 0xd8d4c4, crystal: 0x8fdfff,
   ground: 0x5f8f4a,
 }
@@ -141,8 +158,19 @@ export function holdModel(p: HoldPieces): VoxModel {
     statues.push(box(x, 2.9, 6.2, 0.5, 0.5, 0.5, C.statue))
   }
 
+  // a pennant per family mastered - both capstones flown in battle - on tall
+  // poles along the courtyard's near edge, so a completed roster shows from
+  // the road before the keep does
+  const pennants: VoxBox[] = []
+  for (let i = 0; i < p.pennants; i++) {
+    const x = -7.5 + i * 3.0
+    pennants.push(box(x, 3.6, 8.6, 0.16, 7.2, 0.16, C.bannerPole))
+    pennants.push(box(x + 0.55, 6.6, 8.6, 0.95, 0.5, 0.1, i % 2 ? C.pennantDark : C.pennant))
+    pennants.push(box(x + 0.4, 6.1, 8.6, 0.65, 0.5, 0.1, i % 2 ? C.pennant : C.pennantDark))
+  }
+
   return {
-    parts: { ground, keep, towers, banners, statues },
+    parts: { ground, keep, towers, banners, statues, pennants },
     scale: 0.1,
   }
 }

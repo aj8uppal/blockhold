@@ -30,6 +30,8 @@ export interface CloudSave {
   medals: Record<string, string[]>
   /** trials won per map; monotonic, merged by union like medals */
   trials: Record<string, string[]>
+  /** capstone cards; monotonic, merged by union */
+  capstones: string[]
   lastHero: string
   dailyBest?: { day: number, wave: number, won: boolean, score: number }
   /** account experience: monotonic, the higher copy wins */
@@ -95,6 +97,9 @@ export function sanitizeCloudSave(v: unknown): CloudSave {
     bestScore: numberMap(o.bestScore, 99_999_999),
     medals,
     trials,
+    capstones: Array.isArray(o.capstones)
+      ? [...new Set(o.capstones.filter((x): x is string => typeof x === 'string' && /^[a-z]+:[01]$/.test(x)))].slice(0, 32)
+      : [],
     lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',
     dailyBest: d && typeof d.day === 'number' ? {
       day: clampInt(d.day, 0, 999_999, 0),
@@ -142,6 +147,7 @@ export function mergeSaves(a: CloudSave, b: CloudSave): CloudSave {
     bestScore: maxMerge(a.bestScore, b.bestScore),
     medals,
     trials,
+    capstones: [...new Set([...(a.capstones ?? []), ...(b.capstones ?? [])])],
     dailyBest: betterDaily(a.dailyBest, b.dailyBest),
     xp: Math.max(a.xp, b.xp),
     // choices, not achievements: a respec must survive the merge

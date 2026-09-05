@@ -967,6 +967,7 @@ export class Game implements World {
     this.lastLeak = null
     this.leaks = 0
     this.starLossLeak = null
+    this.lastNewCards = []
     this.waveTracks.clear()
     this.waveOutcomes = []
     this.replay.reset()
@@ -1403,6 +1404,15 @@ export class Game implements World {
       } else if (won) {
         const maxLives = this.mods().lives
         stars = starsFor(this.lives, maxLives)
+        // capstone cards: every capstone standing at the win is stamped, once.
+        // Bloons makes a tower's highest tier a thing you have *had*; the card
+        // is the record that you did, and the Hold flies a pennant per family
+        this.lastNewCards = []
+        for (const t of this.towers) {
+          if (t.level < 5 || t.branch === null || t.isGhost) continue
+          const id = `${t.kind}:${t.branch}`
+          if (!this.save.capstones.includes(id)) { this.save.capstones.push(id); this.lastNewCards.push(t.def.name) }
+        }
         const idx = levels.findIndex(l => l.id === this.level!.id)
         if (idx >= 0) this.save.unlocked = Math.max(this.save.unlocked, Math.min(idx + 2, levels.length))
         this.save.stars[this.level.id] = Math.max(this.save.stars[this.level.id] ?? 0, stars)
@@ -1451,6 +1461,7 @@ export class Game implements World {
   private lastXpEarned = 0
   private lastFirstClear = false
   private lastNewTrialStar = false
+  private lastNewCards: string[] = []
   /**
    * Experience earned so far this battle, as it happens.
    *
@@ -1535,6 +1546,8 @@ export class Game implements World {
     firstClear: boolean,
     /** the trial this was, and whether its star is new */
     trial?: { kind: TrialKind, name: string, newStar: boolean },
+    /** capstone cards stamped by this win, by name */
+    newCards: string[],
   } {
     return {
       daily: this.isDaily ? {
@@ -1584,6 +1597,7 @@ export class Game implements World {
       difficulty: this.difficulty,
       firstClear: this.lastFirstClear,
       trial: this.trial ? { kind: this.trial.kind, name: this.trial.name, newStar: this.lastNewTrialStar } : undefined,
+      newCards: this.lastNewCards,
     }
   }
 

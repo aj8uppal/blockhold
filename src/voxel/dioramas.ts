@@ -109,7 +109,7 @@ export const DIORAMAS: DioramaSpec[] = [
       ground(g, 34, 24, 0x44643a, 0x53422f)
       road(g, 34, 3.6, 0xc9b083)
       // the keep, dressed as a campaign-worn Hold, anchoring the right third
-      const hold = buildModel(holdModel({ towers: 5, banners: 4, statues: 2, gilding: 2, relics: 1 }), 'dio:hold')
+      const hold = buildModel(holdModel({ towers: 5, banners: 4, statues: 2, gilding: 2, relics: 1, pennants: 3 }), 'dio:hold')
       place(g, hold, 7.2, 0, -1.6, -0.62, 2.3)
       // the line that is holding it
       place(g, buildModel(towerModel('arrow5a'), 'dio:t1'), 2.8, 0, -3.4, 0.55, 1.55)

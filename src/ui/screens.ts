@@ -1,4 +1,5 @@
 import { renderFieldGuide } from './fieldGuide.ts'
+import { renderCapstoneCards, CAPSTONE_COUNT } from './capstoneCards.ts'
 import { levels, levelById } from '../game/levels.ts'
 import { Difficulty, HeroId } from '../game/types.ts'
 import { difficultyMods } from '../game/difficulty.ts'
@@ -72,6 +73,7 @@ export interface BattleStats {
   /** this win was the map's first */
   firstClear: boolean,
   trial?: { kind: TrialKind, name: string, newStar: boolean },
+  newCards?: string[],
 }
 
 /**
@@ -347,6 +349,9 @@ export class Screens {
     el('h2', 'levels-title', head, 'Choose your battlefield')
     const armoryBtn = el('button', 'btn ghost small', head, `${icon('swords')} Armory · ${starsAvailable(save)}★`) as HTMLButtonElement
     armoryBtn.onclick = () => this.renderArmory()
+    const cardsBtn = el('button', 'btn ghost small', head, `${icon('crown')} Cards · ${(save.capstones ?? []).length}/${CAPSTONE_COUNT}`) as HTMLButtonElement
+    cardsBtn.title = 'Capstone cards: one for every crown you have flown to a campaign win'
+    cardsBtn.onclick = () => renderCapstoneCards(this.root, save.capstones ?? [], () => {})
     const grid = el('div', 'levels-grid', wrap)
     levels.forEach((lvl, i) => {
       const locked = i >= save.unlocked
@@ -695,6 +700,9 @@ export class Screens {
       el('div', 'end-stats', card,
         `${icon('swords')} ${stats.kills} slain · ${icon('shield')} ${stats.perfectWaves} waves held${stats.bestStreak >= 2 ? ` (${icon('flame')}×${stats.bestStreak})` : ''} · ` +
         `${icon('coin')} ${stats.gold} · ${icon('gem')} ${stats.shards} · ${icon('helmPlume')} lvl ${stats.heroLevel}${stats.heroKills > 0 ? ` ${icon('skull')}${stats.heroKills}` : ''} · ${icon('hourglass')} ${fmtTime(stats.timeSec)}`)
+      if (stats.newCards?.length) {
+        el('div', 'end-cards', card, `${icon('crown')} Card${stats.newCards.length === 1 ? '' : 's'} stamped: <b>${stats.newCards.join('</b>, <b>')}</b>`)
+      }
       if (stats.topKiller && (stats.topKiller.kills > 0 || stats.topKiller.damage > 0)) {
         el('div', 'end-topkiller', card, `${icon('trophy')} Deadliest building: <b>${stats.topKiller.name}</b> — ${stats.topKiller.kills} slain · ${fmtDamage(stats.topKiller.damage)} damage`)
       }
