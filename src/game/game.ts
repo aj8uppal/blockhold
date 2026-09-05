@@ -561,7 +561,11 @@ export class Game implements World {
     // not in `levels` - checkpointing one put a "Resume battle" button on the
     // menu that threw out of `levelById` the moment it was pressed. They are
     // also short, seeded and repeatable, so there is nothing worth saving.
-    if (this.isDaily || this.isWatches || this.isBellfoundry || this.isFreeplay || this.trial) return
+    // Freeplay banks too: a board that has held the line for forty waves is
+    // the most invested thing in the game, and it used to be the one thing the
+    // player could not put down. The chunks regenerate from the seed, so the
+    // snapshot is the same one the campaign takes plus a flag.
+    if (this.isDaily || this.isWatches || this.isBellfoundry || this.trial) return
     if (this.enemies.some(e => e.alive) || this.projectiles.length) return
     if (this.waves.phase === 'spawning') return
     const waveIndex = this.waves.waveIndex + 1
@@ -572,6 +576,7 @@ export class Game implements World {
       difficulty: this.difficulty,
       heroId: (this.hero?.heroDef.id ?? this.save.lastHero) as HeroId,
       endless: this.isEndless,
+      freeplay: this.isFreeplay || undefined,
       seed: this.runSeed,
       waveIndex,
       gold: this.gold,
@@ -809,6 +814,14 @@ export class Game implements World {
     this.engine.addShake(0.16)
     this.particles.buildDust(at.x, 0.1, at.z)
     this.sfx('horn', 0.7)
+  }
+
+  /** the wave a banked checkpoint of this very run would resume at, or null */
+  bankedWave(): number | null {
+    if (!this.level || this.isDaily || this.isWatches || this.isBellfoundry || this.trial) return null
+    const cp = readCheckpoint()
+    if (!cp || cp.levelId !== this.level.id || cp.seed !== this.runSeed) return null
+    return cp.waveIndex + 1
   }
 
   heroBark(text: string): void {
@@ -1198,9 +1211,18 @@ export class Game implements World {
       this.hero.level = c.heroLevel
       this.hero.xp = c.heroXp
     }
+    if (c.freeplay) {
+      // back to holding the line: the generated chunks are rebuilt from the
+      // seed until the saved wave exists, then the countdown resumes there
+      this.isFreeplay = true
+      this.liveXp = 0
+      let guard = 0
+      while (this.waves.totalWaves <= c.waveIndex + 2 && guard++ < 50) this.extendFreeplay()
+    }
     this.waves.resumeAt(c.waveIndex)
     this.removeLanePreview()
-    this.hud.showToast(`Resumed at wave ${c.waveIndex + 1}`, 3)
+    const depth = c.waveIndex + 1 - this.waves.authoredWaves
+    this.hud.showToast(c.freeplay ? `Holding the line again at +${Math.max(1, depth)}` : `Resumed at wave ${c.waveIndex + 1}`, 3)
   }
 
   /** pre-battle route preview: colored dashes trace each road from its gate,

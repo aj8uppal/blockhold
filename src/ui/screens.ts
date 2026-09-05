@@ -208,8 +208,10 @@ export class Screens {
     // the Daily, or a map was renamed) must not offer a button that cannot open
     const cpLevel = cp ? levels.find(l => l.id === cp.levelId) : undefined
     if (cp && cpLevel) {
-      const resume = el('button', 'btn primary', card,
-        `${icon('respawn')} Resume ${cpLevel.name} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
+      const depth = cp.waveIndex + 1 - cpLevel.waves.length
+      const resume = el('button', 'btn primary', card, cp.freeplay
+        ? `${icon('castle')} Hold the line on ${cpLevel.name} · +${Math.max(1, depth)}`
+        : `${icon('respawn')} Resume ${cpLevel.name} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
     }
     // one battle, the same one for everyone in the world today

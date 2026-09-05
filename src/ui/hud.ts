@@ -334,9 +334,12 @@ export class HUD {
       fs.onclick = () => this.onFullscreen()
     }
 
-    const quit = el('button', 'btn', card, 'Abandon mission') as HTMLButtonElement
-    quit.onclick = () => { this.game.togglePause(); this.onHome() }
+    this.quitBtn = el('button', 'btn', card, 'Abandon mission') as HTMLButtonElement
+    this.quitBtn.onclick = () => { this.game.togglePause(); this.onHome() }
+    this.bankedEl = el('div', 'pause-banked', card)
   }
+  private quitBtn!: HTMLButtonElement
+  private bankedEl!: HTMLElement
 
   // ---------------- per-frame refresh ----------------
 
@@ -1298,6 +1301,16 @@ export class HUD {
   setPaused(paused: boolean): void {
     this.pauseBtn.innerHTML = icon(paused ? 'play' : 'pause', 'plain')
     this.pauseOverlay.classList.toggle('hidden', !paused)
+    if (paused) {
+      // leaving is not losing when the board is banked; the card says so
+      const wave = this.game.bankedWave()
+      const authored = this.game.waves?.authoredWaves ?? 0
+      const where = wave === null ? '' : wave > authored ? `held +${wave - authored}` : `wave ${wave}`
+      this.quitBtn.textContent = wave === null ? 'Abandon mission' : 'Bank and leave'
+      this.bankedEl.textContent = wave === null
+        ? (this.game.isFreeplay || (this.game.waves?.waveIndex ?? -1) >= 0 ? 'The board banks itself each time the field is clear.' : '')
+        : `Banked at ${where} — Resume from the menu picks it up there.`
+    }
   }
 
   setSpeed(speed: number): void {

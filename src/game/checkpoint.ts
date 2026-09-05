@@ -41,6 +41,8 @@ export interface Checkpoint {
   difficulty: Difficulty
   heroId: HeroId
   endless: boolean
+  /** the board was holding the line past the map's end; the run resumes in freeplay */
+  freeplay?: boolean
   seed: number
   /** the next wave to run; the field was clear when this was taken */
   waveIndex: number

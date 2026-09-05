@@ -817,6 +817,8 @@ button:focus-visible {
 }
 .chip-value { font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tp-traits { font-size: 11px; line-height: 1.45; color: rgba(244, 232, 207, 0.78); margin-top: 5px; }
+.pause-banked { font-size: 11.5px; color: rgba(244, 232, 207, 0.65); margin-top: 6px; min-height: 1em; }
+.pause-banked:empty { display: none; }
 .cards-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 @media (max-width: 640px) { .cards-grid { grid-template-columns: 1fr; } }
 .cap-card { padding: 9px 11px; border-radius: 10px; background: rgba(0, 0, 0, 0.22); border: 1px solid rgba(232, 178, 60, 0.14); opacity: 0.62; }
