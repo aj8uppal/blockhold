@@ -7,7 +7,7 @@ import {
   OVERCHARGE_SHARD_COST, ASCEND_SHARD_COST, ASCEND_GOLD_COST, PERKS,
 } from './types.ts'
 import { Trap, TrapSpotInfo } from './traps.ts'
-import { Earthwork, EARTHWORK_DEFS, RAMPART_REACH, type EarthworkSpot } from './earthworks.ts'
+import { Earthwork, EARTHWORK_DEFS, raiseCost, type EarthworkSpot } from './earthworks.ts'
 import { Hazard, createHazard } from './hazards.ts'
 import { enemyDef } from './enemyDefs.ts'
 import { towerTrees, SELL_REFUND } from './towerDefs.ts'
@@ -124,16 +124,38 @@ export class Game implements World {
   selectedTrapSpot: TrapSpotInfo | null = null
   selectedEarthSpot: EarthworkSpot | null = null
   selectedEarthwork: Earthwork | null = null
-  private rampartRing!: THREE.Mesh
-
-  /** the towers a rampart standing at this point lifts onto the high ground */
-  private liftedBy(x: number, z: number): Tower[] {
-    return this.towers.filter(t => Math.hypot(t.pos.x - x, t.pos.z - z) <= RAMPART_REACH)
+  /** how many foundations have been raised this battle; each costs more than the last */
+  raisedCount(): number {
+    return this.terrain ? this.terrain.plots.filter(p => p.raised).length : 0
   }
 
-  private clearLiftMarkers(): void {
-    for (const t of this.towers) t.showLift(false)
-    this.rampartRing.visible = false
+  /** what raising the next foundation costs right now */
+  nextRaiseCost(): number { return raiseCost(this.raisedCount()) }
+
+  /**
+   * Raise a foundation onto high ground.
+   *
+   * Works on an empty plot or an occupied one: the bank goes under the slab,
+   * the slab and whatever stands on it rise with it, and from then on the
+   * tower there shoots from height. Permanent, and priced upward per
+   * foundation so a board cannot simply be raised wholesale.
+   */
+  raisePlot(plot: PlotInfo): void {
+    if (this.paused || !this.terrain || plot.raised) return
+    const cost = this.nextRaiseCost()
+    if (this.gold < cost) { this.sfx('error'); this.hud.flashGold(); return }
+    this.gold -= cost
+    this.terrain.raisePlot(plot)
+    const tower = this.towers.find(t => t.plot === plot)
+    if (tower) tower.group.position.y = plot.pos.y
+    this.particles.buildDust(plot.pos.x, plot.pos.y + 0.1, plot.pos.z)
+    this.sfx('build')
+    this.engine.addShake(0.08)
+    this.replay.record({ t: this.time, kind: 'earthwork', spot: plot.index, work: 'rampart' })
+    this.recomputeHighGround()
+    // whatever was open, reopen it on the raised ground so the panel is honest
+    if (tower) this.selectTower(tower)
+    else this.selectPlot(plot, 0, 0)
   }
   hero: Hero | null = null
   heroSelected = false
@@ -172,10 +194,6 @@ export class Game implements World {
 
     this.rangeRing = makeRing(1, 0x7fd4ff, 0.24)
     this.upgradeRing = makeRing(1, 0x8fff9f, 0.42)
-    // the reach a rampart would have, drawn at its site before any gold is spent
-    this.rampartRing = makeRing(1, 0xe8c24a, 0.5)
-    this.rampartRing.scale.setScalar(RAMPART_REACH)
-    this.rampartRing.visible = false
     this.selectRing = makeRing(1, 0xffe89f, 0.5)
     this.selectRing.scale.setScalar(0.62)
     this.targetRing = makeRing(1.15, 0xff8c42, 0.5)
@@ -540,6 +558,7 @@ export class Game implements World {
         policy: t.targetPolicy,
       })),
       traps: this.traps.map(t => ({ spot: t.spot.index, kind: t.kind })),
+      raisedPlots: this.terrain ? this.terrain.plots.filter(p => p.raised).map(p => p.index) : [],
       savedAt: this.time,
     })
   }
@@ -882,7 +901,7 @@ export class Game implements World {
     this.engine.scene.add(this.terrain.group)
     this.engine.scene.add(this.dynamic)
     this.engine.scene.add(this.particles.group)
-    this.engine.scene.add(this.rangeRing, this.upgradeRing, this.selectRing, this.targetRing, this.heroRing, this.heroGuardRing, this.rampartRing)
+    this.engine.scene.add(this.rangeRing, this.upgradeRing, this.selectRing, this.targetRing, this.heroRing, this.heroGuardRing)
     this.engine.applyTheme(THEMES[level.theme], level.width, level.height)
     this.engine.resetView(level.width, level.height,
       tallestLandmark((level.landmarks ?? []).map(([, , k]) => k)))
@@ -1056,6 +1075,11 @@ export class Game implements World {
     this.defenseStreak = c.defenseStreak
     this.bestStreak = c.bestStreak
     this.earlyCallSeconds = c.earlyCallSeconds
+    // the ground first, so towers rebuilt below stand at the right height
+    for (const i of c.raisedPlots ?? []) {
+      const plot = this.terrain.plots[i]
+      if (plot) this.terrain.raisePlot(plot)
+    }
     for (const snap of c.towers) {
       const plot = this.terrain.plots[snap.plot]
       if (!plot || plot.occupied) continue
@@ -1762,7 +1786,6 @@ export class Game implements World {
     this.selectedTrapSpot = null
     this.selectedEarthSpot = null
     if (this.selectedEarthwork) { this.selectedEarthwork.showReach(false); this.selectedEarthwork = null }
-    this.clearLiftMarkers()
     this.heroSelected = false
     if (this.targetMode === 'rally') {
       // rally mode has no owner once its tower is deselected
@@ -1879,17 +1902,7 @@ export class Game implements World {
     this.clearSelection()
     this.selectedEarthSpot = spot
     const screen = this.projectToScreen(spot.pos.x, spot.pos.y + 0.15, spot.pos.z)
-    // What would this rampart do? Answered on the board before the purchase:
-    // its reach as a ring, and a mark on every tower that reach covers.
-    let lifts: string[] = []
-    if (spot.kind === 'rampart') {
-      const towers = this.liftedBy(spot.pos.x, spot.pos.z)
-      for (const t of towers) t.showLift(true)
-      lifts = towers.map(t => t.def.name)
-      this.rampartRing.visible = true
-      this.rampartRing.position.set(spot.pos.x, 0.08, spot.pos.z)
-    }
-    this.hud.openEarthworkMenu(spot, screen?.x ?? sx, screen?.y ?? sy, lifts)
+    this.hud.openEarthworkMenu(spot, screen?.x ?? sx, screen?.y ?? sy)
     this.selectRing.visible = true
     this.selectRing.position.set(spot.pos.x, 0.1, spot.pos.z)
     this.sfx('click')
@@ -1916,17 +1929,14 @@ export class Game implements World {
   }
 
   /**
-   * Which towers are shooting from height: next to a rampart the player
-   * raised, or standing on the map's own high ground. A plot sitting on a
-   * visibly raised shelf that behaved exactly like flat ground was reading as
-   * a bug rather than scenery.
+   * Which towers are shooting from height: a foundation the player raised,
+   * or the map's own high ground. A plot sitting on a visibly raised shelf
+   * that behaved exactly like flat ground was reading as a bug rather than
+   * scenery, and now the same is true the other way: what is raised, is.
    */
   recomputeHighGround(): void {
     for (const t of this.towers) {
-      const nearRampart = this.earthworks.some(
-        w => w.kind === 'rampart' && w.group.position.distanceTo(t.pos) <= RAMPART_REACH,
-      )
-      t.onHighGround = nearRampart || this.terrain?.isOnHill(t.plot.cell[0], t.plot.cell[1]) === true
+      t.onHighGround = t.plot.raised || this.terrain?.isOnHill(t.plot.cell[0], t.plot.cell[1]) === true
       // what it shoots from, so it can see over anything shorter than its footing
       t.footing = this.terrain?.cellTop(t.plot.cell[0], t.plot.cell[1]) ?? 0
     }
@@ -2008,16 +2018,9 @@ export class Game implements World {
     this.clearSelection()
     this.selectedEarthwork = work
     work.showReach(true)
-    // mark the towers it is actually helping, which is the whole question, and
-    // keep them marked for as long as it is selected
-    let lifted: Tower[] = []
-    if (work.kind === 'rampart') {
-      lifted = this.liftedBy(work.group.position.x, work.group.position.z)
-      for (const t of lifted) t.showLift(true)
-    }
     this.selectRing.visible = true
     this.selectRing.position.set(work.group.position.x, 0.1, work.group.position.z)
-    this.hud.openEarthworkPanel(work, lifted.map(t => t.def.name))
+    this.hud.openEarthworkPanel(work)
     this.sfx('click')
   }
 

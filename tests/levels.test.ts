@@ -1,4 +1,4 @@
-import { deriveEarthworkSpots, RAMPART_REACH } from '../src/game/earthworks.ts'
+import { deriveEarthworkSpots } from '../src/game/earthworks.ts'
 import { describe, expect, it } from 'vitest'
 import { enemyDefs } from '../src/game/enemyDefs.ts'
 import { levels } from '../src/game/levels.ts'
@@ -133,7 +133,7 @@ describe('earthworks', () => {
    * have to be available on every board or the mechanic is dead content -
    * exactly what happened to tower adjacency with too small a radius.
    */
-  it('offers both kinds of ground work on every map', () => {
+  it('offers somewhere to cut the road on every map', () => {
     for (const lvl of levels) {
       const paths = buildPaths(lvl)
       const road = paths.roadCells
@@ -148,41 +148,9 @@ describe('earthworks', () => {
       }
       const isTrap = (c: number, r: number) => (lvl.trapSpots ?? []).some(([tc, tr]) => tc === c && tr === r)
       const spots = deriveEarthworkSpots(lvl, kindOf, isTrap)
-      expect(spots.some(s => s.kind === 'rampart'), `${lvl.id} has nowhere to raise a rampart`).toBe(true)
+      // raising happens on the foundations themselves now; the only derived sites are cuttings
+      expect(spots.every(s => s.kind === 'cutting'), `${lvl.id} still derives a rampart site`).toBe(true)
       expect(spots.some(s => s.kind === 'cutting'), `${lvl.id} has nowhere to cut the road`).toBe(true)
-    }
-  })
-
-  /**
-   * A rampart only pays if a tower can stand beside it. Reach is 1.7, and if
-   * a map's ramparts all landed further than that from every plot the bonus
-   * would be unbuyable there - the same way tower adjacency was dead content
-   * on two maps for using a radius shorter than the plot spacing.
-   */
-  it('puts ramparts within reach of real tower plots on every map', () => {
-    for (const lvl of levels) {
-      const paths = buildPaths(lvl)
-      const kindOf = (c: number, r: number): string => {
-        if (c < 0 || r < 0 || c >= lvl.width || r >= lvl.height) return 'void'
-        if (paths.roadCells.has(`${c},${r}`)) return 'road'
-        if (lvl.plots.some(([pc, pr]) => pc === c && pr === r)) return 'plot'
-        if (lvl.water.some(([a, b, x, y]) => c >= a && c <= x && r >= b && r <= y)) return 'water'
-        if (lvl.voids.some(([a, b, x, y]) => c >= a && c <= x && r >= b && r <= y)) return 'void'
-        return 'grass'
-      }
-      const isTrap = (c: number, r: number) => (lvl.trapSpots ?? []).some(([tc, tr]) => tc === c && tr === r)
-      const plots = lvl.plots.map(([c, r]) => gridToWorld(c, r, lvl.width, lvl.height))
-      const all = deriveEarthworkSpots(lvl, kindOf, isTrap).filter(s => s.kind === 'rampart')
-      const usable = (s: { cell: [number, number] }) => {
-        const [x, z] = gridToWorld(s.cell[0], s.cell[1], lvl.width, lvl.height)
-        return plots.some(p => Math.hypot(p[0] - x, p[1] - z) <= RAMPART_REACH)
-      }
-      // not "some are usable" - every one, or the player is offered a build
-      // site whose own tooltip admits no tower can reach it
-      for (const s of all) {
-        expect(usable(s), `${lvl.id} offers a rampart at [${s.cell}] no tower can use`).toBe(true)
-      }
-      expect(all.length, `${lvl.id} offers no ramparts at all`).toBeGreaterThanOrEqual(2)
     }
   })
 

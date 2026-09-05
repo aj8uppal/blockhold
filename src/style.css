@@ -1449,3 +1449,10 @@ button:focus-visible {
 }
 .stat.xp.gaining .xp-gain { opacity: 1; }
 @media (max-width: 700px) { .stat.xp .xp-bar { width: 44px; } .stat.xp .xp-gain { display: none; } }
+
+/* raising the ground: offered on the empty-plot menu and under a standing tower */
+.btn.small.raise { border-color: rgba(232, 194, 74, 0.5); color: #e8c95f; }
+.btn.small.raise:hover:not(:disabled) { border-color: var(--gold); }
+.btn.small.raise.poor { opacity: 0.5; }
+/* the shared tooltip renders inline inside the tower panel rather than floating */
+.tp-actions .build-tooltip { position: static; margin-top: 6px; max-width: none; }

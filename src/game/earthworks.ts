@@ -28,6 +28,24 @@ import type { LevelDef } from './types.ts'
 
 export type EarthworkKind = 'rampart' | 'cutting'
 
+/**
+ * How far a raised foundation stands above the ground it was on.
+ *
+ * The rampart used to be a bank of earth *beside* a plot, with an invisible
+ * radius that lifted any tower within it. Explaining that took a ring, a
+ * tooltip and a list of names, and it was still the least understood thing
+ * on the board. Now raising the ground raises the plot itself: the tower
+ * visibly stands higher, and the rules that already apply to high ground -
+ * further reach, heavier shots, sight over low ridges - apply to it. There is
+ * nothing to explain beyond what can be seen.
+ */
+export const RAISE_HEIGHT = 0.45
+
+/** each foundation raised costs more than the last: the ground bears so much */
+export function raiseCost(alreadyRaised: number): number {
+  return EARTHWORK_DEFS.rampart.cost + 30 * alreadyRaised
+}
+
 export interface EarthworkDef {
   kind: EarthworkKind
   name: string
@@ -38,8 +56,8 @@ export interface EarthworkDef {
 
 export const EARTHWORK_DEFS: Record<EarthworkKind, EarthworkDef> = {
   rampart: {
-    kind: 'rampart', name: 'Rampart', icon: 'quake', cost: 70,
-    description: 'Raise a bank of earth. Towers beside it gain +15% range and +10% damage from the high ground.',
+    kind: 'rampart', name: 'Raise ground', icon: 'quake', cost: 70,
+    description: 'Raise this foundation onto high ground. The tower on it reaches +15% further, hits +10% harder, and sees over low ridges.',
   },
   cutting: {
     kind: 'cutting', name: 'Cutting', icon: 'spike', cost: 90,
@@ -47,8 +65,6 @@ export const EARTHWORK_DEFS: Record<EarthworkKind, EarthworkDef> = {
   },
 }
 
-/** how far a rampart's high ground reaches */
-export const RAMPART_REACH = 2.0
 export const RAMPART_RANGE_BONUS = 0.15
 export const RAMPART_DAMAGE_BONUS = 0.10
 export const CUTTING_SLOW = 0.65
@@ -75,25 +91,9 @@ export class Earthwork {
     this.group.position.copy(spot.pos)
   }
 
-  /**
-   * A rampart with no visible reach was impossible to reason about: the
-   * player could not tell which towers it was helping, or whether it was
-   * doing anything at all.
-   */
+  /** cuttings have no reach to show; kept so callers need not care which kind this is */
   showReach(on: boolean): void {
-    if (this.kind !== 'rampart') return
-    if (!this.ring) {
-      const geo = new THREE.RingGeometry(RAMPART_REACH - 0.06, RAMPART_REACH, 48)
-      geo.rotateX(-Math.PI / 2)
-      const mat = new THREE.MeshBasicMaterial({
-        color: 0xe8c24a, transparent: true, opacity: 0.55, toneMapped: false, depthWrite: false,
-      })
-      this.ring = new THREE.Mesh(geo, mat)
-      this.ring.position.y = 0.09
-      this.ring.renderOrder = 4
-      this.group.add(this.ring)
-    }
-    this.ring.visible = on
+    if (this.ring) this.ring.visible = on
   }
 
   dispose(): void {
@@ -156,7 +156,7 @@ export function deriveEarthworkSpots(
   level: LevelDef,
   cellKind: (c: number, r: number) => string,
   isTrapSpot: (c: number, r: number) => boolean,
-  limit = { rampart: 6, cutting: 4 },
+  limit = { cutting: 4 },
 ): { cell: [number, number], kind: EarthworkKind }[] {
   const out: { cell: [number, number], kind: EarthworkKind }[] = []
   const touchesRoad = (c: number, r: number) =>
@@ -179,39 +179,43 @@ export function deriveEarthworkSpots(
   const nearEnd = (c: number, r: number) =>
     ends.some(e => Math.hypot(e.cell[0] - c, e.cell[1] - r) < e.gap)
 
-  const ramparts: [number, number][] = []
+  // Only cuttings are derived sites now. Raising the ground happens on the
+  // foundations themselves, so there is nothing to scan grass for.
   const cuttings: [number, number][] = []
   for (let r = 0; r < level.height; r++) {
     for (let c = 0; c < level.width; c++) {
       if (nearEnd(c, r)) continue
-      const k = cellKind(c, r)
-      if (k === 'grass' && touchesRoad(c, r)) ramparts.push([c, r])
-      else if (k === 'road' && !isTrapSpot(c, r)) cuttings.push([c, r])
+      if (cellKind(c, r) === 'road' && !isTrapSpot(c, r)) cuttings.push([c, r])
     }
   }
-
-  /**
-   * A rampart is only ever offered where a tower can actually use it.
-   *
-   * This used to merely *prefer* such cells and then top the list up with
-   * whatever was left, which is how a player ends up staring at a build site
-   * whose own tooltip says "no tower is close enough to use it yet". The reach
-   * here is the same constant the buff is granted with, so the offer and the
-   * effect can never disagree; if a board cannot supply enough usable cells it
-   * offers fewer ramparts, because dead content is worse than less content.
-   */
-  const nearPlot = (c: number, r: number) =>
-    level.plots.some(([pc, pr]) => Math.hypot(pc - c, pr - r) <= RAMPART_REACH)
+  void touchesRoad
   // spread across the board instead of clustering wherever the scan started
   const spread = <T>(arr: T[], n: number): T[] => {
     if (arr.length <= n) return arr
     const step = arr.length / n
     return Array.from({ length: n }, (_, i) => arr[Math.floor(i * step + step / 2)] ?? arr[arr.length - 1])
   }
-  const useful = ramparts.filter(([c, r]) => nearPlot(c, r))
-  for (const cell of spread(useful, limit.rampart)) out.push({ cell, kind: 'rampart' })
   for (const cell of spread(cuttings, limit.cutting)) out.push({ cell, kind: 'cutting' })
   return out
+}
+
+/**
+ * The bank a raised foundation stands on: a plot-sized block of cut earth
+ * with a stone facing, sized so the plot slab sits flush on top of it.
+ */
+export function raisedGroundModel(): VoxModel {
+  const h = RAISE_HEIGHT * 10
+  const bank: VoxBox[] = [
+    box(0, h / 2, 0, 10.4, h, 10.4, C.soil),
+    box(0, h - 0.18, 0, 10.6, 0.36, 10.6, C.grass),
+    // dressed-stone corners so it reads as built, not heaped
+    box(-4.7, h / 2, -4.7, 1.1, h, 1.1, C.stone),
+    box(4.7, h / 2, -4.7, 1.1, h, 1.1, C.stone),
+    box(-4.7, h / 2, 4.7, 1.1, h, 1.1, C.stone),
+    box(4.7, h / 2, 4.7, 1.1, h, 1.1, C.stone),
+    box(0, 0.35, 0, 11.2, 0.7, 11.2, C.soilDark),
+  ]
+  return { parts: { bank }, scale: 0.1 }
 }
 
 export function earthworkSpotWorld(cell: [number, number], level: LevelDef): THREE.Vector3 {

@@ -141,7 +141,7 @@ export class Tower {
   soldiers: Soldier[] = []
   rallyPoint = new THREE.Vector3()
   targetPolicy: TargetPolicy = 'first'
-  /** standing beside a rampart: further sight, heavier shots */
+  /** standing on raised ground or the map's own high ground: further sight, heavier shots */
   onHighGround = false
   /** the height this tower shoots from: it sees over anything not above this */
   footing = 0
@@ -175,8 +175,6 @@ export class Tower {
   /** riftlight: empowered attack rate while world.time < riftUntil */
   riftUntil = 0
   private hexRing: THREE.Mesh | null = null
-  /** shown while a rampart (or a rampart site) is selected: this tower is lifted by it */
-  private liftRing: THREE.Mesh | null = null
   private crownMesh: THREE.Mesh | null = null
   private chargeRing: THREE.Mesh | null = null
   private turretYaw = 0
@@ -306,38 +304,13 @@ export class Tower {
       if (this.auraRate) bits.push(`+${Math.round(this.auraRate * 100)}% attack speed`)
       out.push(`Lit by a beacon: ${bits.join(', ')}`)
     }
-    if (this.onHighGround) out.push(`High ground: +${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range`)
+    if (this.onHighGround) out.push(`High ground: +${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range, sees over low ridges`)
     return out
   }
 
   /** where a hexling sits when it silences this tower */
   get perchY(): number {
     return towerCrownHeight(this.def.model) * this.sizeMult * 0.8
-  }
-
-  /**
-   * Mark this tower as one a rampart lifts.
-   *
-   * Ramparts were the least legible thing on the board: a bank of earth with
-   * an invisible radius, and the only sign it was doing anything was a
-   * one-off sparkle on selection. The ring is persistent for as long as the
-   * rampart, or the site where one could go, is selected - so the question
-   * "which of my towers does this help" is answered by looking.
-   */
-  showLift(on: boolean): void {
-    if (!on) { if (this.liftRing) this.liftRing.visible = false; return }
-    if (!this.liftRing) {
-      const geo = new THREE.RingGeometry(0.36, 0.46, 32)
-      geo.rotateX(-Math.PI / 2)
-      const mat = new THREE.MeshBasicMaterial({
-        color: 0xe8c24a, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false,
-      })
-      this.liftRing = new THREE.Mesh(geo, mat)
-      this.liftRing.position.y = 0.06
-      this.liftRing.renderOrder = 4
-      this.group.add(this.liftRing)
-    }
-    this.liftRing.visible = true
   }
 
   isOvercharged(world: World): boolean { return world.time < this.overchargeUntil }
@@ -459,7 +432,7 @@ export class Tower {
       this.hexedBy.dropFromPerch()
       this.hexedBy = null
     }
-    for (const m of [this.crownMesh, this.chargeRing, this.hexRing, this.liftRing]) {
+    for (const m of [this.crownMesh, this.chargeRing, this.hexRing]) {
       if (m) {
         m.geometry.dispose()
         ;(m.material as THREE.Material).dispose()
@@ -468,7 +441,6 @@ export class Tower {
     this.crownMesh = null
     this.chargeRing = null
     this.hexRing = null
-    this.liftRing = null
   }
 
   /** live-update soldier max HP when resonance or perks change */

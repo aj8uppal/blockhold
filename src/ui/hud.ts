@@ -12,7 +12,7 @@ import { towerTrees } from '../game/towerDefs.ts'
 import { TARGET_POLICY_LABEL, REACTIONS } from '../game/towers.ts'
 import { isCoarsePointer } from '../core/utils.ts'
 import { isPortalMode } from '../core/platform.ts'
-import { EARTHWORK_DEFS, type EarthworkSpot, type Earthwork } from '../game/earthworks.ts'
+import { EARTHWORK_DEFS, raiseCost, type EarthworkSpot, type Earthwork } from '../game/earthworks.ts'
 import { beatIndex, BEATS_PER_BAR } from '../game/beat.ts'
 import { traitsOf, counterFor } from '../game/dossier.ts'
 import { HERO_RANK_MAX, heroRankCost } from '../game/hero.ts'
@@ -537,6 +537,8 @@ export class HUD {
       }, () => this.game.buildTower(kind))
       btn.classList.toggle('poor', this.game.gold < def.cost)
     }
+    // the ground itself is buildable: raise this foundation before or after a tower goes on it
+    if (!plot.raised) this.raiseOption(this.buildMenu, plot, 'build-option trap-option')
     const tip = el('div', 'build-tooltip hidden', this.buildMenu)
     tip.id = 'build-tip'
     this.placeMenu(x, y)
@@ -684,24 +686,17 @@ export class HUD {
   }
 
   /** one option: this ground can take exactly one kind of work */
-  openEarthworkMenu(spot: EarthworkSpot, x: number, y: number, lifts: string[] = []): void {
+  openEarthworkMenu(spot: EarthworkSpot, x: number, y: number): void {
     this.armedBuild = null
     this.buildMenu.innerHTML = ''
     const def = EARTHWORK_DEFS[spot.kind]
     const btn = el('button', 'build-option trap-option', this.buildMenu) as HTMLButtonElement
     btn.dataset.cost = `${def.cost}`
     btn.innerHTML = `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
-    // the concrete answer, not the general rule: which towers, by name, this
-    // particular bank of earth would lift - or a plain warning that it lifts
-    // none yet, so nobody pays 70 gold for a hill that helps nothing
-    const effect = spot.kind !== 'rampart' ? ''
-      : lifts.length
-        ? `<br><span class="tip-stats">${icon('range')} Would lift: <b>${lifts.join(', ')}</b></span>`
-        : `<br><span class="tip-stats tip-warn">${icon('range')} Lifts nothing yet. Build a tower inside the ring first, or pick a site nearer your towers.</span>`
     const showTip = () => {
       const tip = document.getElementById('build-tip')
       if (tip) {
-        tip.innerHTML = `<b>${def.name}</b><br>${def.description}${effect}`
+        tip.innerHTML = `<b>${def.name}</b><br>${def.description}`
         tip.classList.remove('hidden')
       }
     }
@@ -716,9 +711,30 @@ export class HUD {
     this.placeMenu(x, y)
   }
 
+  /** the raise-ground option, shared by the empty-plot menu and the tower panel */
+  private raiseOption(parent: HTMLElement, plot: PlotInfo, cls: string): HTMLButtonElement {
+    const def = EARTHWORK_DEFS.rampart
+    const cost = this.game.nextRaiseCost()
+    const btn = el('button', cls, parent) as HTMLButtonElement
+    btn.dataset.cost = `${cost}`
+    btn.innerHTML = cls.includes('build-option')
+      ? `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${cost}</span>`
+      : `${icon(def.icon)} ${def.name} ${icon('coin')}${cost}`
+    btn.title = def.description
+    const showTip = () => {
+      const tip = document.getElementById('build-tip')
+      if (tip) {
+        tip.innerHTML = `<b>${def.name}</b><br>${def.description}<br><span class="tip-stats">Permanent. The next foundation after this costs ${icon('coin')}${raiseCost(this.game.raisedCount() + 1)}.</span>`
+        tip.classList.remove('hidden')
+      }
+    }
+    this.bindSpend(`raise:${plot.index}`, btn, showTip, () => { if (!this.armedBuild) this.hideBuildTooltip() }, () => this.game.raisePlot(plot))
+    btn.classList.toggle('poor', this.game.gold < cost)
+    return btn
+  }
+
   /** what an existing earthwork is doing, and what it is doing it to */
-  openEarthworkPanel(work: Earthwork, lifted: string[]): void {
-    const towersHelped = lifted.length
+  openEarthworkPanel(work: Earthwork): void {
     this.closeTowerPanel()
     this.currentTower = null
     const p = this.towerPanel
@@ -737,11 +753,6 @@ export class HUD {
     close.onclick = () => this.game.clearSelection()
 
     el('div', 'tp-traits', p, work.def.description)
-    if (work.kind === 'rampart') {
-      el('div', 'tp-traits', p, towersHelped > 0
-        ? `${icon('range')} Lifting <b>${towersHelped}</b> tower${towersHelped === 1 ? '' : 's'}: <b>${lifted.join(', ')}</b>. Each gains +15% range and +10% damage; they are ringed in gold on the board.`
-        : `${icon('range')} No tower is close enough to use it yet — build inside the ring.`)
-    }
   }
 
   // ---------------- trap menu & panel ----------------
@@ -948,6 +959,15 @@ export class HUD {
     }
     const sell = el('button', 'btn small sell', row, `Sell ${icon('coin')}${tower.sellValue}`) as HTMLButtonElement
     this.confirmOnTouch(sell, `Sell for ${tower.sellValue}? Tap again`, () => this.game.sellTower(tower))
+    // the ground under a standing tower can be raised too; a raised one says so
+    if (!tower.plot.raised) {
+      const raise = el('div', 'tp-row', actions)
+      this.raiseOption(raise, tower.plot, 'btn small raise')
+      const tip = el('div', 'build-tooltip hidden', actions)
+      tip.id = 'build-tip'
+    } else {
+      el('div', 'tp-traits', p, `${icon('quake')} Standing on raised ground.`)
+    }
 
     p.classList.remove('hidden')
   }

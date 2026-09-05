@@ -6,7 +6,7 @@ import { seededRandom, shuffleColor } from '../core/utils.ts'
 import { buildModel, box, type VoxBox, type VoxModel } from '../voxel/builder.ts'
 import * as env from '../voxel/models_env.ts'
 import { TrapSpotInfo, trapSpotModel } from './traps.ts'
-import { deriveEarthworkSpots, type EarthworkSpot, type EarthworkKind } from './earthworks.ts'
+import { deriveEarthworkSpots, type EarthworkSpot, type EarthworkKind, RAISE_HEIGHT, raisedGroundModel } from './earthworks.ts'
 
 export interface ThemeColors {
   grass: number
@@ -94,6 +94,9 @@ export interface PlotInfo {
   pos: THREE.Vector3
   occupied: boolean
   mesh: THREE.Group
+  /** lifted onto a bank by the player; the tower on it stands on high ground */
+  raised: boolean
+  bank?: THREE.Group
 }
 
 const inRects = (c: number, r: number, rects: Rect[]) =>
@@ -185,10 +188,29 @@ export class Terrain {
   }
 
   cellTop(c: number, r: number): number {
+    // a foundation the player raised counts as ground: sight and footing
+    // are measured from the top of the bank, not the meadow under it
+    const raised = this.plots.find(p => p.raised && p.cell[0] === c && p.cell[1] === r) ? RAISE_HEIGHT : 0
     const p = this.plateauAt(c, r)
-    if (p > 0) return p
+    if (p > 0) return p + raised
     const k = this.cellKind(c, r)
-    return k === 'hill' ? 0.5 : k === 'water' ? -0.4 : 0
+    return (k === 'hill' ? 0.5 : k === 'water' ? -0.4 : 0) + raised
+  }
+
+  /**
+   * Lift a foundation onto a bank. Idempotent; the bank is a child of the
+   * terrain so it is disposed with the level, and the plot's own slab and
+   * anchor rise with it so anything built there stands on top.
+   */
+  raisePlot(plot: PlotInfo): void {
+    if (plot.raised) return
+    plot.raised = true
+    const bank = buildModel(raisedGroundModel(), 'raisedground', { castShadow: true, receiveShadow: true })
+    bank.position.set(plot.mesh.position.x, plot.mesh.position.y, plot.mesh.position.z)
+    this.group.add(bank)
+    plot.bank = bank
+    plot.mesh.position.y += RAISE_HEIGHT
+    plot.pos.y += RAISE_HEIGHT
   }
 
   /**
@@ -497,7 +519,7 @@ export class Terrain {
       const top = this.cellTop(c, r)
       mesh.position.set(x, top, z)
       this.group.add(mesh)
-      this.plots.push({ index: i, cell: [c, r], pos: new THREE.Vector3(x, top + 0.1, z), occupied: false, mesh })
+      this.plots.push({ index: i, cell: [c, r], pos: new THREE.Vector3(x, top + 0.1, z), occupied: false, mesh, raised: false })
     })
     ;(level.trapSpots ?? []).forEach(([c, r], i) => {
       if (!this.paths.roadCells.has(`${c},${r}`)) {

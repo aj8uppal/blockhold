@@ -57,6 +57,8 @@ export interface Checkpoint {
   heroXp: number
   towers: TowerSnapshot[]
   traps: TrapSnapshot[]
+  /** foundations the player raised, by plot index; older checkpoints have none */
+  raisedPlots?: number[]
   savedAt: number
 }
 
