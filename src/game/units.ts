@@ -740,19 +740,18 @@ export class Enemy {
     if (this.parts.body && Math.abs(this.parts.body.rotation.x) > 0.001) {
       this.parts.body.rotation.x *= Math.max(0, 1 - dt * 8)
     }
-    if (m === 'veilqueen') {
-      const flap = Math.sin(t * 6.5)
-      if (this.parts.wingL) this.parts.wingL.rotation.z = flap * 0.45
-      if (this.parts.wingR) this.parts.wingR.rotation.z = -flap * 0.45
-      if (this.parts.head) this.parts.head.rotation.x = Math.sin(t * 1.8) * 0.08
-      this.group.position.y = (this.def.yOffset ?? 0.9) + Math.sin(t * 1.7) * 0.09
-      return
-    }
-    if (m === 'gargoyle') {
-      const flap = Math.sin(t * 9)
-      if (this.parts.wingL) this.parts.wingL.rotation.z = flap * 0.55
-      if (this.parts.wingR) this.parts.wingR.rotation.z = -flap * 0.55
-      this.group.position.y = (this.def.yOffset ?? 0.8) + Math.sin(t * 2.2) * 0.07
+    // Anything that flies, flies: this used to be keyed on two model names,
+    // so a new flyer fell through to the ground-walker branch below - static
+    // wings, and a height of zero regardless of its yOffset. Big wings beat
+    // slowly and hover deep; small ones beat fast and hover light.
+    if (this.def.flying) {
+      const big = m === 'veilqueen' || m === 'veilempress'
+      const flap = Math.sin(t * (big ? 6.5 : 9))
+      const span = big ? 0.45 : 0.55
+      if (this.parts.wingL) this.parts.wingL.rotation.z = flap * span
+      if (this.parts.wingR) this.parts.wingR.rotation.z = -flap * span
+      if (big && this.parts.head) this.parts.head.rotation.x = Math.sin(t * 1.8) * 0.08
+      this.group.position.y = (this.def.yOffset ?? 0.85) + Math.sin(t * (big ? 1.7 : 2.2)) * (big ? 0.09 : 0.07)
       return
     }
     const cycle = Math.sin(t * (4.5 + speed * 5))

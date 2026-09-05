@@ -88,16 +88,22 @@ class BoltProjectile implements Projectile {
   mesh: THREE.Object3D
   done = false
   private pos: THREE.Vector3
+  /** where the target was last seen; the point the bolt flies to if it dies */
+  private lastAim: THREE.Vector3
   constructor(private spec: Extract<ProjectileSpec, { kind: 'bolt' }>) {
     this.mesh = buildModel(env.boltProjectile(spec.color), `proj:bolt:${spec.color}`, { castShadow: false })
     this.pos = spec.from.clone()
+    this.lastAim = spec.target.pos.clone().setY(spec.target.pos.y + 0.35)
     this.mesh.position.copy(this.pos)
   }
   update(dt: number): void {
     const { target, world } = this.spec
-    const to = target.state !== 'gone'
-      ? target.pos.clone().setY(target.pos.y + 0.35)
-      : this.pos.clone().add(new THREE.Vector3(0, -1, 0))
+    // A bolt whose target is gone flies on to where that target last was and
+    // breaks there. It used to aim one unit below its own position every
+    // frame instead, which is a point it can never reach: the bolt chased it
+    // downward forever, drawing and updating long after the fight moved on.
+    if (target.state !== 'gone') this.lastAim.copy(target.pos).setY(target.pos.y + 0.35)
+    const to = this.lastAim
     const d = this.pos.distanceTo(to)
     const step = 7.5 * dt
     world.particles.trail(this.pos.x, this.pos.y, this.pos.z, this.spec.color, 0.22)
@@ -231,10 +237,14 @@ function explode(
   world.sfx('explosion', submunition ? 0.4 : 0.8)
   // A cluster shell bursts into five of these at once. Letting each one take a
   // heavy impact hold and a full shake stacked five holds on one frame, which
-  // is exactly the hitch that made cluster bombards feel like they lagged.
-  if (submunition) return
-  world.shake(0.05 + splash * 0.05)
-  if (splash >= 0.6) world.impact('heavy')
+  // is exactly the hitch that made cluster bombards feel like they lagged. So
+  // only the *presentation* is skipped for a bomblet - the early return that
+  // used to live here skipped the damage loop too, and the Cluster Bombard's
+  // whole branch dealt nothing but its shell for as long as that stood.
+  if (!submunition) {
+    world.shake(0.05 + splash * 0.05)
+    if (splash >= 0.6) world.impact('heavy')
+  }
   for (const e of world.enemies) {
     if (!e.targetable || e.def.flying) continue
     const d = e.pos.distanceTo(at)

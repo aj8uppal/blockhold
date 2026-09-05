@@ -95,7 +95,7 @@ export function buildModel(model: VoxModel, cacheKey: string, opts: {
     partGroup.name = name
     partGroup.position.set(pivot[0] * scale, pivot[1] * scale, pivot[2] * scale)
     if (entry.lit) {
-      const mat = opts.cloneMaterials ? litMaterial.clone() : litMaterial
+      const mat = opts.cloneMaterials ? ownMaterial(litMaterial) : litMaterial
       const mesh = new THREE.Mesh(entry.lit, mat)
       mesh.castShadow = opts.castShadow ?? true
       mesh.receiveShadow = opts.receiveShadow ?? false
@@ -103,7 +103,7 @@ export function buildModel(model: VoxModel, cacheKey: string, opts: {
     }
     if (entry.glow) {
       // glow must be cloned too when instances mutate materials (phasing opacity)
-      const mesh = new THREE.Mesh(entry.glow, opts.cloneMaterials ? glowMaterial.clone() : glowMaterial)
+      const mesh = new THREE.Mesh(entry.glow, opts.cloneMaterials ? ownMaterial(glowMaterial) : glowMaterial)
       partGroup.add(mesh)
     }
     group.add(partGroup)
@@ -123,6 +123,24 @@ export function setFlash(group: THREE.Group, intensity: number, color = 0xffffff
 
 export function getPart(group: THREE.Group, name: string): THREE.Object3D | undefined {
   return group.children.find(c => c.name === name)
+}
+
+/**
+ * A per-instance copy of a base material that the instance is allowed to change.
+ *
+ * `Material.clone()` copies `userData`, and the base materials carry
+ * `userData.shared = true` so nothing ever tints, fades or disposes them. The
+ * clones inherited that flag - so every place that checks it before touching a
+ * material (affix and surge tints, tier glow, phasing transparency, debris
+ * fades, disposal) silently skipped the very materials it was meant to change.
+ * Elite colours and expensive-tower glow were never applied, debris vanished
+ * instead of fading, and cloned materials leaked. The clone is the instance's
+ * own; say so.
+ */
+function ownMaterial<T extends THREE.Material>(base: T): T {
+  const m = base.clone() as T
+  m.userData = { ...m.userData, shared: false }
+  return m
 }
 
 /** Dispose per-instance cloned materials; cached geometries, the shared base

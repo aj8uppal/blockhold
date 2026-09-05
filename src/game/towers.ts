@@ -216,7 +216,10 @@ export class Tower {
     if (!this.model) return
     const lit = this.level >= 4
     if (lit) {
-      const glow = this.level >= 5 ? 0.34 : 0.16
+      // tuned now that the material actually takes the value: the old 0.34
+      // was set against clones that ignored it, and washed the authored
+      // colours out to beige once they stopped ignoring it
+      const glow = this.level >= 5 ? 0.16 : 0.07
       const hue = this.level >= 5 ? 0xffd98f : 0xffc76a
       this.model.traverse(o => {
         if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
