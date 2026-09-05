@@ -307,7 +307,7 @@ export class Hero extends Soldier {
         this.drawBowAnim()
       }
     } else {
-      this.idleAnim()
+      this.idleAnim(dt)
     }
     this.bar.set(this.hp / this.maxHp, world.cameraQuat)
   }
@@ -331,8 +331,8 @@ export class Hero extends Soldier {
     if (armR) armR.rotation.x = -1.1
   }
 
-  private idleAnim(): void {
-    this.walkT += 0.016
+  private idleAnim(dt: number): void {
+    this.walkT += dt
     const armL = this.heroPart('armL'), armR = this.heroPart('armR')
     const legL = this.heroPart('legL'), legR = this.heroPart('legR')
     if (armL) armL.rotation.x = Math.sin(this.walkT * 1.8) * 0.05

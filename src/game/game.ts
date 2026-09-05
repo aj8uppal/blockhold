@@ -274,7 +274,14 @@ export class Game implements World {
     }
     // weight the moment: a fodder kill must not feel like a boss falling
     this.impact(e.def.boss ? 'boss' : e.elite ? 'elite' : 'light')
-    if (!e.def.boss) this.engine.addShake(e.elite ? 0.09 : 0.035)
+    // a fodder death shakes the camera only if the last one was a moment ago:
+    // twenty Husks dying in a second used to add twenty shakes, which reads
+    // as the camera being broken rather than the horde being punished
+    if (e.elite) this.engine.addShake(0.09)
+    else if (!e.def.boss && this.time >= this.nextFodderShakeAt) {
+      this.nextFodderShakeAt = this.time + 0.22
+      this.engine.addShake(0.035)
+    }
     if (e.def.spawnOnDeath) {
       for (let i = 0; i < e.def.spawnOnDeath.count; i++) {
         // spill the brood behind the parent, never past the gate
@@ -1346,6 +1353,7 @@ export class Game implements World {
     this.onPhaseChange(this.phase, stars)
   }
 
+  private nextFodderShakeAt = 0
   private lastXpBefore = 0
   private lastXpEarned = 0
   /**

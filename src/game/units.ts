@@ -317,7 +317,17 @@ export class Enemy {
     this.lastHitForce = Math.max(0.7, Math.min(2.4, dealt / Math.max(24, this.maxHp * 0.16)))
     if (!opts.silent) {
       this.flash = 0.16
-      setFlash(this.group, 0.65)
+      // an elite flashes in its own colour, so the hit does not erase the one
+      // cue that says what it is; everything else flashes white
+      setFlash(this.group, 0.65, this.affix ? this.affix.tint : 0xffffff)
+      // a resisted hit looks different from a clean one: plate turns arrows
+      // with a dull metallic spark, a ward swallows magic in its own colour,
+      // so the player can see a wrong damage type without opening a panel
+      if (mult < 0.55 && world.time >= this.nextResistSparkAt) {
+        this.nextResistSparkAt = world.time + 0.3
+        if (type === 'physical') world.particles.hitSpark(this.pos.x, this.pos.y + 0.45, this.pos.z, 0xb7bcc4)
+        else if (type === 'magic') world.particles.magicImpact(this.pos.x, this.pos.y + 0.45, this.pos.z, 0x6f5fbf)
+      }
     }
     if (opts.crit) {
       // a crit is its own event and always gets its own number, immediately
@@ -364,6 +374,7 @@ export class Enemy {
 
   /** damage taken since the last number was shown above this enemy */
   private pendingDamage = 0
+  private nextResistSparkAt = 0
   private nextDamageFloaterAt = 0
 
   /**
@@ -490,6 +501,9 @@ export class Enemy {
     this.strikeT = Math.max(0, this.strikeT - dt * 4.5)
     if (this.flash > 0) {
       this.flash -= dt
+      // the flash ends by putting the enemy's own look back, not by zeroing
+      // the material: an elite's tint and a surge's violet live in the same
+      // emissive channel, and zeroing it erased them on the first hit
       if (this.flash <= 0) {
         setFlash(this.group, 0)
         if (this.elite || this.surged || this.def.tint !== undefined) this.applyTint()

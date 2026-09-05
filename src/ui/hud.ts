@@ -1243,7 +1243,17 @@ export class HUD {
     this.xpEl.classList.add('gaining')
   }
 
+  /** floaters on screen right now; the pool bounds retained nodes, not live ones */
+  private activeFloaters = 0
+  private static readonly FLOATER_CAP = 24
+
   spawnFloater(x: number, y: number, text: string, cls: string): void {
+    // At 2x on a phone a swarm can ask for far more labels than the eye can
+    // read. Ordinary damage numbers are the first to go; gold, shards and
+    // crits keep their place so the reward and the big hit still register.
+    if (this.activeFloaters >= HUD.FLOATER_CAP && cls === 'damage') return
+    if (this.activeFloaters >= HUD.FLOATER_CAP + 12) return
+    this.activeFloaters++
     let f = this.floaterPool.pop()
     if (!f) {
       f = el('div', 'floater', this.root)
@@ -1258,6 +1268,7 @@ export class HUD {
     void f.offsetWidth
     f.classList.add('float-up')
     window.setTimeout(() => {
+      this.activeFloaters = Math.max(0, this.activeFloaters - 1)
       f!.style.display = 'none'
       f!.classList.remove('float-up')
       if (this.floaterPool.length < 40) this.floaterPool.push(f!)
