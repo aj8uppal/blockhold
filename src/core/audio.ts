@@ -6,7 +6,7 @@ export type SfxName =
   | 'coin' | 'build' | 'sell' | 'upgrade' | 'die' | 'leak' | 'horn'
   | 'victory' | 'defeat' | 'meteor' | 'reinforce' | 'heal' | 'click'
   | 'error' | 'crit' | 'poison'
-  | 'dieMagic' | 'dieFire' | 'dieShock' | 'heroAck' | 'heroLevel'
+  | 'dieMagic' | 'dieFire' | 'dieShock' | 'heroAck' | 'heroLevel' | 'signature'
 
 export class AudioSystem {
   private ctx: AudioContext | null = null
@@ -67,7 +67,7 @@ export class AudioSystem {
     // big combat events
     explosion: 55, crit: 50, lightning: 45, die: 35, dieMagic: 35, dieFire: 35, dieShock: 35,
     // the hero speaking is the player being answered
-    heroAck: 62, heroLevel: 68,
+    heroAck: 62, heroLevel: 68, signature: 48,
     // the constant background of a battle
     cannon: 30, magic: 25, poison: 20, arrow: 15, hit: 10,
   }
@@ -268,6 +268,12 @@ export class AudioSystem {
         this.tone(1900, 0.04, { type: 'square', vol: 0.05 * v })
         this.noise(0.05, { vol: 0.07 * v, filterFreq: 3800, type: 'highpass' })
         this.tone(130, 0.12, { type: 'sine', vol: 0.09 * v, slide: -60, delay: 0.03 })
+        break
+      case 'signature':
+        // the special attack: a bright fifth, quick, so it reads over combat
+        this.tone(784, 0.07, { type: 'square', vol: 0.06 * v })
+        this.tone(1175, 0.16, { type: 'triangle', vol: 0.08 * v, delay: 0.05 })
+        this.noise(0.08, { vol: 0.04 * v, filterFreq: 4200, type: 'highpass', delay: 0.05 })
         break
       case 'heroAck':
         // the hero answers: two short notes, up

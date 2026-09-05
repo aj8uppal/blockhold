@@ -19,6 +19,7 @@ import { holdModel, holdPieces, holdCacheKey, holdSummary } from './hold.ts'
 import { isNotable } from './dossier.ts'
 import { AFFIX_IDS } from './affixes.ts'
 import { difficultyMods } from './difficulty.ts'
+import { starsFor, starThresholds } from './stars.ts'
 import { battleXp, isUnlocked, levelForXp, unlocksBetween, type UnlockDef } from './progress.ts'
 import { campaignScale } from './balanceModel.ts'
 import { OnboardingDirector } from './onboarding.ts'
@@ -298,7 +299,19 @@ export class Game implements World {
     if (e.def.boss) this.engine.addShake(0.3)
   }
 
+  /** every enemy that reached the gate this battle, absorbed ones included */
+  leaks = 0
+  /** the leak that first dropped the lives below the three-star line */
+  starLossLeak: { name: string, wave: number } | null = null
+
+  /** lives to keep for three stars on this board, or null where stars are not at stake */
+  starTarget(): number | null {
+    if (!this.level || this.isEndless || this.isDaily || this.isFreeplay) return null
+    return starThresholds(this.mods().lives).three
+  }
+
   onEnemyLeaked(e: Enemy): void {
+    this.leaks++
     // a boss reaching the gate ends the defense outright
     // Gate Ward absorbs the first leak of a battle outright (never a boss)
     if (!e.def.boss && !this.gateWardSpent && hasArmory(this.save, 'bulwark')) {
@@ -318,9 +331,12 @@ export class Game implements World {
     const fatal = this.lives - cost <= 0
     if (fatal) this.engine.cinematic(e.pos.x, e.pos.z, 9, 2.4, 0.7)
     else if (warded) this.hud.showToast('The Veilward holds - the gate stands, at a price', 3)
+    const before = this.lives
     this.lives = Math.max(0, this.lives - cost)
     this.defenseStreak = 0
     this.lastLeak = { name: e.def.name, wave: e.waveTag >= 0 ? e.waveTag + 1 : (this.waves?.waveIndex ?? 0) + 1 }
+    const target = this.starTarget()
+    if (target !== null && before >= target && this.lives < target && !this.starLossLeak) this.starLossLeak = this.lastLeak
     this.resolveWaveEnemy(e, true)
     const end = e.lane.sample(e.lane.length - 0.1)
     this.particles.leakFlash(end.x, 0.6, end.z)
@@ -412,13 +428,20 @@ export class Game implements World {
     // interrupt for that enemy again. A boss camera move is arresting once and
     // irritating by the fourth Juggernaut.
     const firstMeeting = isNotable(def) && !this.save.seenEnemies.includes(id)
+    // a boss's entrance camera waits for the dossier to close: it used to run
+    // behind the modal, and the player came back to a camera already settling
+    let dossierShown = false
     if (firstMeeting) {
       this.save.seenEnemies.push(id)
       writeSave(this.save)
       this.mechanicsSeen.add(id)
       if (!this.paused) {
         this.paused = true
-        this.hud.showDossier(def, () => { this.paused = false })
+        dossierShown = true
+        this.hud.showDossier(def, () => {
+          this.paused = false
+          if (def.boss && this.phase === 'playing') this.bossEntrance(def, laneIndex, dist)
+        })
       }
     }
     const surged = opts.surged ?? false
@@ -447,7 +470,7 @@ export class Game implements World {
     this.dynamic.add(e.group)
     // stage a boss's arrival the first time the player ever sees it; after
     // that they know what it is and the camera should stay out of the way
-    if (def.boss && this.phase === 'playing' && firstMeeting) {
+    if (def.boss && this.phase === 'playing' && firstMeeting && !dossierShown) {
       this.engine.cinematic(e.pos.x, e.pos.z, 8.5, 2.0, 0.72)
       this.engine.addShake(0.16)
       this.impact('heavy')
@@ -555,6 +578,7 @@ export class Game implements World {
       shardsEarned: this.shardsEarned,
       killCount: this.killCount,
       perfectWaves: this.perfectWaves,
+      leaks: this.leaks,
       defenseStreak: this.defenseStreak,
       bestStreak: this.bestStreak,
       earlyCallSeconds: this.earlyCallSeconds,
@@ -768,6 +792,16 @@ export class Game implements World {
     shatter(group, this.engine.reducedMotion ? { ...opts, force: (opts.force ?? 1) * 0.35 } : opts)
   }
 
+  /** the first-meeting camera for a boss, run once its dossier has closed */
+  private bossEntrance(def: Enemy['def'], laneIndex: number, dist: number): void {
+    const boss = this.enemies.find(e => e.alive && e.def === def) ?? null
+    const at = boss ? boss.pos : this.lanes[laneIndex].sample(dist)
+    this.engine.cinematic(at.x, at.z, 8.5, 2.0, 0.72)
+    this.engine.addShake(0.16)
+    this.particles.buildDust(at.x, 0.1, at.z)
+    this.sfx('horn', 0.7)
+  }
+
   heroBark(text: string): void {
     this.hud.heroBark(text)
   }
@@ -904,6 +938,8 @@ export class Game implements World {
     this.perfectWaves = 0
     this.earlyCallSeconds = 0
     this.lastLeak = null
+    this.leaks = 0
+    this.starLossLeak = null
     this.waveTracks.clear()
     this.waveOutcomes = []
     this.replay.reset()
@@ -1092,6 +1128,7 @@ export class Game implements World {
     this.shardsEarned = c.shardsEarned
     this.killCount = c.killCount
     this.perfectWaves = c.perfectWaves
+    this.leaks = c.leaks ?? 0
     this.defenseStreak = c.defenseStreak
     this.bestStreak = c.bestStreak
     this.earlyCallSeconds = c.earlyCallSeconds
@@ -1329,20 +1366,23 @@ export class Game implements World {
         if (this.lastNewWaveRecord) this.save.bestEndless[this.level.id] = reached
       } else if (won) {
         const maxLives = this.mods().lives
-        stars = this.lives >= maxLives * 0.88 ? 3 : this.lives >= maxLives * 0.5 ? 2 : 1
+        stars = starsFor(this.lives, maxLives)
         const idx = levels.findIndex(l => l.id === this.level!.id)
         if (idx >= 0) this.save.unlocked = Math.max(this.save.unlocked, Math.min(idx + 2, levels.length))
         this.save.stars[this.level.id] = Math.max(this.save.stars[this.level.id] ?? 0, stars)
         // mastery medals
         const medals = new Set(this.save.medals[this.level.id] ?? [])
         if (this.difficulty === 'veteran') medals.add('veteran')
-        if (this.lives === maxLives) medals.add('noleak')
+        // flawless means nothing got through - a leak the Gate Ward absorbed
+        // still got through, so this counts leaks and not lives
+        if (this.leaks === 0) medals.add('noleak')
         this.save.medals[this.level.id] = [...medals]
       }
       // experience: every wave held counts, win or lose, and the account
       // levels on it. Ghost watches are the one thing that pays nothing extra
       // over the first watch, so replaying a siege three times is not a farm.
       const firstClear = won && !this.isEndless && !this.isDaily && !this.isWatches && !this.isBellfoundry && !hadStars
+      this.lastFirstClear = firstClear
       this.lastXpBefore = this.save.xp
       this.lastXpEarned = battleXp({
         mode: this.isDaily ? 'daily' : this.isWatches ? 'watches' : this.isBellfoundry ? 'bellfoundry' : this.isEndless || this.isFreeplay ? 'endless' : 'campaign',
@@ -1372,6 +1412,7 @@ export class Game implements World {
   private nextFodderShakeAt = 0
   private lastXpBefore = 0
   private lastXpEarned = 0
+  private lastFirstClear = false
   /**
    * Experience earned so far this battle, as it happens.
    *
@@ -1449,6 +1490,11 @@ export class Game implements World {
     daily?: DailyResult,
     freeplay: boolean, freeplayDepth: number,
     xpEarned: number, levelBefore: number, levelAfter: number, newUnlocks: UnlockDef[],
+    /** lives that would have kept three stars, and how many short the run was */
+    starTarget: number | null, livesShort: number,
+    starLossLeak: { name: string, wave: number } | null,
+    difficulty: Difficulty,
+    firstClear: boolean,
   } {
     return {
       daily: this.isDaily ? {
@@ -1481,7 +1527,7 @@ export class Game implements World {
       newWaveRecord: this.lastNewWaveRecord,
       perfectWaves: this.perfectWaves,
       bestStreak: this.bestStreak,
-      noleak: this.lives === this.mods().lives,
+      noleak: this.leaks === 0,
       livesLeft: Math.max(0, this.lives),
       lastLeak: this.lastLeak,
       topKiller: this.topKiller(),
@@ -1492,6 +1538,11 @@ export class Game implements World {
       levelBefore: levelForXp(this.lastXpBefore),
       levelAfter: levelForXp(this.save.xp),
       newUnlocks: unlocksBetween(this.lastXpBefore, this.save.xp),
+      starTarget: this.starTarget(),
+      livesShort: Math.max(0, (this.starTarget() ?? 0) - this.lives),
+      starLossLeak: this.starLossLeak,
+      difficulty: this.difficulty,
+      firstClear: this.lastFirstClear,
     }
   }
 

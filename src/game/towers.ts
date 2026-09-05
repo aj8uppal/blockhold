@@ -8,7 +8,7 @@ import { addConvergenceRune } from './projectiles.ts'
 import { World } from './world.ts'
 import { Enemy, Soldier } from './units.ts'
 import { PlotInfo } from './terrain.ts'
-import { buildModel, getPart, disposeClonedMaterials } from '../voxel/builder.ts'
+import { buildModel, getPart, disposeClonedMaterials, setFlash } from '../voxel/builder.ts'
 import { towerModel, muzzleHeights, rallyFlagModel } from '../voxel/models_towers.ts'
 import { randRange, lerpAngle, clamp, simChance } from '../core/utils.ts'
 import { RAMPART_RANGE_BONUS, RAMPART_DAMAGE_BONUS } from './earthworks.ts'
@@ -164,6 +164,45 @@ export class Tower {
   auraRate = 0
   /** Crownfire: when this beacon next kindles the towers in its light */
   private kindleAt = 0
+  /** a short local flash when the signature fires, so the payoff is seen */
+  private signatureFlashT = 0
+
+  /**
+   * The special attack, counted down where the player can see it.
+   *
+   * Kingdom Rush specials and Bloons abilities are recognisable because the
+   * player can anticipate them; ours fired on hidden counters. Passive
+   * signatures (pass-through, twin shells) have nothing to count and return
+   * null.
+   */
+  signatureReadout(time: number): { text: string, next: boolean } | null {
+    const sig = this.def.signature
+    if (!sig || this.isGhost) return null
+    const shots = (name: string, every: number, unit: string) => {
+      const left = every - this.signatureCount
+      return { text: left <= 1 ? `${name} on the next ${unit}` : `${name} in ${left} ${unit}s`, next: left <= 1 }
+    }
+    switch (sig) {
+      case 'crownVolley': return shots('Crown Volley', 5, 'attack')
+      case 'convergenceRune': return shots('Convergence Rune', 5, 'cast')
+      case 'greatbolt': return shots('Great Bolt', 4, 'shot')
+      case 'kindling': {
+        const left = this.kindleAt === 0 ? 20 : Math.max(0, this.kindleAt - time)
+        return { text: left < 1 ? 'Crownfire now' : `Crownfire in ${Math.ceil(left)}s`, next: left < 3 }
+      }
+      case 'lastMuster': {
+        const left = Math.max(0, this.musterReadyAt - time)
+        return { text: left <= 0 ? 'Last Muster ready' : `Last Muster in ${Math.ceil(left)}s`, next: left <= 0 }
+      }
+      default: return null
+    }
+  }
+
+  /** the signature fired: a 180ms flash and its own cue, under the leak in priority */
+  private signatureFired(world: World): void {
+    this.signatureFlashT = 0.18
+    world.sfx('signature', 0.8)
+  }
   has(r: ReactionId): boolean { return this.reactions.has(r) }
   /** enemies this building (and its soldiers) has slain */
   kills = 0
@@ -653,6 +692,14 @@ export class Tower {
       this.model.scale.setScalar(clamp(this.buildT * 1.15, 0.05, 1) * overshoot * this.sizeMult)
     }
 
+    if (this.signatureFlashT > 0) {
+      this.signatureFlashT -= dt
+      const k = Math.max(0, this.signatureFlashT / 0.18)
+      setFlash(this.model, k * 0.55, 0xffe6a0)
+      if (this.buildT >= 1) this.model.scale.setScalar(this.sizeMult * (1 + Math.sin(k * Math.PI) * 0.08))
+      if (this.signatureFlashT <= 0) { setFlash(this.model, 0); this.model.scale.setScalar(this.sizeMult) }
+    }
+
     // ambient part animation
     const crystal = getPart(this.model, 'crystal')
     if (crystal) {
@@ -697,7 +744,7 @@ export class Tower {
             t.kindle(world); lit++
           }
           if (lit) {
-            world.sfx('upgrade', 0.7)
+            this.signatureFired(world)
             world.particles.magicImpact(this.pos.x, this.pos.y + 1.2, this.pos.z, 0xffe89f)
             world.floater(this.pos.x, this.pos.y + 1.4, this.pos.z, 'Crownfire!', 'gold')
           }
@@ -838,7 +885,7 @@ export class Tower {
         const knock = special?.kind === 'knockback' ? special : undefined
         // Godsbane Ram: every fourth shot loses nothing along the line
         const great = def.signature === 'greatbolt' && ++this.signatureCount >= 4
-        if (great) this.signatureCount = 0
+        if (great) { this.signatureCount = 0; this.signatureFired(world) }
         world.fireProjectile({
           kind: 'spear', from, aim, reach: this.range + 0.6,
           damage: dmg * (great ? 2 : 1), falloff: 0.55, pierceAll: great,
@@ -882,6 +929,7 @@ export class Tower {
         // Crown Volley: every fifth attack showers up to 5 more foes at 65%
         if (def.signature === 'crownVolley' && ++this.signatureCount >= 5) {
           this.signatureCount = 0
+          this.signatureFired(world)
           const extras: Enemy[] = []
           for (const e of world.enemies) {
             if (!e.targetable || e === target) continue
@@ -923,6 +971,7 @@ export class Tower {
         // Convergence Rune: every fifth cast anchors a pulsing rune (echoes don't count)
         if (def.signature === 'convergenceRune' && !isEcho && ++this.signatureCount >= 5) {
           this.signatureCount = 0
+          this.signatureFired(world)
           addConvergenceRune(world, target.pos.x, target.pos.z, this)
         }
         // Echo Casting: chance to immediately cast again
@@ -993,6 +1042,7 @@ export class Tower {
           if (this.def.signature === 'lastMuster' && world.time >= this.musterReadyAt) {
             this.musterReadyAt = world.time + MUSTER_COOLDOWN
             this.lastMuster(world)
+            this.signatureFired(world)
           }
         }
         s.respawnTimer += dt

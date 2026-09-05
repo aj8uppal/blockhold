@@ -50,6 +50,8 @@ export interface Checkpoint {
   shardsEarned: number
   killCount: number
   perfectWaves: number
+  /** enemies that reached the gate so far, absorbed ones included; older checkpoints have none */
+  leaks?: number
   defenseStreak: number
   bestStreak: number
   earlyCallSeconds: number

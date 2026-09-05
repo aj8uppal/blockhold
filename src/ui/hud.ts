@@ -125,7 +125,7 @@ export class HUD {
   private buildTopBar(): void {
     const bar = el('div', 'topbar', this.root)
     const left = el('div', 'topbar-group', bar)
-    this.livesEl = el('div', 'stat lives', left, `${icon('heart')} <b>20</b>`)
+    this.livesEl = el('div', 'stat lives', left, `${icon('heart')} <b>20</b><span class="star-target" title="Keep this many lives for three stars"></span>`)
     this.goldEl = el('div', 'stat gold', left, `${icon('coin')} <b>0</b>`)
     this.shardsEl = el('div', 'stat shards', left, `${icon('gem')} <b>0</b>`)
     this.shardsEl.title = 'Veilshards — dropped by Shardbacks, elites, and bosses. Spend on tower Overcharge and Ascension.'
@@ -178,6 +178,8 @@ export class HUD {
 
   private heroBtn!: HTMLButtonElement
 
+  private sigEl: HTMLElement | null = null
+  private lastSigText = ''
   private lastBarkAt = -10
   private barkTimer: number | null = null
   private bumpTimer: number | null = null
@@ -350,6 +352,17 @@ export class HUD {
     if (game.lives !== this.lastLives) {
       this.lastLives = game.lives
       this.livesEl.querySelector('b')!.textContent = `${game.lives}`
+      // the three-star line, beside the number it is measured against
+      const target = game.starTarget()
+      const tEl = this.livesEl.querySelector('.star-target') as HTMLElement
+      tEl.textContent = target === null ? '' : `★${target}`
+      tEl.classList.toggle('below', target !== null && game.lives < target)
+    }
+    // a capstone's special attack, counting down where the player can see it
+    if (this.currentTower && this.sigEl) {
+      const r = this.currentTower.signatureReadout(game.time)
+      const text = r ? `${icon('sparkle')} ${r.text}` : ''
+      if (text !== this.lastSigText) { this.lastSigText = text; this.sigEl.innerHTML = text; this.sigEl.classList.toggle('next', !!r?.next) }
     }
     const xp = game.xpPreview()
     if (xp !== this.lastXp) {
@@ -912,6 +925,10 @@ export class HUD {
       traits.push(def.flying ? `${icon('feather')} hits flyers` : 'no flyers')
       el('div', 'tp-traits', p, traits.join(' · '))
     }
+    // the special attack's counter, live (refresh() keeps it current)
+    this.sigEl = null
+    this.lastSigText = ''
+    if (tower.signatureReadout(this.game.time)) this.sigEl = el('div', 'tp-signature', p)
 
     // the road this tower has taken: tiers, branch, perk, capstone
     if (tower.level >= 2 || tower.perk) {

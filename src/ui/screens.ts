@@ -11,7 +11,7 @@ import { setTelemetryAllowed, telemetryAllowed } from '../core/sink.ts'
 import { fetchDaily, leaderboardEnabled, nickname, setNickname } from '../core/leaderboard.ts'
 import { dailyNumber } from '../game/ruleset.ts'
 import { holdPieces, holdSummary } from '../game/hold.ts'
-import { isUnlocked, levelProgress, nextUnlock, unlockLevel, MAX_LEVEL, type UnlockDef } from '../game/progress.ts'
+import { isUnlocked, levelProgress, nextUnlock, unlockLevel, xpForLevel, MAX_LEVEL, type UnlockDef } from '../game/progress.ts'
 import { cloud, applyCloud, toCloud } from '../core/cloud.ts'
 import { mergeSaves } from '../core/saveMerge.ts'
 import { dailyShareText, challengeUrl, runChallengeUrl, runShareText, type DailyResult } from '../game/share.ts'
@@ -64,6 +64,53 @@ export interface BattleStats {
   daily?: DailyResult,
   freeplay: boolean, freeplayDepth: number,
   xpEarned: number, levelBefore: number, levelAfter: number, newUnlocks: UnlockDef[],
+  starTarget: number | null, livesShort: number,
+  starLossLeak: { name: string, wave: number } | null,
+  difficulty: Difficulty,
+  /** this win was the map's first */
+  firstClear: boolean,
+}
+
+/**
+ * The one thing to do next, named.
+ *
+ * Kingdom Rush never lets a result screen end in "well done": a missing star
+ * buys and opens something, and the next map is right there. Every result in
+ * Blockhold now ends in one named objective, chosen by the same rule on the
+ * result card and the menu, so a session never closes without a reason to
+ * open the next one.
+ */
+export interface Objective { text: string, action: 'retry' | 'next' | 'replay' | 'veteran' | 'hold' | 'levels', levelId: string }
+
+export function nextObjective(save: SaveData, ctx: { won: boolean, levelId: string, stars: number, leak?: { name: string, wave: number } | null, livesShort?: number, firstClear?: boolean }): Objective {
+  const idx = levels.findIndex(l => l.id === ctx.levelId)
+  const lvl = levels[idx]
+  const name = lvl?.name ?? 'the map'
+  if (!ctx.won) {
+    return {
+      text: ctx.leak ? `Retry ${name} - a ${ctx.leak.name} broke through on wave ${ctx.leak.wave}` : `Retry ${name}`,
+      action: 'retry', levelId: ctx.levelId,
+    }
+  }
+  const nextLvl = levels[idx + 1]
+  if (nextLvl && (save.stars[nextLvl.id] ?? 0) === 0 && (ctx.firstClear || ctx.stars === 3)) {
+    return { text: `Next: ${nextLvl.name}`, action: 'next', levelId: nextLvl.id }
+  }
+  if (ctx.stars < 3) {
+    const short = ctx.livesShort ?? 0
+    return {
+      text: short > 0 ? `Three stars on ${name}: keep ${short} more ${short === 1 ? 'life' : 'lives'}` : `Three stars on ${name}`,
+      action: 'replay', levelId: ctx.levelId,
+    }
+  }
+  const medals = save.medals[ctx.levelId] ?? []
+  if (!medals.includes('veteran')) return { text: `Conquer ${name} on Veteran`, action: 'veteran', levelId: ctx.levelId }
+  if (nextLvl && (save.stars[nextLvl.id] ?? 0) === 0) return { text: `Next: ${nextLvl.name}`, action: 'next', levelId: nextLvl.id }
+  const unbeaten = levels.find(l => (save.stars[l.id] ?? 0) === 0)
+  if (unbeaten) return { text: `Next: ${unbeaten.name}`, action: 'levels', levelId: unbeaten.id }
+  const held = Math.max(...(['casual', 'normal', 'veteran'] as const).map(d => save.bestFreeplay?.[`${ctx.levelId}:${d}`] ?? 0))
+  const nextBoss = (Math.floor(held / 10) + 1) * 10
+  return { text: `Hold the line past +${nextBoss} on ${name} - a boss waits there`, action: 'hold', levelId: ctx.levelId }
 }
 
 const fmtTime = (sec: number) => `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`
@@ -323,7 +370,7 @@ export class Screens {
    * friend, so the result is a spoiler-free block they can copy and a link
    * that drops that friend onto the exact same board.
    */
-  private renderDailyResult(card: HTMLElement, r: DailyResult, won: boolean): void {
+  private renderDailyResult(card: HTMLElement, r: DailyResult, won: boolean, stats?: BattleStats): void {
     el('div', 'end-emoji', card, icon('moon'))
     el('h2', 'end-title', card, `Daily Hold #${r.day}`)
     el('div', 'end-sub', card, won
@@ -334,6 +381,8 @@ export class Screens {
     const text = dailyShareText(r, url)
     el('pre', 'daily-blocks', card, text.split('\n').slice(2, 3).join(''))
 
+    // the Daily pays experience like any other battle, and used to hide it
+    if (stats) this.renderXp(card, stats)
     const row = el('div', 'end-actions', card)
     const copy = el('button', 'btn primary', row, 'Copy result') as HTMLButtonElement
     copy.onclick = async () => {
@@ -377,6 +426,12 @@ export class Screens {
     el('span', 'end-xp-level', box, leveled
       ? `${icon('sparkle')} Level ${stats.levelAfter}!`
       : `Level ${stats.levelAfter} · ${into}/${span}`)
+    // the exact distance to the next thing the account opens
+    const next = nextUnlock(stats.levelAfter)
+    if (next) {
+      const remaining = Math.max(0, xpForLevel(next.level) - this.save().xp)
+      el('span', 'end-xp-next', box, `${remaining.toLocaleString()} XP to ${next.name}`)
+    }
     for (const u of stats.newUnlocks) {
       const row = el('div', 'end-unlock', card)
       el('div', 'end-unlock-eyebrow', row, u.kind === 'hero' ? 'A champion answers the call' : 'A new engine of war')
@@ -549,7 +604,7 @@ export class Screens {
     const daily = stats?.daily
     const wrap = el('div', 'screen end-screen', this.root)
     const card = el('div', `end-card ${won ? 'won' : 'lost'}`, wrap)
-    if (daily) { this.renderDailyResult(card, daily, won); return }
+    if (daily) { this.renderDailyResult(card, daily, won, stats); return }
     const freeplay = stats?.freeplay ?? false
     el('div', 'end-emoji', card, icon(endless ? 'moon' : freeplay ? 'castle' : won ? 'trophy' : 'skull'))
     el('h2', 'end-title', card, endless ? 'The Long Night ends' : freeplay ? 'The line breaks' : won ? 'Victory!' : 'The gate has fallen')
@@ -575,6 +630,12 @@ export class Screens {
       // "flawless" is only ever said when it is true
       el('div', 'end-sub', card, stats?.noleak ? `A flawless defense — not one got through! ${icon('medal')}`
         : stars === 3 ? 'The kingdom stands tall.' : stars === 2 ? 'The kingdom endures.' : 'A costly victory…')
+      // the missing star, in lives: what it cost and what first took it
+      if (stats && stars < 3 && stats.starTarget !== null && stats.livesShort > 0) {
+        el('div', 'end-debrief', card,
+          `${stats.livesShort} ${stats.livesShort === 1 ? 'life' : 'lives'} short of three stars — keep ${stats.starTarget} to earn it` +
+          (stats.starLossLeak ? ` — the line fell to a <b>${stats.starLossLeak.name}</b> on wave ${stats.starLossLeak.wave}` : ''))
+      }
     } else {
       // near-miss framing: name what broke through, and where
       el('div', 'end-sub', card, stats?.lastLeak
@@ -597,7 +658,16 @@ export class Screens {
       }
     }
     if (stats) this.renderXp(card, stats)
+    // one named next objective, always, and the button that does it
+    const objective = !endless && !freeplay && idx >= 0
+      ? nextObjective(this.save(), { won, levelId, stars, leak: stats?.lastLeak, livesShort: stats?.livesShort, firstClear: stats?.firstClear ?? false })
+      : null
+    if (objective) el('div', 'end-objective', card, `${icon('flag')} ${objective.text}`)
     const row = el('div', 'end-actions', card)
+    if (objective?.action === 'veteran') {
+      const vet = el('button', 'btn primary', row, `${icon('medal', 'vet')} Play on Veteran`) as HTMLButtonElement
+      vet.onclick = () => this.onPlayLevel(levelId, 'veteran')
+    }
     // A cleared map is not over. Holding the line keeps the board the player
     // built and keeps the waves coming, with the ladder of bosses beyond.
     if (won && !endless && !freeplay && !daily && this.watchesRemaining === 0) {
