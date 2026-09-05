@@ -1904,12 +1904,95 @@ export class Game implements World {
     if (!this.selectedPlot) return
     if (!kind) {
       if (!this.selectedTower) this.rangeRing.visible = false
+      this.clearPreviewLinks()
       return
     }
     const def = towerTrees[kind].levels[0]
     this.rangeRing.visible = true
     this.rangeRing.position.set(this.selectedPlot.pos.x, this.selectedPlot.pos.y - 0.06, this.selectedPlot.pos.z)
     this.rangeRing.scale.setScalar(def.range)
+    // what the ground and the neighbours would buy, drawn as links
+    const pv = this.placementPreview(kind)
+    const from = this.selectedPlot.pos
+    for (const r of pv.reactions) this.drawPreviewLink(from, r.tower.pos, 0xffd98a)
+    if (pv.beacon) this.drawPreviewLink(from, pv.beacon.tower.pos, 0xffb347)
+    for (const t of pv.lights) this.drawPreviewLink(from, t.pos, 0xffb347)
+  }
+
+  /**
+   * What building `kind` on the selected plot would buy from its surroundings.
+   *
+   * Bloons shows what a placement will get before the money is spent; here a
+   * reaction or a beacon's light used to appear only after building. The
+   * preview reads the same rules the build uses (reactionFor at the reaction
+   * radius, the strongest single beacon in reach, the high ground).
+   */
+  placementPreview(kind: TowerKind): {
+    reactions: { name: string, description: string, tower: Tower }[],
+    beacon: { name: string, damage: number, tower: Tower } | null,
+    /** for a beacon: the towers it would light */
+    lights: Tower[],
+    highGround: boolean,
+  } {
+    const plot = this.selectedPlot
+    const out = { reactions: [] as { name: string, description: string, tower: Tower }[], beacon: null as { name: string, damage: number, tower: Tower } | null, lights: [] as Tower[], highGround: false }
+    if (!plot) return out
+    const seen = new Set<string>()
+    for (const o of this.towers) {
+      if (o.pos.distanceTo(plot.pos) > REACTION_RADIUS) continue
+      const r = reactionFor(kind, o.kind)
+      if (r && !seen.has(r.id)) { seen.add(r.id); out.reactions.push({ name: r.name, description: r.description, tower: o }) }
+      else if (kind === 'barracks' && !seen.has('shieldwall')) { seen.add('shieldwall'); out.reactions.push({ name: 'Shield Wall', description: 'Soldiers guarded by a neighbouring tower gain +18% health.', tower: o }) }
+    }
+    if (kind === 'beacon') {
+      const reach = towerTrees.beacon.levels[0].range + 0.3 * this.armoryTier('lamplighters')
+      out.lights = this.towers.filter(t => !t.isBeacon && Math.hypot(t.pos.x - plot.pos.x, t.pos.z - plot.pos.z) <= reach)
+    } else {
+      let best = -1
+      for (const b of this.towers) {
+        if (!b.isBeacon || !b.def.aura) continue
+        if (Math.hypot(b.pos.x - plot.pos.x, b.pos.z - plot.pos.z) > b.auraReach) continue
+        const dmg = b.def.aura.damage + (b.perk?.id === 'zeal' ? 0.08 : 0)
+        if (dmg > best) { best = dmg; out.beacon = { name: b.def.name, damage: dmg, tower: b } }
+      }
+    }
+    out.highGround = plot.raised || this.terrain?.isOnHill(plot.cell[0], plot.cell[1]) === true
+    return out
+  }
+
+  /** the raise-ground option, hovered: the tower's ring grows to what the high ground would give it */
+  previewRaise(plot: PlotInfo | null): void {
+    if (!plot) {
+      if (this.selectedTower) { this.rangeRing.scale.setScalar(this.selectedTower.range) }
+      else if (!this.selectedPlot) this.rangeRing.visible = false
+      return
+    }
+    const t = this.towers.find(o => o.plot === plot)
+    if (!t || t.onHighGround) return
+    t.onHighGround = true
+    const r = t.range
+    t.onHighGround = false
+    this.rangeRing.visible = true
+    this.rangeRing.position.set(plot.pos.x, plot.pos.y - 0.06, plot.pos.z)
+    this.rangeRing.scale.setScalar(r)
+  }
+
+  private previewLinks = new THREE.Group()
+  private drawPreviewLink(a: THREE.Vector3, b: THREE.Vector3, color: number): void {
+    if (!this.previewLinks.parent) this.dynamic.add(this.previewLinks)
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(a.x, a.y + 0.55, a.z), new THREE.Vector3(b.x, b.y + 0.55, b.z),
+    ])
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.85 }))
+    this.previewLinks.add(line)
+  }
+  private clearPreviewLinks(): void {
+    for (const c of [...this.previewLinks.children]) {
+      const l = c as THREE.Line
+      l.geometry.dispose()
+      ;(l.material as THREE.Material).dispose()
+      this.previewLinks.remove(c)
+    }
   }
 
   buildTower(kind: TowerKind): void {

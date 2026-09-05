@@ -12,7 +12,7 @@ import { towerTrees } from '../game/towerDefs.ts'
 import { TARGET_POLICY_LABEL, REACTIONS } from '../game/towers.ts'
 import { isCoarsePointer } from '../core/utils.ts'
 import { isPortalMode } from '../core/platform.ts'
-import { EARTHWORK_DEFS, raiseCost, type EarthworkSpot, type Earthwork } from '../game/earthworks.ts'
+import { EARTHWORK_DEFS, raiseCost, type EarthworkSpot, type Earthwork, RAMPART_DAMAGE_BONUS, RAMPART_RANGE_BONUS } from '../game/earthworks.ts'
 import { beatIndex, BEATS_PER_BAR } from '../game/beat.ts'
 import { traitsOf, counterFor } from '../game/dossier.ts'
 import { HERO_RANK_MAX, heroRankCost } from '../game/hero.ts'
@@ -399,10 +399,13 @@ export class HUD {
       if (game.phase === 'playing' && w.phase === 'countdown' && !w.isLastWaveStarted) {
         const bonus = w.earlyCallBonus()
         const secs = Math.ceil(w.countdown)
-        const surgeWarn = w.nextWaveIsSurge() ? ` · ${icon('moon')} Veiltide!` : ''
+        // the whole bargain: the gold, the shard a defied surge pays, and what is still out there
+        const onField = game.enemies.filter(e => e.alive).length
+        const shard = w.nextWaveIsSurge() && w.countdown >= 8 ? ` +1${icon('gem')}` : ''
+        const surgeWarn = (w.nextWaveIsSurge() ? ` · ${icon('moon')} Veiltide!` : '') + (onField > 0 ? ` · ${onField} still on the field` : '')
         btnText = w.waveIndex < 0
-          ? `${icon('swords')} Begin the assault <span class="call-sub">${secs}s · +${bonus}${icon('coin')} if called now${surgeWarn}</span>`
-          : `${icon('swords')} Call wave ${w.waveIndex + 2} <span class="call-sub">${secs}s · +${bonus}${icon('coin')} early bonus${surgeWarn}</span>`
+          ? `${icon('swords')} Begin the assault <span class="call-sub">${secs}s · +${bonus}${icon('coin')}${shard} if called now${surgeWarn}</span>`
+          : `${icon('swords')} Call wave ${w.waveIndex + 2} <span class="call-sub">${secs}s · +${bonus}${icon('coin')}${shard} early bonus${surgeWarn}</span>`
       }
       if (btnText !== this.lastWaveBtnText) {
         this.lastWaveBtnText = btnText
@@ -713,7 +716,15 @@ export class HUD {
   private showBuildTooltip(def: TowerLevelDef, kind: TowerKind): void {
     const tip = document.getElementById('build-tip')
     if (!tip) return
-    tip.innerHTML = `<b>${def.name}</b><br>${def.description}<br><span class="tip-stats">${statLine(def, this.mults(kind))}</span>`
+    // what this ground and these neighbours would buy, before the gold is spent
+    const pv = this.game.placementPreview(kind)
+    const gains: string[] = []
+    for (const r of pv.reactions) gains.push(`${icon('sparkle')} <b>${r.name}</b> with ${r.tower.def.name}: ${r.description}`)
+    if (pv.beacon) gains.push(`${icon('flame')} Lit by ${pv.beacon.name}: +${Math.round(pv.beacon.damage * 100)}% damage`)
+    if (pv.lights.length) gains.push(`${icon('flame')} Would light ${pv.lights.length} tower${pv.lights.length === 1 ? '' : 's'}`)
+    if (pv.highGround) gains.push(`${icon('quake')} High ground: +${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range`)
+    tip.innerHTML = `<b>${def.name}</b><br>${def.description}<br><span class="tip-stats">${statLine(def, this.mults(kind))}</span>` +
+      (gains.length ? `<span class="tip-gains">${gains.join('<br>')}</span>` : '')
     tip.classList.remove('hidden')
   }
 
@@ -765,11 +776,12 @@ export class HUD {
     const showTip = () => {
       const tip = document.getElementById('build-tip')
       if (tip) {
-        tip.innerHTML = `<b>${def.name}</b><br>${def.description}<br><span class="tip-stats">Permanent. The next foundation after this costs ${icon('coin')}${raiseCost(this.game.raisedCount() + 1)}.</span>`
+        tip.innerHTML = `<b>${def.name}</b><br>${def.description}<br><span class="tip-stats">+${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range, and it sees over low ridges. Permanent. The next foundation after this costs ${icon('coin')}${raiseCost(this.game.raisedCount() + 1)}.</span>`
         tip.classList.remove('hidden')
       }
+      this.game.previewRaise(plot)
     }
-    this.bindSpend(`raise:${plot.index}`, btn, showTip, () => { if (!this.armedBuild) this.hideBuildTooltip() }, () => this.game.raisePlot(plot))
+    this.bindSpend(`raise:${plot.index}`, btn, showTip, () => { if (!this.armedBuild) { this.hideBuildTooltip(); this.game.previewRaise(null) } }, () => this.game.raisePlot(plot))
     btn.classList.toggle('poor', this.game.gold < cost)
     return btn
   }
