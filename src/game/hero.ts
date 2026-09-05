@@ -78,6 +78,8 @@ export class Hero extends Soldier {
   level = 1
   xp = 0
   kills = 0
+  /** health removed from enemies by this building, overkill excluded */
+  damage = 0
   respawnCountdown = 0
   private deathPos = new THREE.Vector3()
   private walkT = 0

@@ -1,3 +1,5 @@
+import { renderFieldGuide } from './fieldGuide.ts'
+import { fmtDamage } from './screens.ts'
 import type { Game, TargetMode } from '../game/game.ts'
 import type { Hero } from '../game/hero.ts'
 import type { Tower } from '../game/towers.ts'
@@ -306,6 +308,8 @@ export class HUD {
     el('h2', '', card, 'Paused')
     const resume = el('button', 'btn primary', card, 'Resume') as HTMLButtonElement
     resume.onclick = () => this.game.togglePause()
+    const guide = el('button', 'btn ghost', card, `${icon('eye')} Field guide`) as HTMLButtonElement
+    guide.onclick = () => { renderFieldGuide(this.root, this.game.save.seenEnemies, () => {}) }
 
     const settings = el('div', 'pause-settings', card)
     const sfxIcon = () => icon(this.game.save.sfxMuted ? 'soundOff' : 'soundOn', 'plain')
@@ -510,6 +514,11 @@ export class HUD {
       if (killsEl) {
         const text = `${killSource.kills}`
         if (killsEl.textContent !== text) killsEl.textContent = text
+      }
+      const dmgEl = this.towerPanel.querySelector('.tp-dmg-n')
+      if (dmgEl) {
+        const text = fmtDamage(killSource.damage)
+        if (dmgEl.textContent !== text) dmgEl.textContent = text
       }
     }
     // tower panel gold/shard-dependent button states
@@ -850,7 +859,7 @@ export class HUD {
     el('div', 'tp-icon', head, icon(trap.def.icon))
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, trap.def.name)
-    el('div', 'tp-level', title, `Road trap<span class="tp-kills" title="Enemies slain by this trap"> · ${icon('skull')} <span class="tp-kill-n">${trap.kills}</span></span>`)
+    el('div', 'tp-level', title, `Road trap<span class="tp-kills" title="Enemies slain by this trap, and the health it has taken from them"> · ${icon('skull')} <span class="tp-kill-n">${trap.kills}</span> · ${icon('swords')} <span class="tp-dmg-n">${fmtDamage(trap.damage)}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
     close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
@@ -877,7 +886,7 @@ export class HUD {
     el('div', 'tp-name', title, tower.def.name)
     el('div', 'tp-level', title, (tower.level === 5 ? '✦ ' : tower.level === 4 ? '★ ' : '')
       + `Tier ${tower.level}/5`
-      + `<span class="tp-kills" title="Enemies slain by this building"> · ${icon('skull')} <span class="tp-kill-n">${tower.kills}</span></span>`)
+      + `<span class="tp-kills" title="Enemies slain by this building, and the health it has taken from them"> · ${icon('skull')} <span class="tp-kill-n">${tower.kills}</span> · ${icon('swords')} <span class="tp-dmg-n">${fmtDamage(tower.damage)}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
     close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
@@ -1056,7 +1065,7 @@ export class HUD {
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, hero.heroDef.name)
     el('div', 'tp-level', title, `${hero.heroDef.title} · Level <span class="hp-lvl">${hero.level}</span>`
-      + `<span class="tp-kills" title="Foes slain by the hero"> · ${icon('skull')} <span class="tp-kill-n">${hero.kills}</span></span>`)
+      + `<span class="tp-kills" title="Foes slain by the hero, and the health it has taken from them"> · ${icon('skull')} <span class="tp-kill-n">${hero.kills}</span> · ${icon('swords')} <span class="tp-dmg-n">${fmtDamage(hero.damage)}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
     close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()

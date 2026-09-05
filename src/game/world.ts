@@ -7,7 +7,14 @@ import type { Tower } from './towers.ts'
 import type { SfxName } from '../core/audio.ts'
 
 /** anything that can be credited with kills (towers, traps, heroes) */
-export interface KillCredit { kills: number }
+/**
+ * Who gets the credit. Kills were the only record a building kept; Bloons
+ * makes the pop counter half of a tower's identity, and kills alone hide the
+ * cannon that did the work and paid the archer the kill. Damage is actual
+ * health removed, capped at what the target had, so overkill counts for
+ * nothing and a poison tick counts for what it took.
+ */
+export interface KillCredit { kills: number, damage: number }
 
 /** Faultline Arsenal: a shell buries an armed charge at its impact point */
 export interface MineSpec {

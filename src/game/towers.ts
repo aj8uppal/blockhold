@@ -206,6 +206,8 @@ export class Tower {
   has(r: ReactionId): boolean { return this.reactions.has(r) }
   /** enemies this building (and its soldiers) has slain */
   kills = 0
+  /** health removed from enemies by this building, overkill excluded */
+  damage = 0
   perk: PerkDef | null = null
   overchargeUntil = 0
   overchargeCdUntil = 0
@@ -217,6 +219,9 @@ export class Tower {
   private crownMesh: THREE.Mesh | null = null
   private chargeRing: THREE.Mesh | null = null
   private turretYaw = 0
+  private idleScan = 0
+  private idleScanGoal = 0
+  private idleScanT = 0
   private recoil = 0
   private buildT = 0
   private sizeMult = 1
@@ -778,6 +783,20 @@ export class Tower {
     if (this.target !== prevTarget) this.stallT = 0
     const turret = getPart(this.model, 'turret')
 
+    // Idle business: with nothing to shoot, the crew scans the road now and
+    // then. Drawn as an offset on the part only - the simulated yaw that
+    // gates firing never moves, so a replay stays a replay.
+    if (!this.target && turret && this.kind !== 'mage') {
+      this.idleScanT -= dt
+      if (this.idleScanT <= 0) {
+        this.idleScanT = 3 + Math.random() * 5
+        this.idleScanGoal = (Math.random() - 0.5) * 1.2
+      }
+      this.idleScan += (this.idleScanGoal - this.idleScan) * Math.min(1, dt * 1.6)
+    } else {
+      this.idleScan *= Math.max(0, 1 - dt * 12)
+    }
+
     if (this.target) {
       const t = this.target
       const dx = t.pos.x - this.pos.x, dz = t.pos.z - this.pos.z
@@ -785,7 +804,7 @@ export class Tower {
       // a poisoned yaw (NaN from any upstream glitch) must heal, not stall forever
       if (!Number.isFinite(this.turretYaw)) this.turretYaw = desired
       this.turretYaw = lerpAngle(this.turretYaw, desired, dt * 10)
-      if (turret) turret.rotation.y = this.turretYaw
+      if (turret) turret.rotation.y = this.turretYaw + this.idleScan
       // true angular distance, correct for any accumulated yaw winding
       let aimDiff = Math.abs(desired - this.turretYaw) % (Math.PI * 2)
       if (aimDiff > Math.PI) aimDiff = Math.PI * 2 - aimDiff
@@ -814,6 +833,8 @@ export class Tower {
         this.fire(t, world)
         this.recoil = 1
       }
+    } else if (turret) {
+      turret.rotation.y = this.turretYaw + this.idleScan
     }
     if (turret && this.recoil > 0) {
       this.recoil = Math.max(0, this.recoil - dt * 5)

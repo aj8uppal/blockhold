@@ -330,6 +330,7 @@ export class Enemy {
     }
     if (this.inCutting) mult *= 1 + CUTTING_VULN
     const dealt = Math.max(0, amount * mult)
+    if (opts.credit) opts.credit.damage += Math.min(dealt, Math.max(0, this.hp))
     this.hp -= dealt
     this.lastHitType = type
     this.lastHitFlavor = opts.flavor ?? null
@@ -1251,6 +1252,9 @@ export class Soldier {
     if (armL) armL.rotation.x = Math.sin(this.animT * 1.8) * 0.05
     if (armR) armR.rotation.x = -Math.sin(this.animT * 1.8) * 0.05
     if (body) body.rotation.x = 0
+    // a glance up the road now and then, so a standing soldier is not a statue
+    const head = this.part('head')
+    if (head) head.rotation.y = Math.sin(this.animT * 0.55) * Math.max(0, Math.sin(this.animT * 0.23)) * 0.4
     this.bobY = 0
   }
 }

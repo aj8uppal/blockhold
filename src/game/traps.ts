@@ -88,6 +88,8 @@ export class Trap {
   def: TrapDef
   cooldown = 0
   kills = 0
+  /** health removed from enemies by this building, overkill excluded */
+  damage = 0
   private ringMesh: THREE.Mesh | null = null
   private frostRing: THREE.Mesh | null = null
 

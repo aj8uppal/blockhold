@@ -1,3 +1,4 @@
+import { renderFieldGuide } from './fieldGuide.ts'
 import { levels } from '../game/levels.ts'
 import { Difficulty, HeroId } from '../game/types.ts'
 import { difficultyMods } from '../game/difficulty.ts'
@@ -59,7 +60,7 @@ export interface BattleStats {
   score: number, prevBestScore: number, newBestScore: boolean, newWaveRecord: boolean,
   perfectWaves: number, bestStreak: number, noleak: boolean, livesLeft: number,
   lastLeak: { name: string, wave: number } | null,
-  topKiller: { name: string, kills: number } | null,
+  topKiller: { name: string, kills: number, damage: number } | null,
   heroKills: number,
   daily?: DailyResult,
   freeplay: boolean, freeplayDepth: number,
@@ -112,6 +113,9 @@ export function nextObjective(save: SaveData, ctx: { won: boolean, levelId: stri
   const nextBoss = (Math.floor(held / 10) + 1) * 10
   return { text: `Hold the line past +${nextBoss} on ${name} - a boss waits there`, action: 'hold', levelId: ctx.levelId }
 }
+
+/** 12,400 reads as 12.4k: the number is a badge, not a ledger */
+export const fmtDamage = (d: number) => d >= 10000 ? `${(d / 1000).toFixed(1)}k` : `${Math.round(d).toLocaleString()}`
 
 const fmtTime = (sec: number) => `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`
 
@@ -232,6 +236,10 @@ export class Screens {
     }
     const how = el('button', 'btn ghost', card, 'How to play') as HTMLButtonElement
     how.onclick = () => this.renderHelp()
+    if (save.seenEnemies.length) {
+      const guide = el('button', 'btn ghost', card, `${icon('eye')} Field guide`) as HTMLButtonElement
+      guide.onclick = () => renderFieldGuide(this.root, this.save().seenEnemies, () => {})
+    }
     if (needsInstallGuide()) {
       const install = el('button', 'btn ghost', card, `${icon('fullscreen')} Play fullscreen`) as HTMLButtonElement
       install.onclick = () => this.renderInstallGuide()
@@ -653,8 +661,8 @@ export class Screens {
       el('div', 'end-stats', card,
         `${icon('swords')} ${stats.kills} slain · ${icon('shield')} ${stats.perfectWaves} waves held${stats.bestStreak >= 2 ? ` (${icon('flame')}×${stats.bestStreak})` : ''} · ` +
         `${icon('coin')} ${stats.gold} · ${icon('gem')} ${stats.shards} · ${icon('helmPlume')} lvl ${stats.heroLevel}${stats.heroKills > 0 ? ` ${icon('skull')}${stats.heroKills}` : ''} · ${icon('hourglass')} ${fmtTime(stats.timeSec)}`)
-      if (stats.topKiller && stats.topKiller.kills > 0) {
-        el('div', 'end-topkiller', card, `${icon('trophy')} Deadliest building: <b>${stats.topKiller.name}</b> — ${stats.topKiller.kills} slain`)
+      if (stats.topKiller && (stats.topKiller.kills > 0 || stats.topKiller.damage > 0)) {
+        el('div', 'end-topkiller', card, `${icon('trophy')} Deadliest building: <b>${stats.topKiller.name}</b> — ${stats.topKiller.kills} slain · ${fmtDamage(stats.topKiller.damage)} damage`)
       }
     }
     if (stats) this.renderXp(card, stats)

@@ -1484,7 +1484,7 @@ export class Game implements World {
     /** lives still standing when the run ended, for the shareable result */
     livesLeft: number,
     lastLeak: { name: string, wave: number } | null,
-    topKiller: { name: string, kills: number } | null,
+    topKiller: { name: string, kills: number, damage: number } | null,
     heroKills: number,
     stamp: RunStamp,
     daily?: DailyResult,
@@ -1547,17 +1547,20 @@ export class Game implements World {
   }
 
   /** sold buildings keep their place in history */
-  private retiredKillers: { name: string, kills: number }[] = []
+  private retiredKillers: { name: string, kills: number, damage: number }[] = []
 
   /** the building with the most kills this battle (sold ones included) */
-  private topKiller(): { name: string, kills: number } | null {
-    let best: { name: string, kills: number } | null = null
-    const consider = (name: string, kills: number) => {
-      if (kills > (best?.kills ?? 0)) best = { name, kills }
+  private topKiller(): { name: string, kills: number, damage: number } | null {
+    // the deadliest building is the one that removed the most health; kills
+    // break ties, so a cannon that softened everything is not robbed by the
+    // archer that finished them
+    let best: { name: string, kills: number, damage: number } | null = null
+    const consider = (name: string, kills: number, damage: number) => {
+      if (damage > (best?.damage ?? 0) || (damage === (best?.damage ?? 0) && kills > (best?.kills ?? 0))) best = { name, kills, damage }
     }
-    for (const t of this.towers) consider(t.def.name, t.kills)
-    for (const tr of this.traps) consider(tr.def.name, tr.kills)
-    for (const r of this.retiredKillers) consider(r.name, r.kills)
+    for (const t of this.towers) consider(t.def.name, t.kills, t.damage)
+    for (const tr of this.traps) consider(tr.def.name, tr.kills, tr.damage)
+    for (const r of this.retiredKillers) consider(r.name, r.kills, r.damage)
     return best
   }
 
@@ -2201,7 +2204,7 @@ export class Game implements World {
 
   sellTrap(trap: Trap): void {
     if (this.paused) return
-    if (trap.kills > 0) this.retiredKillers.push({ name: trap.def.name, kills: trap.kills })
+    if (trap.kills > 0 || trap.damage > 0) this.retiredKillers.push({ name: trap.def.name, kills: trap.kills, damage: trap.damage })
     const refund = Math.round(trap.def.cost * (hasArmory(this.save, 'salvage') ? 1 : 0.6))
     this.addGold(refund, trap.group.position.x, 0.4, trap.group.position.z)
     this.goldEarned -= refund  // refunds are not earnings
@@ -2370,7 +2373,7 @@ export class Game implements World {
 
   sellTower(tower: Tower): void {
     if (this.paused) return
-    if (tower.kills > 0) this.retiredKillers.push({ name: tower.def.name, kills: tower.kills })
+    if (tower.kills > 0) this.retiredKillers.push({ name: tower.def.name, kills: tower.kills, damage: tower.damage })
     this.addGold(tower.sellValue, tower.pos.x, tower.pos.y + 0.6, tower.pos.z)
     this.goldEarned -= tower.sellValue  // refunds are not earnings
     tower.plot.occupied = false
