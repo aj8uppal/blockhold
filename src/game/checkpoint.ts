@@ -25,6 +25,8 @@ export interface TowerSnapshot {
   branch: 0 | 1 | null
   perk: string | null
   policy: TargetPolicy
+  /** a ballista holding a line: its bearing as a unit vector */
+  hold?: [number, number]
   overchargeUntil?: number
 }
 

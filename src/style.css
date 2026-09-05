@@ -359,6 +359,7 @@ button:disabled { cursor: not-allowed; }
 .btn.big { font-size: 19px; padding: 14px 34px; border-radius: 14px; }
 .btn.ghost { background: transparent; border-color: rgba(244, 232, 207, 0.3); }
 .btn.small { font-size: 12px; padding: 7px 12px; flex: 1; }
+.btn.small.lit { border-color: rgba(255, 140, 66, 0.75); color: #ffcf9a; background: rgba(255, 140, 66, 0.14); }
 .btn.sell { border-color: rgba(216, 69, 47, 0.5); }
 .btn.sell:hover { background: rgba(216, 69, 47, 0.25); border-color: var(--danger); }
 

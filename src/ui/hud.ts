@@ -1023,6 +1023,25 @@ export class HUD {
         tgt.innerHTML = `${icon('target')} ${TARGET_POLICY_LABEL[next]}`
       })
     }
+    if (tower.canHoldLine) {
+      // The engine has a second mode, and it needs room to say which one it is
+      // in: a crowded row of four buttons reads as nothing on a phone.
+      const lineRow = el('div', 'tp-row', actions)
+      const held = !!tower.holdLine
+      const lay = el('button', `btn small${held ? ' lit' : ''}`, lineRow,
+        `${icon('range')} ${held ? 'Re-lay the line' : 'Hold a line'}`) as HTMLButtonElement
+      lay.title = 'Lay this engine on a fixed bearing: click the ground, and it fires down that line and nowhere else. Deadly along a straight road, blind to everything off it.'
+      lay.onclick = this.menuGuard(() => this.game.setTargetMode('holdline'))
+      if (held) {
+        const track = el('button', 'btn small', lineRow, `${icon('target')} Track again`) as HTMLButtonElement
+        track.title = 'Go back to tracking whatever the targeting rule picks'
+        track.onclick = this.menuGuard(() => {
+          tower.clearHoldLine()
+          this.game.showHoldLine(null)
+          this.openTowerPanel(tower)
+        })
+      }
+    }
     const sell = el('button', 'btn small sell', row, `Sell ${icon('coin')}${tower.sellValue}`) as HTMLButtonElement
     this.confirmOnTouch(sell, `Sell for ${tower.sellValue}? Tap again`, () => this.game.sellTower(tower))
     // the ground under a standing tower can be raised too; a raised one says so

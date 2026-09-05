@@ -20,6 +20,7 @@ export type ReplayEvent =
   | { t: number, kind: 'trap', spot: number, trap: string }
   | { t: number, kind: 'earthwork', spot: number, work: string }
   | { t: number, kind: 'wave', index: number }
+  | { t: number, kind: 'holdline', plot: number, dx: number, dz: number }
 
 export class ReplayLog {
   private events: ReplayEvent[] = []

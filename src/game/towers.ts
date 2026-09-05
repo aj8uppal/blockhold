@@ -90,6 +90,31 @@ export function applyGhostLook(model: THREE.Object3D): void {
 }
 
 export type TargetPolicy = 'first' | 'last' | 'strong' | 'weak'
+
+/**
+ * How wide the held corridor is: the bolt's own hit radius, so what the player
+ * is shown is exactly what the bolt will sweep.
+ */
+export const HOLD_LINE_HALF_WIDTH = 0.42
+
+/**
+ * Is this enemy standing in the corridor a ballista is holding?
+ *
+ * The line runs from the engine out to its reach along a fixed direction.
+ * Only the segment counts: an enemy behind the engine, or past the end of the
+ * line, is not a target no matter how close it stands to the infinite ray.
+ * Pure, so the rule the tower fires on is the rule the tests check.
+ */
+export function onHoldLine(
+  from: { x: number, z: number }, dir: { x: number, z: number }, reach: number,
+  at: { x: number, z: number }, radius: number,
+): boolean {
+  const px = at.x - from.x, pz = at.z - from.z
+  const along = px * dir.x + pz * dir.z
+  if (along < -radius || along > reach + radius) return false
+  const perp = Math.abs(px * dir.z - pz * dir.x)
+  return perp <= HOLD_LINE_HALF_WIDTH + radius
+}
 export const TARGET_POLICY_LABEL: Record<TargetPolicy, string> = {
   first: 'First', last: 'Last', strong: 'Strongest', weak: 'Weakest',
 }
@@ -141,6 +166,19 @@ export class Tower {
   soldiers: Soldier[] = []
   rallyPoint = new THREE.Vector3()
   targetPolicy: TargetPolicy = 'first'
+  /**
+   * The Ballista's second mode: instead of tracking whatever the policy picks,
+   * the engine is laid on a fixed bearing and looses down it when something
+   * walks into the line.
+   *
+   * Bloons made the Dartling's locked rotation a real decision by taking the
+   * tracking away; the same trade works here because a bolt is already a line
+   * that loses 45% per body it passes through. Aiming it along a road is
+   * strictly better than tracking on a straight stretch, and strictly worse
+   * anywhere the road bends - which is the decision. Stored as a unit
+   * direction, null while tracking.
+   */
+  holdLine: { x: number, z: number } | null = null
   /** standing on raised ground or the map's own high ground: further sight, heavier shots */
   onHighGround = false
   /** the height this tower shoots from: it sees over anything not above this */
@@ -352,6 +390,7 @@ export class Tower {
       out.push(`Lit by a beacon: ${bits.join(', ')}`)
     }
     if (this.onHighGround) out.push(`High ground: +${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range, sees over low ridges`)
+    if (this.holdLine) out.push('Holding a line: fires only down its own bearing')
     return out
   }
 
@@ -649,10 +688,20 @@ export class Tower {
     if (this.target) return
     let best: Enemy | null = null
     let bestScore = Infinity
+    const line = this.holdLine
     for (const e of world.enemies) {
       if (!e.targetable) continue
       if (e.def.flying && !this.def.flying) continue
       if (this.def.airOnly && !e.def.flying) continue
+      if (line) {
+        // a held line ignores the targeting policy entirely: the first body to
+        // step into the corridor is what the bolt was already aimed at
+        if (!onHoldLine(this.pos, line, this.lineReach, e.pos, e.radius)) continue
+        if (!this.canSee(e, world)) continue
+        const along = (e.pos.x - this.pos.x) * line.x + (e.pos.z - this.pos.z) * line.z
+        if (along < bestScore) { bestScore = along; best = e }
+        continue
+      }
       const d = Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z)
       if (d > this.range + e.radius) continue
       if (!this.canSee(e, world)) continue
@@ -660,6 +709,28 @@ export class Tower {
       if (score < bestScore) { bestScore = score; best = e }
     }
     this.target = best
+  }
+
+  /** only the engine that fires a line can hold one */
+  get canHoldLine(): boolean { return this.kind === 'ballista' }
+
+  /** how far down the line a bolt travels; the corridor is drawn to match */
+  get lineReach(): number { return this.range + 0.6 }
+
+  /** lay the engine on the bearing from here to (x, z); a click on itself is ignored */
+  setHoldLine(x: number, z: number): boolean {
+    const dx = x - this.pos.x, dz = z - this.pos.z
+    const len = Math.hypot(dx, dz)
+    if (len < 0.35) return false
+    this.holdLine = { x: dx / len, z: dz / len }
+    this.target = null
+    return true
+  }
+
+  /** back to tracking; the reload in progress is kept either way */
+  clearHoldLine(): void {
+    this.holdLine = null
+    this.target = null
   }
 
   cycleTargetPolicy(): TargetPolicy {
@@ -783,10 +854,13 @@ export class Tower {
     if (this.target !== prevTarget) this.stallT = 0
     const turret = getPart(this.model, 'turret')
 
-    // Idle business: with nothing to shoot, the crew scans the road now and
-    // then. Drawn as an offset on the part only - the simulated yaw that
-    // gates firing never moves, so a replay stays a replay.
-    if (!this.target && turret && this.kind !== 'mage') {
+    // an engine laid on a bearing stays on it, loaded, whether or not anything
+    // is in the corridor: the pose is the promise
+    if (this.holdLine) {
+      this.turretYaw = lerpAngle(this.turretYaw, Math.atan2(this.holdLine.x, this.holdLine.z), dt * 8)
+      if (turret) turret.rotation.y = this.turretYaw
+      this.idleScan = 0
+    } else if (!this.target && turret && this.kind !== 'mage') {
       this.idleScanT -= dt
       if (this.idleScanT <= 0) {
         this.idleScanT = 3 + Math.random() * 5
@@ -803,13 +877,15 @@ export class Tower {
       const desired = Math.atan2(dx, dz)
       // a poisoned yaw (NaN from any upstream glitch) must heal, not stall forever
       if (!Number.isFinite(this.turretYaw)) this.turretYaw = desired
-      this.turretYaw = lerpAngle(this.turretYaw, desired, dt * 10)
-      if (turret) turret.rotation.y = this.turretYaw + this.idleScan
+      if (!this.holdLine) {
+        this.turretYaw = lerpAngle(this.turretYaw, desired, dt * 10)
+        if (turret) turret.rotation.y = this.turretYaw + this.idleScan
+      }
       // true angular distance, correct for any accumulated yaw winding
       let aimDiff = Math.abs(desired - this.turretYaw) % (Math.PI * 2)
       if (aimDiff > Math.PI) aimDiff = Math.PI * 2 - aimDiff
       // crystals don't swivel; point-blank foes shuffle faster than any turret tracks
-      if (this.kind === 'mage' || dx * dx + dz * dz < 1.7) aimDiff = 0
+      if (this.kind === 'mage' || dx * dx + dz * dz < 1.7 || this.holdLine) aimDiff = 0
       // watchdog: a ready tower staring at a live target must never stall out
       if (this.cooldown <= 0 && aimDiff >= 0.35) {
         this.stallT += dt
@@ -833,7 +909,7 @@ export class Tower {
         this.fire(t, world)
         this.recoil = 1
       }
-    } else if (turret) {
+    } else if (turret && !this.holdLine) {
       turret.rotation.y = this.turretYaw + this.idleScan
     }
     if (turret && this.recoil > 0) {
@@ -900,7 +976,11 @@ export class Tower {
       case 'beacon': break   // a beacon never reaches fire(); guarded in update()
       case 'ballista': {
         // Aim through the target and out to full reach: the bolt is a line.
-        const aim = new THREE.Vector3(target.pos.x, from.y, target.pos.z)
+        // On a held line the bearing is the player's, not the target's, so an
+        // enemy that clips the corridor cannot drag the shot off the road.
+        const aim = this.holdLine
+          ? new THREE.Vector3(this.pos.x + this.holdLine.x * this.lineReach, from.y, this.pos.z + this.holdLine.z * this.lineReach)
+          : new THREE.Vector3(target.pos.x, from.y, target.pos.z)
         const special = def.special
         const airMult = special?.kind === 'airbane' ? special.mult : undefined
         const knock = special?.kind === 'knockback' ? special : undefined

@@ -12,7 +12,7 @@ import { Hazard, createHazard } from './hazards.ts'
 import { enemyDef } from './enemyDefs.ts'
 import { towerTrees, SELL_REFUND } from './towerDefs.ts'
 import { tallestLandmark } from '../voxel/models_env.ts'
-import { reactionFor, REACTION_RADIUS } from './towers.ts'
+import { reactionFor, REACTION_RADIUS, HOLD_LINE_HALF_WIDTH } from './towers.ts'
 import { buildPaths, LanePath } from './path.ts'
 import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
 import { holdModel, holdPieces, holdCacheKey, holdSummary } from './hold.ts'
@@ -50,7 +50,7 @@ import { telemetry } from '../core/telemetry.ts'
 import type { DailyResult } from './share.ts'
 
 export type GamePhase = 'idle' | 'playing' | 'victory' | 'defeat'
-export type TargetMode = 'meteor' | 'reinforce' | 'rally' | null
+export type TargetMode = 'meteor' | 'reinforce' | 'rally' | 'holdline' | null
 
 export interface AbilityState { cooldown: number, max: number }
 
@@ -176,6 +176,8 @@ export class Game implements World {
   private upgradeRing: THREE.Mesh
   private selectRing: THREE.Mesh
   private targetRing: THREE.Mesh
+  /** the corridor a selected ballista is holding, or aiming at */
+  private holdLineMesh: THREE.Mesh
   private heroRing: THREE.Mesh
   private heroGuardRing: THREE.Mesh
   private lanePreview: THREE.Group | null = null
@@ -202,6 +204,7 @@ export class Game implements World {
     this.selectRing = makeRing(1, 0xffe89f, 0.5)
     this.selectRing.scale.setScalar(0.62)
     this.targetRing = makeRing(1.15, 0xff8c42, 0.5)
+    this.holdLineMesh = makeCorridor()
     this.heroRing = makeRing(0.42, 0x7fd4ff, 0.7)
     this.heroGuardRing = makeRing(1, 0x7fd4ff, 0.2)
     this.rangeRing.visible = this.upgradeRing.visible = this.selectRing.visible = this.targetRing.visible = this.heroRing.visible = this.heroGuardRing.visible = false
@@ -591,6 +594,7 @@ export class Game implements World {
         branch: t.branch,
         perk: t.perk?.id ?? null,
         policy: t.targetPolicy,
+        hold: t.holdLine ? [t.holdLine.x, t.holdLine.z] as [number, number] : undefined,
       })),
       traps: this.traps.map(t => ({ spot: t.spot.index, kind: t.kind })),
       raisedPlots: this.terrain ? this.terrain.plots.filter(p => p.raised).map(p => p.index) : [],
@@ -952,7 +956,7 @@ export class Game implements World {
     this.engine.scene.add(this.terrain.group)
     this.engine.scene.add(this.dynamic)
     this.engine.scene.add(this.particles.group)
-    this.engine.scene.add(this.rangeRing, this.upgradeRing, this.selectRing, this.targetRing, this.heroRing, this.heroGuardRing)
+    this.engine.scene.add(this.rangeRing, this.upgradeRing, this.selectRing, this.targetRing, this.heroRing, this.heroGuardRing, this.holdLineMesh)
     this.engine.applyTheme(THEMES[level.theme], level.width, level.height)
     this.engine.resetView(level.width, level.height,
       tallestLandmark((level.landmarks ?? []).map(([, , k]) => k)))
@@ -1151,6 +1155,7 @@ export class Game implements World {
         if (idx >= 0) tower.ascend(idx as 0 | 1, this)
       }
       tower.targetPolicy = snap.policy
+      if (snap.hold) tower.holdLine = { x: snap.hold[0], z: snap.hold[1] }
       this.towers.push(tower)
       this.dynamic.add(tower.group)
     }
@@ -1299,7 +1304,7 @@ export class Game implements World {
     this.targetMode = null
     this.surgeBlend = 0
     this.engine.setSurgeBlend(0)
-    this.rangeRing.visible = this.selectRing.visible = this.targetRing.visible = this.heroRing.visible = this.heroGuardRing.visible = false
+    this.rangeRing.visible = this.selectRing.visible = this.targetRing.visible = this.heroRing.visible = this.heroGuardRing.visible = this.holdLineMesh.visible = false
     this.phase = 'idle'
   }
 
@@ -1740,6 +1745,11 @@ export class Game implements World {
         this.targetRing.visible = true
         const valid = this.targetValid(g)
         ;(this.targetRing.material as THREE.MeshBasicMaterial).color.set(valid ? 0x7fff9f : 0xff5a5a)
+        if (this.targetMode === 'holdline' && this.selectedTower && valid) {
+          const dx = g.x - this.selectedTower.pos.x, dz = g.z - this.selectedTower.pos.z
+          const len = Math.hypot(dx, dz) || 1
+          this.showHoldLine(this.selectedTower, { x: dx / len, z: dz / len }, true)
+        }
       }
       return 'crosshair'
     }
@@ -1767,6 +1777,11 @@ export class Game implements World {
     }
     if (this.targetMode === 'rally' && this.selectedTower) {
       return this.selectedTower.isValidRally(g.x, g.z, this)
+    }
+    if (this.targetMode === 'holdline' && this.selectedTower) {
+      // anywhere but the engine's own footing: the bearing is what is chosen,
+      // not the distance
+      return Math.hypot(g.x - this.selectedTower.pos.x, g.z - this.selectedTower.pos.z) >= 0.35
     }
     return true
   }
@@ -1813,21 +1828,53 @@ export class Game implements World {
         this.selectedTower?.setRally(g.x, g.z, this)
         break
       }
+      case 'holdline': {
+        const t = this.selectedTower
+        if (t && t.setHoldLine(g.x, g.z)) {
+          // the bearing is a player decision like any other, so a replay that
+          // cannot reproduce it cannot reproduce the run
+          this.replay.record({ t: this.time, kind: 'holdline', plot: t.plot.index, dx: t.holdLine!.x, dz: t.holdLine!.z })
+          this.showHoldLine(t)
+          this.hud.openTowerPanel(t)
+          this.sfx('build', 0.6)
+        }
+        break
+      }
     }
     this.targetMode = null
     this.targetRing.visible = false
     this.hud.setTargetMode(null)
   }
 
+  /**
+   * Draw the corridor a ballista holds (or would hold, while aiming).
+   *
+   * The band is the bolt's own sweep, so what the player lines up is what the
+   * bolt will actually clip; `armed` colours it while the bearing is still
+   * being chosen.
+   */
+  showHoldLine(tower: Tower | null, dir?: { x: number, z: number }, armed = false): void {
+    const line = dir ?? tower?.holdLine
+    if (!tower || !line) { this.holdLineMesh.visible = false; return }
+    const reach = tower.lineReach
+    const m = this.holdLineMesh
+    m.visible = true
+    m.position.set(tower.pos.x + line.x * reach / 2, tower.pos.y + 0.04, tower.pos.z + line.z * reach / 2)
+    m.rotation.y = Math.atan2(line.x, line.z)
+    m.scale.set(HOLD_LINE_HALF_WIDTH * 2, 1, reach)
+    ;(m.material as THREE.MeshBasicMaterial).color.set(armed ? 0xffe89f : 0xff8c42)
+  }
+
   setTargetMode(mode: TargetMode): void {
     if (this.paused && mode !== null) return
+    if (mode === 'holdline' && !this.selectedTower?.canHoldLine) { this.sfx('error'); return }
     if (mode === 'meteor' && this.abilities.meteor.cooldown > 0) { this.sfx('error'); return }
     if (mode === 'reinforce' && this.abilities.reinforce.cooldown > 0) { this.sfx('error'); return }
     this.targetMode = mode
     this.hud.setTargetMode(mode)
     if (mode) {
       this.hud.closeBuildMenu()
-      if (mode !== 'rally') this.clearSelection()
+      if (mode !== 'rally' && mode !== 'holdline') this.clearSelection()
     } else {
       this.targetRing.visible = false
     }
@@ -1843,6 +1890,7 @@ export class Game implements World {
     this.rangeRing.scale.setScalar(tower.range)
     this.selectRing.visible = true
     this.selectRing.position.set(tower.pos.x, tower.pos.y - 0.05, tower.pos.z)
+    this.showHoldLine(tower)
     this.sfx('click')
   }
 
@@ -1865,8 +1913,9 @@ export class Game implements World {
     this.selectedEarthSpot = null
     if (this.selectedEarthwork) { this.selectedEarthwork.showReach(false); this.selectedEarthwork = null }
     this.heroSelected = false
-    if (this.targetMode === 'rally') {
-      // rally mode has no owner once its tower is deselected
+    this.holdLineMesh.visible = false
+    if (this.targetMode === 'rally' || this.targetMode === 'holdline') {
+      // both modes are owned by a tower, and have no meaning once it is gone
       this.targetMode = null
       this.targetRing.visible = false
       this.hud.setTargetMode(null)
@@ -2631,6 +2680,17 @@ export class Game implements World {
       this.endGame(true)
     }
   }
+}
+
+/** the flat band a held firing line is drawn as; scaled to width x reach */
+function makeCorridor(): THREE.Mesh {
+  const geo = new THREE.PlaneGeometry(1, 1)
+  geo.rotateX(-Math.PI / 2)
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff8c42, transparent: true, opacity: 0.16, depthWrite: false, toneMapped: false, side: THREE.DoubleSide })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.renderOrder = 2
+  mesh.visible = false
+  return mesh
 }
 
 function makeRing(radius: number, color: number, opacity: number): THREE.Mesh {
