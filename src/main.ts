@@ -10,7 +10,7 @@ import { dailySeed, dailyNumber, newRunSeed } from './game/ruleset.ts'
 import { dailyLevel } from './game/levels.ts'
 import { trialFor } from './game/trials.ts'
 import { challengeIsCurrent, readChallenge } from './game/share.ts'
-import { canRecordTape, downloadTape, sharePostcard, shareTape, tapeFileExtension } from './core/capture.ts'
+import { canRecordTape } from './core/captureSupport.ts'
 import { Game } from './game/game.ts'
 import { HUD } from './ui/hud.ts'
 import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
@@ -178,6 +178,7 @@ screens.onRestore = (restored) => {
 screens.onSharePostcard = async () => {
   const blob = await game.captureHoldPostcard()
   if (!blob) return false
+  const { sharePostcard, downloadTape } = await import('./core/capture.ts')
   if (!await sharePostcard(blob, 'my-blockhold.png')) downloadTape(blob, 'my-blockhold.png')
   telemetry.track({ type: 'share_copied', kind: 'hold_postcard' })
   return true
@@ -186,6 +187,7 @@ screens.canRecordTape = () => canRecordTape()
 screens.onRecordTape = async () => {
   const blob = await game.recordSiegeTape()
   if (!blob) return false
+  const { shareTape, downloadTape, tapeFileExtension } = await import('./core/capture.ts')
   const name = `blockhold-${game.level?.id ?? 'hold'}.${tapeFileExtension(blob.type)}`
   // the share sheet first, because that is where a clip actually goes; a
   // download is the fallback for desktops and for a sheet that refuses files

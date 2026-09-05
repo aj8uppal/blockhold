@@ -41,7 +41,7 @@ import { randRange, simChance, setSimSeed, pick } from '../core/utils.ts'
 import { newRunSeed, runStamp, RULESET_VERSION, type RunStamp } from './ruleset.ts'
 import { writeCheckpoint, clearCheckpoint, readCheckpoint, type Checkpoint } from './checkpoint.ts'
 import { ReplayLog } from './replay.ts'
-import { canRecordTape, capturePostcard, recordVerticalTape } from '../core/capture.ts'
+import { canRecordTape } from '../core/captureSupport.ts'
 import { attachDebris, shatter, updateDebris, clearDebris, type DeathFlavor } from './debris.ts'
 
 /** the kill sound and puff colour, by what did the killing */
@@ -711,6 +711,8 @@ export class Game implements World {
     }
 
     try {
+      // the recorder is its own chunk: fetched the first time a tape is asked for
+      const { recordVerticalTape } = await import('../core/capture.ts')
       return await recordVerticalTape(this.engine.canvas, {
         // long enough to watch, short enough to loop in a feed
         seconds: 15,
@@ -750,6 +752,7 @@ export class Game implements World {
       this.engine.camTargetGoal.copy(this.engine.camTarget)
       this.engine.yaw = this.engine.yawGoal = startYaw + 0.25
       this.engine.dist = this.engine.distGoal = 12.5
+      const { capturePostcard } = await import('../core/capture.ts')
       return await capturePostcard(this.engine.canvas, {
         summary: holdSummary(holdPieces(this.save)),
         footer: 'aj8uppal.github.io/blockhold',

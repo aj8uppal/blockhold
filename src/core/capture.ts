@@ -20,11 +20,8 @@ export interface TapeOptions {
   fps?: number
 }
 
-export function canRecordTape(): boolean {
-  return typeof MediaRecorder !== 'undefined'
-    && typeof HTMLCanvasElement !== 'undefined'
-    && typeof HTMLCanvasElement.prototype.captureStream === 'function'
-}
+import { canRecordTape } from './captureSupport.ts'
+export { canRecordTape }
 
 /** the best container this browser will actually give us */
 function pickMimeType(): string | null {

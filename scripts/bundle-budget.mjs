@@ -24,9 +24,16 @@ import { fileURLToPath } from 'node:url'
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const assets = join(root, 'dist', 'assets')
 
-/** gzip, not brotli: it is the floor every host and browser agrees on */
-const APP_CHUNK_LIMIT = 130 * 1024
-const TOTAL_JS_LIMIT = 250 * 1024
+/**
+ * gzip, not brotli: it is the floor every host and browser agrees on.
+ *
+ * History: 130 / 250 KB from the first budget. Raised to 136 / 262 KB on
+ * 2026-09-05 when the trials and the Ballista's hold-line landed together -
+ * two systems of rules, not an import that slipped. The number moves when the
+ * game does; an accidental 40 KB still fails here.
+ */
+const APP_CHUNK_LIMIT = 136 * 1024
+const TOTAL_JS_LIMIT = 262 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 
