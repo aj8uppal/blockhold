@@ -45,6 +45,8 @@ export interface World {
   /** A* route between two world points, or null if unreachable */
   findPath(fromX: number, fromZ: number, toX: number, toZ: number): THREE.Vector3[] | null
   floater(x: number, y: number, z: number, text: string, cls: string): void
+  /** the hero speaks: a short caption by the portrait, and the portrait nods */
+  heroBark?(text: string): void
   onEnemyKilled(e: Enemy): void
   onEnemyLeaked(e: Enemy): void
   spawnEnemyAt(id: string, laneIndex: number, dist: number, opts?: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean }): void
@@ -65,7 +67,7 @@ export interface World {
   /** hold the frame on a hit worth feeling */
   impact(weight: 'light' | 'heavy' | 'elite' | 'boss'): void
   /** break a dead unit's model into its authored blocks */
-  shatterUnit(group: THREE.Group, opts: { force?: number, flavor?: DeathFlavor, scale?: number }): void
+  shatterUnit(group: THREE.Group, opts: { force?: number, flavor?: DeathFlavor, scale?: number, dir?: THREE.Vector3 }): void
 }
 
 export type ProjectileSpec =

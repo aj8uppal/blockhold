@@ -42,6 +42,35 @@ export const HERO_DEFS: Record<HeroId, HeroDef> = {
  * blocking. Adds move orders (A* waypoints), XP levels, an auto-cast
  * signature ability, and self-respawn.
  */
+/**
+ * What the hero says. Kingdom Rush's heroes answer every order out loud, and
+ * that voice is most of why a player feels the hero is *theirs*; ours speak
+ * in captions by the portrait. Presentation only, so Math.random is right.
+ */
+const BARKS: Record<string, { move: string[], signature: string[], level: string[] }> = {
+  aldric: {
+    move: ['On my way.', 'Hold the road!', 'Moving up.', 'For the Hold.'],
+    signature: ['Valor!', 'Stand and fight!'],
+    level: ['Stronger yet.', 'The Hold endures.'],
+  },
+  liora: {
+    move: ['As you wish.', 'Quickly, then.', 'I see it.', 'Nocked.'],
+    signature: ['Loose!', 'Every arrow.'],
+    level: ['Sharper now.', 'Nothing slips past.'],
+  },
+  zephyra: {
+    move: ['The wind carries me.', 'Going.', 'Watch the sky.', 'Swiftly.'],
+    signature: ['Storm, rise!', 'Feel the gale.'],
+    level: ['The storm grows.', 'Higher still.'],
+  },
+}
+const FALLBACK_BARKS = BARKS.aldric
+
+function bark(heroId: string, kind: 'move' | 'signature' | 'level'): string {
+  const lines = (BARKS[heroId] ?? FALLBACK_BARKS)[kind]
+  return lines[Math.floor(Math.random() * lines.length)]
+}
+
 export class Hero extends Soldier {
 
   moveOrder: THREE.Vector3 | null = null
@@ -94,7 +123,8 @@ export class Hero extends Soldier {
       d.damage = [Math.round(d.damage[0] * 1.13), Math.round(d.damage[1] * 1.13)]
       world.particles.healSparkle(this.group.position.x, 0.6, this.group.position.z)
       world.floater(this.group.position.x, 1.1, this.group.position.z, `${icon('swords')} Level ${this.level}!`, 'gold')
-      world.sfx('upgrade')
+      world.sfx('heroLevel')
+      world.heroBark?.(bark(this.heroDef.id, 'level'))
     }
   }
 
@@ -112,7 +142,8 @@ export class Hero extends Soldier {
       if (i >= 0) this.target.blockers.splice(i, 1)
       this.target = null
     }
-    world.sfx('click')
+    world.sfx('heroAck', 0.8)
+    world.heroBark?.(bark(this.heroDef.id, 'move'))
     return true
   }
 
@@ -217,6 +248,12 @@ export class Hero extends Soldier {
    */
   castSignature(world: World): boolean {
     if (!this.signatureReady) return false
+    const cast = this.castSignatureInner(world)
+    if (cast) world.heroBark?.(bark(this.heroDef.id, 'signature'))
+    return cast
+  }
+
+  private castSignatureInner(world: World): boolean {
     const pos = this.group.position
     const kind = this.heroDef.ability.kind
     if (kind === 'slam') {

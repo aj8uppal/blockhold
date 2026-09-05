@@ -374,10 +374,29 @@ export class Tower {
     return Math.round(investedGold(this.kind, this.level, this.branch) * this.world.sellRefund)
   }
 
+  /**
+   * The old model, kept for a beat while the new one is revealed.
+   *
+   * An upgrade used to swap the model on the frame the button was pressed:
+   * the same dust, the same sound, a 170ms pop, and the thing the player had
+   * just paid three hundred gold for was simply *there*. Kingdom Rush stages
+   * it - the tower crouches, then the new silhouette rises - and Bloons makes
+   * the fifth tier a transformation. So: the old model compresses for a
+   * short beat, then the new one rises with an overshoot, and the reveal is
+   * where the upgrade sound lands. Stats change immediately; only the
+   * picture waits.
+   */
+  private oldModel: THREE.Group | null = null
+  private revealT = 0
+  private static readonly REVEAL_HOLD = 0.14
+
   private applyLevel(def: TowerLevelDef, world: World, initial = false): void {
     if (this.model) {
-      this.group.remove(this.model)
-      disposeClonedMaterials(this.model)
+      if (this.oldModel) { this.group.remove(this.oldModel); disposeClonedMaterials(this.oldModel) }
+      // held, squashed, until the reveal; removed in update()
+      this.oldModel = this.model
+      this.revealT = Tower.REVEAL_HOLD
+      world.sfx('build', 0.7)
     }
     if (this.tierHalo) { this.group.remove(this.tierHalo); this.tierHalo = null }
     this.def = def
@@ -389,6 +408,8 @@ export class Tower {
     this.group.add(this.model)
     this.sizeMult = TIER_SCALE[this.level - 1]
     this.buildT = 0
+    // the new silhouette stays out of sight until the old one has crouched
+    if (this.oldModel) this.model.visible = false
     this.applyTierPresence()
     if (this.isBarracks) {
       if (initial) this.pickDefaultRally(world)
@@ -413,8 +434,9 @@ export class Tower {
       if (this.crownMesh) this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult
       world.particles.magicImpact(this.pos.x, this.pos.y + 1.0, this.pos.z, 0xffe89f)
     }
-    world.particles.buildDust(this.pos.x, this.pos.y + 0.15, this.pos.z)
-    world.sfx('upgrade')
+    // dust and the upgrade sound belong to the reveal, not to the press;
+    // update() plays them when the new silhouette rises
+    void world
   }
 
   dismantle(world: World, silent = false): void {
@@ -444,6 +466,7 @@ export class Tower {
     this.crownMesh = null
     this.chargeRing = null
     this.hexRing = null
+    if (this.oldModel) { this.group.remove(this.oldModel); disposeClonedMaterials(this.oldModel); this.oldModel = null }
   }
 
   /** live-update soldier max HP when resonance or perks change */
@@ -603,10 +626,30 @@ export class Tower {
   }
 
   update(dt: number, world: World): void {
+    // the upgrade reveal: crouch the old, then let the new rise
+    if (this.oldModel) {
+      this.revealT -= dt
+      const k = Math.max(0, this.revealT / Tower.REVEAL_HOLD)   // 1 -> 0 over the hold
+      const squash = 1 - (1 - k) * 0.22
+      this.oldModel.scale.set(this.sizeMult * (2 - squash), this.sizeMult * squash, this.sizeMult * (2 - squash))
+      if (this.revealT <= 0) {
+        this.group.remove(this.oldModel)
+        disposeClonedMaterials(this.oldModel)
+        this.oldModel = null
+        this.model.visible = true
+        this.buildT = 0
+        world.particles.buildDust(this.pos.x, this.pos.y + 0.15, this.pos.z)
+        world.sfx('upgrade')
+        // a capstone is a transformation, and gets a second, lower note under it
+        if (this.level >= 5) { world.sfx('horn', 0.45); world.particles.magicImpact(this.pos.x, this.pos.y + 1.0, this.pos.z, 0xffe89f) }
+        else if (this.level === 4) world.particles.magicImpact(this.pos.x, this.pos.y + 0.8, this.pos.z, 0xffc76a)
+      }
+      return
+    }
     // build pop-in (settles at the tier's presence scale)
     if (this.buildT < 1) {
       this.buildT = Math.min(1, this.buildT + dt * 3)
-      const overshoot = 1 + Math.sin(this.buildT * Math.PI) * 0.12
+      const overshoot = 1 + Math.sin(this.buildT * Math.PI) * (this.level > 1 ? 0.2 : 0.12)
       this.model.scale.setScalar(clamp(this.buildT * 1.15, 0.05, 1) * overshoot * this.sizeMult)
     }
 

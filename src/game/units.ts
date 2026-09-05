@@ -7,8 +7,12 @@ import { buildModel, setFlash, getPart, VoxModel } from '../voxel/builder.ts'
 import * as units from '../voxel/models_units.ts'
 import { clamp, isCoarsePointer, lerpAngle, randRange, simRandom } from '../core/utils.ts'
 import { CUTTING_SLOW, CUTTING_VULN } from './earthworks.ts'
-import { HP_BAR_NAME } from './debris.ts'
+import { HP_BAR_NAME, type DeathFlavor } from './debris.ts'
 import { AFFIXES, COMMANDER_RADIUS, COMMANDER_WARD, ELITE_HP, type AffixDef, type AffixId } from './affixes.ts'
+
+const FLYER_SHADOW_GEO = new THREE.CircleGeometry(0.3, 14)
+const FLYER_SHADOW_MAT = new THREE.MeshBasicMaterial({ color: 0x06080f, transparent: true, opacity: 0.32, depthWrite: false })
+FLYER_SHADOW_MAT.userData.shared = true
 
 /** how often a boss throws its blockers off */
 export const BOSS_SWEEP_INTERVAL = 5.5
@@ -187,6 +191,11 @@ export class Enemy {
   /** what last landed on this unit, so its debris carries that damage type */
   private lastHitType: DamageType = 'physical'
   private lastHitForce = 1
+  /** the presentation flavour of the last hit (fire, shock) when the attack named one */
+  private lastHitFlavor: DeathFlavor | null = null
+  /** how this enemy died, for the kill sound; set in die() */
+  deathFlavor: DeathFlavor = 'physical'
+  private shadow: THREE.Mesh | null = null
   /** down inside a player-dug cutting */
   private inCutting = false
   /** bosses periodically clear whoever is holding them */
@@ -259,6 +268,15 @@ export class Enemy {
     this.bar.group.name = HP_BAR_NAME
     this.bar.group.position.y = this.barY / s
     this.group.add(this.bar.group)
+    // a flyer's shadow on the road, so altitude reads without inspection and a
+    // flyer still has a ground position when real shadows are off. Unnamed,
+    // so the shatter leaves it alone; shared material, so tints skip it.
+    if (def.flying) {
+      this.shadow = new THREE.Mesh(FLYER_SHADOW_GEO, FLYER_SHADOW_MAT)
+      this.shadow.rotation.x = -Math.PI / 2
+      this.shadow.scale.setScalar((def.boss ? 1.7 : 1) / s)
+      this.group.add(this.shadow)
+    }
     const start = lane.sample(startDist, this.offset)
     this.group.position.set(start.x, def.yOffset ?? 0, start.z)
     this.yaw = Math.atan2(start.dirX, start.dirZ)
@@ -298,7 +316,7 @@ export class Enemy {
   }
 
   /** returns damage actually dealt */
-  takeDamage(amount: number, type: DamageType, world: World, opts: { crit?: boolean, silent?: boolean, mrPierce?: number, armorPierce?: number, credit?: KillCredit } = {}): number {
+  takeDamage(amount: number, type: DamageType, world: World, opts: { crit?: boolean, silent?: boolean, mrPierce?: number, armorPierce?: number, credit?: KillCredit, flavor?: DeathFlavor } = {}): number {
     if (!this.alive || (this.phased && !this.revealed)) return 0
     let mult = 1
     if (type === 'physical') mult = 1 - this.armor * (1 - (opts.armorPierce ?? 0))
@@ -314,6 +332,7 @@ export class Enemy {
     const dealt = Math.max(0, amount * mult)
     this.hp -= dealt
     this.lastHitType = type
+    this.lastHitFlavor = opts.flavor ?? null
     this.lastHitForce = Math.max(0.7, Math.min(2.4, dealt / Math.max(24, this.maxHp * 0.16)))
     if (!opts.silent) {
       this.flash = 0.16
@@ -358,6 +377,13 @@ export class Enemy {
   private phaseOut(world: World): void {
     const next = this.def.phaseInto!
     this.state = 'gone'
+    // the wings come off and fall as debris; the rest of her leaves quietly,
+    // and the grounded successor settles in the dust where she stood
+    if (this.parts.wingL || this.parts.wingR) {
+      const keep = new Set<THREE.Object3D>([this.parts.wingL, this.parts.wingR].filter((o): o is THREE.Object3D => !!o))
+      for (const c of [...this.group.children]) if (c.name && c.name !== HP_BAR_NAME && !keep.has(c)) this.group.remove(c)
+      world.shatterUnit(this.group, { force: 1.4, flavor: 'magic', scale: this.def.scale ?? 1 })
+    }
     this.group.visible = false
     for (const s of this.blockers) s.target = null
     this.blockers = []
@@ -366,6 +392,7 @@ export class Enemy {
     world.sfx('explosion', 0.9)
     world.shake(0.28)
     world.floater(this.pos.x, this.pos.y + this.barY + 0.4, this.pos.z, 'She lands!', 'crit')
+    world.particles.buildDust(this.pos.x, world.groundY(this.pos.x, this.pos.z) + 0.1, this.pos.z)
     world.spawnEnemyAt(next, this.laneIndex, this.dist, { waveTag: this.waveTag, hpScale: this.phaseHpScale })
   }
 
@@ -463,9 +490,15 @@ export class Enemy {
     this.releaseBlockers()
     this.bar.group.visible = false
     // come apart into the blocks this thing was built from
+    // the pieces say what killed it: tumbling on down the road for a physical
+    // hit, lifted apart by magic, crumbled by fire, snapped stiff by shock
+    const flavor: DeathFlavor = this.lastHitFlavor ?? (this.lastHitType === 'magic' ? 'magic' : this.lastHitType === 'true' ? 'true' : 'physical')
+    this.deathFlavor = flavor
+    const along = this.lane.sample(this.dist, this.offset)
     world.shatterUnit(this.group, {
       force: this.lastHitForce * (this.def.boss ? 1.5 : 1),
-      flavor: this.lastHitType === 'magic' ? 'magic' : 'physical',
+      flavor,
+      dir: new THREE.Vector3(along.dirX, 0, along.dirZ),
       scale: this.def.scale ?? 1,
     })
     world.onEnemyKilled(this)
@@ -727,6 +760,7 @@ export class Enemy {
       let speed = this.def.speed * this.speedMult * (world.time < this.slowUntil ? this.slowFactor : 1)
       // a cutting is a killing ditch: slower going, and no cover down there
       this.inCutting = !this.def.flying && world.cuttingAt(this.pos.x, this.pos.z)
+      if (this.shadow) this.shadow.position.y = (world.groundY(this.pos.x, this.pos.z) - this.group.position.y) / this.group.scale.y + 0.03
       if (this.inCutting) speed *= CUTTING_SLOW
       this.dist += speed * dt
       if (this.dist >= this.lane.length) {

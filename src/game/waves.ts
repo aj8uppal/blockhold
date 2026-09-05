@@ -71,6 +71,16 @@ export class WaveManager {
   waveAt(i: number): WaveDef | undefined { return this.source[i] }
 
   get totalWaves(): number { return this.source.length }
+  /** the wave the countdown is running towards */
+  get nextWaveIndex(): number { return this.phase === 'countdown' || this.waveIndex < 0 ? this.waveIndex + 1 : this.waveIndex + 1 }
+  /** which spawn lanes a wave uses, so the gates can announce themselves */
+  lanesOf(index: number): number[] {
+    const wave = this.source[index]
+    if (!wave) return []
+    const lanes = new Set<number>()
+    for (const g of wave.groups) lanes.add(g.lane ?? 0)
+    return [...lanes]
+  }
   get isLastWaveStarted(): boolean { return this.waveIndex >= this.totalWaves - 1 }
   get allSpawned(): boolean { return this.isLastWaveStarted && this.queue.length === 0 }
 

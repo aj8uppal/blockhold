@@ -311,7 +311,7 @@ class ChainLightning implements Projectile {
     for (const e of hits) {
       const to = e.pos.clone().setY(e.pos.y + 0.35)
       this.mesh.add(makeLightningMesh(from, to))
-      const dealt = e.takeDamage(damage, 'magic', world, { mrPierce: spec.mrPierce, credit: spec.credit })
+      const dealt = e.takeDamage(damage, 'magic', world, { mrPierce: spec.mrPierce, credit: spec.credit, flavor: 'shock' })
       if (dealt > 0 && simChance(spec.stunChance)) e.applyStun(spec.stunDur, world)
       world.particles.magicImpact(to.x, to.y, to.z, 0x9fe8ff)
       damage *= spec.falloff
@@ -557,7 +557,7 @@ export function updateBurnZones(dt: number, world: World): void {
     for (const e of world.enemies) {
       if (!e.alive || e.def.flying) continue
       if (Math.hypot(e.pos.x - z.pos.x, e.pos.z - z.pos.z) < z.radius + e.radius) {
-        e.takeDamage(z.dps * dt, 'true', world, { silent: true, credit: z.credit })
+        e.takeDamage(z.dps * dt, 'true', world, { silent: true, credit: z.credit, flavor: 'fire' })
       }
     }
   }

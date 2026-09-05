@@ -178,12 +178,40 @@ export class HUD {
 
   private heroBtn!: HTMLButtonElement
 
+  private lastBarkAt = -10
+  private barkTimer: number | null = null
+  private bumpTimer: number | null = null
+
+  /**
+   * The hero acknowledges the player: the portrait nods every time, and a
+   * short caption appears unless one did a moment ago. Repeated move orders
+   * stay quiet; a level or a signature always speaks.
+   */
+  heroBark(text: string): void {
+    this.heroBtn.classList.remove('bump')
+    void this.heroBtn.offsetWidth   // restart the animation
+    this.heroBtn.classList.add('bump')
+    if (this.bumpTimer) clearTimeout(this.bumpTimer)
+    this.bumpTimer = window.setTimeout(() => this.heroBtn.classList.remove('bump'), 360)
+    if (!text) return
+    const now = performance.now() / 1000
+    if (now - this.lastBarkAt < 2.2) return
+    this.lastBarkAt = now
+    const cap = this.heroBtn.querySelector('.hero-bark') as HTMLElement | null
+    if (!cap) return
+    cap.textContent = text
+    cap.classList.add('show')
+    if (this.barkTimer) clearTimeout(this.barkTimer)
+    this.barkTimer = window.setTimeout(() => cap.classList.remove('show'), 1700)
+  }
+
   private buildAbilities(): void {
     const bar = el('div', 'abilities', this.root)
     this.heroBtn = el('button', 'ability hero-btn', bar) as HTMLButtonElement
     this.heroBtn.innerHTML =
       `<span class="ability-icon"><img class="hero-face" src="art/hero-aldric.webp" alt=""></span><span class="cd-sweep"></span>` +
-      '<span class="hero-level">1</span><span class="hero-hp"><span class="hero-hp-fill"></span></span>'
+      '<span class="hero-level">1</span><span class="hero-hp"><span class="hero-hp-fill"></span></span>' +
+      '<span class="hero-bark" aria-live="polite"></span>'
     this.heroBtn.title = 'Sir Aldric — select the hero, click the ground to move him. Hotkey H.'
     this.heroBtn.setAttribute('aria-label', 'Select your hero')
     this.heroBtn.onclick = () => this.game.selectHero(true)

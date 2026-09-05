@@ -26,6 +26,24 @@ interface Chunk {
   ttl: number
   settled: boolean
   groundY: number
+  /** per-chunk gravity: magic lifts, everything else falls */
+  gravity: number
+}
+
+/**
+ * How each killing method throws the pieces. Kingdom Rush gives collapse,
+ * explosion and magical disintegration different shapes, and so the player
+ * reads *what worked* from the death itself: a physical kill tumbles the body
+ * on down the road, magic lifts it apart, fire crumbles it at the feet, and
+ * shock snaps it stiffly in place.
+ */
+const FLAVOR_MOTION: Record<DeathFlavor, { xz: number, up: number, spin: number, ttl: number, gravity: number, along: number }> = {
+  physical: { xz: 1, up: 1, spin: 1, ttl: 1, gravity: 1, along: 1.1 },
+  true: { xz: 1, up: 1, spin: 1, ttl: 1, gravity: 1, along: 1.1 },
+  magic: { xz: 0.45, up: 1.35, spin: 0.45, ttl: 0.7, gravity: 0.22, along: 0.2 },
+  fire: { xz: 0.6, up: 0.5, spin: 0.8, ttl: 0.8, gravity: 1.2, along: 0.4 },
+  frost: { xz: 0.5, up: 0.35, spin: 0.3, ttl: 0.9, gravity: 1.3, along: 0.3 },
+  shock: { xz: 0.35, up: 0.85, spin: 0.12, ttl: 0.75, gravity: 1, along: 0.3 },
 }
 
 /** the health bar rides on the unit group but is not part of the model */
@@ -97,6 +115,7 @@ export function shatter(
   const force = opts.force ?? 1
   const rng = opts.rng ?? Math.random
   const tint = FLAVOR_TINT[opts.flavor ?? 'physical']
+  const motion = FLAVOR_MOTION[opts.flavor ?? 'physical']
   const dir = opts.dir ? opts.dir.clone().setY(0).normalize() : new THREE.Vector3()
 
   group.updateMatrixWorld(true)
@@ -131,15 +150,16 @@ export function shatter(
     chunks.push({
       obj: part,
       vel: new THREE.Vector3(
-        (out.x * 0.75 + dir.x * 1.1) * speed + (rng() - 0.5) * 0.6,
-        (1.7 + rng() * 1.9) * Math.min(1.6, force),
-        (out.z * 0.75 + dir.z * 1.1) * speed + (rng() - 0.5) * 0.6,
+        ((out.x * 0.75 + dir.x * motion.along) * speed + (rng() - 0.5) * 0.6) * motion.xz,
+        (1.7 + rng() * 1.9) * Math.min(1.6, force) * motion.up,
+        ((out.z * 0.75 + dir.z * motion.along) * speed + (rng() - 0.5) * 0.6) * motion.xz,
       ),
-      spin: new THREE.Vector3((rng() - 0.5) * 14, (rng() - 0.5) * 14, (rng() - 0.5) * 14).multiplyScalar(force),
+      spin: new THREE.Vector3((rng() - 0.5) * 14, (rng() - 0.5) * 14, (rng() - 0.5) * 14).multiplyScalar(force * motion.spin),
       life: 0,
-      ttl: 2.4 + rng() * 1.4,
+      ttl: (2.4 + rng() * 1.4) * motion.ttl,
       settled: false,
       groundY: 0.045 * (opts.scale ?? 1),
+      gravity: GRAVITY * motion.gravity,
     })
   }
 }
@@ -150,7 +170,7 @@ export function updateDebris(dt: number): void {
     const c = chunks[i]
     c.life += dt
     if (!c.settled) {
-      c.vel.y -= GRAVITY * dt
+      c.vel.y -= c.gravity * dt
       c.obj.position.addScaledVector(c.vel, dt)
       c.obj.rotation.x += c.spin.x * dt
       c.obj.rotation.y += c.spin.y * dt

@@ -6,6 +6,7 @@ export type SfxName =
   | 'coin' | 'build' | 'sell' | 'upgrade' | 'die' | 'leak' | 'horn'
   | 'victory' | 'defeat' | 'meteor' | 'reinforce' | 'heal' | 'click'
   | 'error' | 'crit' | 'poison'
+  | 'dieMagic' | 'dieFire' | 'dieShock' | 'heroAck' | 'heroLevel'
 
 export class AudioSystem {
   private ctx: AudioContext | null = null
@@ -64,7 +65,9 @@ export class AudioSystem {
     build: 70, upgrade: 70, sell: 70, error: 70, click: 60,
     meteor: 65, reinforce: 65, heal: 60, coin: 40,
     // big combat events
-    explosion: 55, crit: 50, lightning: 45, die: 35,
+    explosion: 55, crit: 50, lightning: 45, die: 35, dieMagic: 35, dieFire: 35, dieShock: 35,
+    // the hero speaking is the player being answered
+    heroAck: 62, heroLevel: 68,
     // the constant background of a battle
     cannon: 30, magic: 25, poison: 20, arrow: 15, hit: 10,
   }
@@ -248,6 +251,35 @@ export class AudioSystem {
         break
       case 'die':
         this.noise(0.18, { vol: 0.12 * v, filterFreq: 700, slide: -500 })
+        break
+      case 'dieMagic':
+        // lifted apart: a rising sine and a breath of air
+        this.tone(480, 0.24, { type: 'sine', vol: 0.07 * v, slide: 760 })
+        this.noise(0.16, { vol: 0.06 * v, filterFreq: 2400, type: 'highpass', delay: 0.03 })
+        break
+      case 'dieFire':
+        // crumbles: a low collapse and a crackle on top
+        this.noise(0.24, { vol: 0.12 * v, filterFreq: 900, slide: -760 })
+        this.noise(0.07, { vol: 0.05 * v, filterFreq: 3200, type: 'highpass', delay: 0.05 })
+        this.noise(0.05, { vol: 0.04 * v, filterFreq: 3600, type: 'highpass', delay: 0.14 })
+        break
+      case 'dieShock':
+        // snaps: a click, a spark and a thud
+        this.tone(1900, 0.04, { type: 'square', vol: 0.05 * v })
+        this.noise(0.05, { vol: 0.07 * v, filterFreq: 3800, type: 'highpass' })
+        this.tone(130, 0.12, { type: 'sine', vol: 0.09 * v, slide: -60, delay: 0.03 })
+        break
+      case 'heroAck':
+        // the hero answers: two short notes, up
+        this.tone(392, 0.07, { type: 'triangle', vol: 0.08 * v })
+        this.tone(523, 0.1, { type: 'triangle', vol: 0.08 * v, delay: 0.07 })
+        break
+      case 'heroLevel':
+        // a level: the upgrade chord with a shimmer over it
+        this.tone(392, 0.12, { type: 'triangle', vol: 0.11 * v })
+        this.tone(494, 0.12, { type: 'triangle', vol: 0.11 * v, delay: 0.09 })
+        this.tone(659, 0.22, { type: 'triangle', vol: 0.11 * v, delay: 0.18 })
+        this.tone(1319, 0.36, { type: 'sine', vol: 0.05 * v, delay: 0.22, attack: 0.04 })
         break
       case 'leak':
         this.tone(660, 0.15, { type: 'square', vol: 0.14 * v, slide: -220 })

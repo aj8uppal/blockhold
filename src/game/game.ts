@@ -41,6 +41,10 @@ import { writeCheckpoint, clearCheckpoint, readCheckpoint, type Checkpoint } fro
 import { ReplayLog } from './replay.ts'
 import { canRecordTape, capturePostcard, recordVerticalTape } from '../core/capture.ts'
 import { attachDebris, shatter, updateDebris, clearDebris, type DeathFlavor } from './debris.ts'
+
+/** the kill sound and puff colour, by what did the killing */
+const DEATH_SFX: Partial<Record<DeathFlavor, SfxName>> = { magic: 'dieMagic', fire: 'dieFire', shock: 'dieShock' }
+const DEATH_PUFF: Partial<Record<DeathFlavor, number>> = { magic: 0x9a7cff, fire: 0xff8a3a, shock: 0xcfe9ff, frost: 0xb8e6ff }
 import { telemetry } from '../core/telemetry.ts'
 import type { DailyResult } from './share.ts'
 
@@ -255,8 +259,8 @@ export class Game implements World {
         this.sfx('coin', 0.5)
       })
     }
-    this.particles.deathPuff(e.pos.x, e.pos.y + 0.2, e.pos.z, 0x777788)
-    this.sfx('die', 0.6)
+    this.particles.deathPuff(e.pos.x, e.pos.y + 0.2, e.pos.z, DEATH_PUFF[e.deathFlavor] ?? 0x777788)
+    this.sfx(DEATH_SFX[e.deathFlavor] ?? 'die', 0.6)
     // The Ossuary: what dies in its shadow stands back up, once, as a Husk that
     // pays nothing. `raised` stops a raised thing rising twice, `noReward`
     // stops the boss being a gold farm, and bosses themselves never rise.
@@ -757,11 +761,15 @@ export class Game implements World {
     }
   }
 
-  shatterUnit(group: THREE.Group, opts: { force?: number, flavor?: DeathFlavor, scale?: number }): void {
+  shatterUnit(group: THREE.Group, opts: { force?: number, flavor?: DeathFlavor, scale?: number, dir?: THREE.Vector3 }): void {
     // deliberately Math.random, not the sim stream: debris is presentation, and
     // a quality tier that drew fewer chunks would otherwise desync the run
     // a player who asked for less movement gets a settle, not a shower
     shatter(group, this.engine.reducedMotion ? { ...opts, force: (opts.force ?? 1) * 0.35 } : opts)
+  }
+
+  heroBark(text: string): void {
+    this.hud.heroBark(text)
   }
 
   towerDamageMult(_kind: string): number {
@@ -958,9 +966,14 @@ export class Game implements World {
         // the next chunk is generated before the current one runs out
         if (this.isFreeplay && this.waves!.totalWaves - (i + 1) < 3) this.extendFreeplay()
         this.sfx('horn', 0.9)
-        for (const m of this.terrain!.spawnMarkers) {
+        // only the gates this wave actually uses light up, so the flash is a
+        // direction and not a decoration
+        const lanes = this.waves!.lanesOf(i)
+        this.terrain!.spawnMarkers.forEach((m, li) => {
+          if (!lanes.includes(li)) return
           this.particles.magicImpact(m.position.x, 0.8, m.position.z, isSurge ? 0xdd6bff : 0x9f5aff)
-        }
+          this.particles.buildDust(m.position.x, 0.1, m.position.z)
+        })
       },
     )
     // the preview reads this to warn that named elites walk this board
@@ -1178,8 +1191,11 @@ export class Game implements World {
         r.mesh.position.set(p.x, 0.08, p.z)
       }
       if (this.terrain) {
+        // the gates the coming wave will use breathe hard; the others barely
+        const next = this.waves?.lanesOf(this.waves.nextWaveIndex) ?? []
         this.terrain.spawnMarkers.forEach((m, i) => {
-          m.scale.setScalar(1.35 * (1 + Math.sin(this.time * 3.2 + i * 1.7) * 0.07))
+          const amp = next.includes(i) ? 0.16 : 0.03
+          m.scale.setScalar(1.35 * (1 + Math.sin(this.time * 3.2 + i * 1.7) * amp))
         })
       }
       return
