@@ -424,7 +424,10 @@ export class Screens {
    * hero is exactly the thing a player will want to tell someone about.
    */
   private renderXp(card: HTMLElement, stats: BattleStats): void {
-    if (stats.xpEarned <= 0 && stats.newUnlocks.length === 0) return
+    // a result rendered from a partial record (the Daily's share path, a
+    // scripted card) may carry no XP fields at all
+    const unlocks = stats.newUnlocks ?? []
+    if (!(stats.xpEarned > 0) && unlocks.length === 0) return
     const box = el('div', 'end-xp', card)
     const leveled = stats.levelAfter > stats.levelBefore
     el('span', 'end-xp-gain', box, `+${stats.xpEarned} XP`)
@@ -440,7 +443,7 @@ export class Screens {
       const remaining = Math.max(0, xpForLevel(next.level) - this.save().xp)
       el('span', 'end-xp-next', box, `${remaining.toLocaleString()} XP to ${next.name}`)
     }
-    for (const u of stats.newUnlocks) {
+    for (const u of unlocks) {
       const row = el('div', 'end-unlock', card)
       el('div', 'end-unlock-eyebrow', row, u.kind === 'hero' ? 'A champion answers the call' : 'A new engine of war')
       el('div', 'end-unlock-name', row, `${icon(u.kind === 'hero' ? 'helmPlume' : 'castle')} ${u.name} unlocked`)
