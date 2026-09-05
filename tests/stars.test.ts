@@ -19,7 +19,7 @@ describe('star thresholds', () => {
 })
 
 const fake = (over: Partial<SaveData> = {}): SaveData => ({
-  stars: {}, medals: {}, bestFreeplay: {}, bestEndless: {}, ...over,
+  stars: {}, medals: {}, trials: {}, bestFreeplay: {}, bestEndless: {}, ...over,
 } as unknown as SaveData)
 
 describe('the next objective', () => {
@@ -45,10 +45,17 @@ describe('the next objective', () => {
     expect(o.action).toBe('veteran')
   })
   it('a completed account is sent to hold the line past the next boss', () => {
-    const stars: Record<string, number> = {}, medals: Record<string, string[]> = {}
-    for (const l of levels) { stars[l.id] = 3; medals[l.id] = ['veteran', 'noleak'] }
-    const o = nextObjective(fake({ stars, medals, bestFreeplay: { [`${a}:normal`]: 14 } }), { won: true, levelId: a, stars: 3 })
+    const stars: Record<string, number> = {}, medals: Record<string, string[]> = {}, trials: Record<string, string[]> = {}
+    for (const l of levels) { stars[l.id] = 3; medals[l.id] = ['veteran', 'noleak']; trials[l.id] = ['relief', 'silent'] }
+    const o = nextObjective(fake({ stars, medals, trials, bestFreeplay: { [`${a}:normal`]: 14 } }), { won: true, levelId: a, stars: 3 })
     expect(o.action).toBe('hold')
     expect(o.text).toContain('+20')
+  })
+  it('a crowned map with a trial unwon is sent to that trial', () => {
+    const o = nextObjective(fake({ stars: { [a]: 3, [b]: 3 }, medals: { [a]: ['veteran'] } }), { won: true, levelId: a, stars: 3 })
+    expect(o.action).toBe('trial')
+    expect(o.trial).toBe('relief')
+    const o2 = nextObjective(fake({ stars: { [a]: 3, [b]: 3 }, medals: { [a]: ['veteran'] }, trials: { [a]: ['relief'] } }), { won: true, levelId: a, stars: 3 })
+    expect(o2.trial).toBe('silent')
   })
 })

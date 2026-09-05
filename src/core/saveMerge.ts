@@ -28,6 +28,8 @@ export interface CloudSave {
   bestFreeplay: Record<string, number>
   bestScore: Record<string, number>
   medals: Record<string, string[]>
+  /** trials won per map; monotonic, merged by union like medals */
+  trials: Record<string, string[]>
   lastHero: string
   dailyBest?: { day: number, wave: number, won: boolean, score: number }
   /** account experience: monotonic, the higher copy wins */
@@ -73,6 +75,16 @@ export function sanitizeCloudSave(v: unknown): CloudSave {
       }
     }
   }
+  const trials: Record<string, string[]> = {}
+  if (o.trials && typeof o.trials === 'object') {
+    let n = 0
+    for (const [k, val] of Object.entries(o.trials as Record<string, unknown>)) {
+      if (n++ >= MAX_KEYS || k.length > MAX_KEY_LEN) break
+      if (Array.isArray(val)) {
+        trials[k] = [...new Set(val.filter((m): m is string => typeof m === 'string' && m.length < 16))].slice(0, 8)
+      }
+    }
+  }
   const d = o.dailyBest && typeof o.dailyBest === 'object' ? o.dailyBest as Record<string, unknown> : null
   return {
     unlocked: clampInt(o.unlocked, 1, MAX_LEVELS, 1),
@@ -82,6 +94,7 @@ export function sanitizeCloudSave(v: unknown): CloudSave {
     bestFreeplay: numberMap(o.bestFreeplay, 9999),
     bestScore: numberMap(o.bestScore, 99_999_999),
     medals,
+    trials,
     lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',
     dailyBest: d && typeof d.day === 'number' ? {
       day: clampInt(d.day, 0, 999_999, 0),
@@ -117,6 +130,10 @@ export function mergeSaves(a: CloudSave, b: CloudSave): CloudSave {
   for (const [k, v] of Object.entries(b.medals)) {
     medals[k] = [...new Set([...(medals[k] ?? []), ...v])]
   }
+  const trials: Record<string, string[]> = { ...(a.trials ?? {}) }
+  for (const [k, v] of Object.entries(b.trials ?? {})) {
+    trials[k] = [...new Set([...(trials[k] ?? []), ...v])]
+  }
   return {
     unlocked: Math.max(a.unlocked, b.unlocked),
     stars: maxMerge(a.stars, b.stars),
@@ -124,6 +141,7 @@ export function mergeSaves(a: CloudSave, b: CloudSave): CloudSave {
     bestFreeplay: maxMerge(a.bestFreeplay, b.bestFreeplay),
     bestScore: maxMerge(a.bestScore, b.bestScore),
     medals,
+    trials,
     dailyBest: betterDaily(a.dailyBest, b.dailyBest),
     xp: Math.max(a.xp, b.xp),
     // choices, not achievements: a respec must survive the merge

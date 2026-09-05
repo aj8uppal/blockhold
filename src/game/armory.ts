@@ -64,7 +64,12 @@ export function hasArmory(save: SaveData, id: string): boolean {
  * nothing has to migrate.
  */
 export function starsEarned(save: SaveData): number {
-  return Object.values(save.stars).reduce((a, b) => a + b, 0) + crownStars(save)
+  return Object.values(save.stars).reduce((a, b) => a + b, 0) + crownStars(save) + trialStars(save)
+}
+
+/** one star per trial won: two per map, the last twenty of the board */
+export function trialStars(save: SaveData): number {
+  return Object.values(save.trials ?? {}).reduce((n, t) => n + (Array.isArray(t) ? t.length : 0), 0)
 }
 
 export function crownStars(save: SaveData): number {

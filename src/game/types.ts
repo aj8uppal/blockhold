@@ -329,4 +329,6 @@ export interface LevelDef {
   startLives: number
   startShards?: number
   intro?: string
+  /** the waves carry their own health scaling (per-group hpMult); no campaign ramp is applied */
+  flatScale?: boolean
 }

@@ -400,7 +400,8 @@ export class HUD {
       }
       // wave call button
       let btnText = ''
-      if (game.phase === 'playing' && w.phase === 'countdown' && !w.isLastWaveStarted) {
+      const noCall = !!game.trial && !game.trial.earlyCall && w.waveIndex >= 0
+      if (game.phase === 'playing' && w.phase === 'countdown' && !w.isLastWaveStarted && !noCall) {
         const bonus = w.earlyCallBonus()
         const secs = Math.ceil(w.countdown)
         // the whole bargain: the gold, the shard a defied surge pays, and what is still out there
@@ -575,6 +576,15 @@ export class HUD {
         lockBtn.innerHTML = `<span class="b-icon">${icon('lock')}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">Lv ${unlockLevel('tower', kind)}</span>`
         lockBtn.disabled = true
         lockBtn.title = `${TOWER_NAMES[kind]} unlocks at account level ${unlockLevel('tower', kind)}`
+        continue
+      }
+      // a trial's arsenal is the trial: the rest of the roster stays visible
+      // and shut, so the restriction reads as a rule and not a missing button
+      if (this.game.trial && !this.game.trial.kinds.includes(kind)) {
+        const lockBtn = el('button', 'build-option locked', this.buildMenu) as HTMLButtonElement
+        lockBtn.innerHTML = `<span class="b-icon">${icon('lock')}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">Trial</span>`
+        lockBtn.disabled = true
+        lockBtn.title = `${this.game.trial.name}: not on this board`
         continue
       }
       const btn = el('button', 'build-option', this.buildMenu) as HTMLButtonElement
@@ -969,7 +979,9 @@ export class HUD {
     if (extras.length) el('div', 'tp-traits', p, extras.join('<br>'))
 
     const actions = el('div', 'tp-actions', p)
-    tower.upgradeOptions.forEach((opt, i) => {
+    const capped = !!this.game.trial && tower.level >= this.game.trial.maxTier
+    if (capped) el('div', 'tp-traits', actions, `${icon('lock')} ${this.game.trial!.name}: tier ${this.game.trial!.maxTier} is the ceiling`)
+    if (!capped) tower.upgradeOptions.forEach((opt, i) => {
       const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, actions) as HTMLButtonElement
       btn.dataset.cost = `${opt.cost}`
       btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span><span class="u-desc">${opt.description}</span>` +

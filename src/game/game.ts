@@ -25,6 +25,7 @@ import { campaignScale } from './balanceModel.ts'
 import { OnboardingDirector } from './onboarding.ts'
 import { HERO_RANK_MAX, heroRankCost } from './hero.ts'
 import { levels, generateEndlessWaves, generateFreeplayChunk, ladderRung } from './levels.ts'
+import { trialLevel, type TrialDef, type TrialKind } from './trials.ts'
 import { Terrain, PlotInfo, THEMES } from './terrain.ts'
 import { Particles } from './particles.ts'
 import { Enemy, Soldier } from './units.ts'
@@ -238,7 +239,7 @@ export class Game implements World {
         this.hud.xpTick(gain)
       }
       const premium = this.tithePremium(e.pos.x, e.pos.z)
-      const eliteMult = e.elite ? 1.6 * (1 + 0.25 * armoryTier(this.save, 'bountyhunter')) : 1
+      const eliteMult = e.elite ? 1.6 * (1 + 0.25 * armoryTier(this.loadout, 'bountyhunter')) : 1
       const bounty = Math.max(1, Math.round(e.def.bounty * this.mods().bounty * eliteMult * premium))
       this.addGold(bounty, e.pos.x, e.pos.y + e.barY, e.pos.z)
       let shardGain = (e.def.shardDrop ?? 0) + (e.elite ? 1 : 0) + (e.def.boss ? 4 : 0)
@@ -254,7 +255,7 @@ export class Game implements World {
         this.particles.magicImpact(e.pos.x, e.pos.y + 0.4, e.pos.z, 0x8fdfff)
       }
       if (this.hero && this.hero.alive && this.hero.group.position.distanceTo(e.pos) < (this.hero.ranged ? 2.5 : 1.7)) {
-        this.hero.gainXp(e.def.bounty, this)
+        if (!this.trial) this.hero.gainXp(e.def.bounty, this)
       }
       // the payment lands a beat after the kill, so the death reads first
       const cx = e.pos.x, cy = e.pos.y + 0.4, cz = e.pos.z
@@ -309,7 +310,7 @@ export class Game implements World {
 
   /** lives to keep for three stars on this board, or null where stars are not at stake */
   starTarget(): number | null {
-    if (!this.level || this.isEndless || this.isDaily || this.isFreeplay) return null
+    if (!this.level || this.isEndless || this.isDaily || this.isFreeplay || this.trial) return null
     return starThresholds(this.mods().lives).three
   }
 
@@ -317,7 +318,7 @@ export class Game implements World {
     this.leaks++
     // a boss reaching the gate ends the defense outright
     // Gate Ward absorbs the first leak of a battle outright (never a boss)
-    if (!e.def.boss && !this.gateWardSpent && hasArmory(this.save, 'bulwark')) {
+    if (!e.def.boss && !this.gateWardSpent && hasArmory(this.loadout, 'bulwark')) {
       this.gateWardSpent = true
       this.hud.showToast('Gate Ward holds — that one cost you nothing', 2.6)
       this.sfx('lightning', 0.7)
@@ -329,7 +330,7 @@ export class Game implements World {
     // in which case it costs ten lives and the battle goes on. The old code set
     // lives straight to zero for a boss rather than charging its nominal cost,
     // so "how many lives does a boss take" has to be answered here explicitly.
-    const warded = e.def.boss && hasArmory(this.save, 'veilward')
+    const warded = e.def.boss && hasArmory(this.loadout, 'veilward')
     const cost = e.def.boss ? (warded ? 10 : this.lives) : e.def.livesCost
     const fatal = this.lives - cost <= 0
     if (fatal) this.engine.cinematic(e.pos.x, e.pos.z, 9, 2.4, 0.7)
@@ -375,7 +376,7 @@ export class Game implements World {
    * the curve stays a curve.
    */
   private campaignHpScale(): number {
-    if (this.isEndless || this.isDaily || !this.waves || !this.level) return 1
+    if (this.isEndless || this.isDaily || !this.waves || !this.level || this.level.flatScale) return 1
     // past the authored end the campaign ramp is frozen at its final value;
     // freeplayHpScale carries on from there
     const n = this.level.waves.length
@@ -560,7 +561,7 @@ export class Game implements World {
     // not in `levels` - checkpointing one put a "Resume battle" button on the
     // menu that threw out of `levelById` the moment it was pressed. They are
     // also short, seeded and repeatable, so there is nothing worth saving.
-    if (this.isDaily || this.isWatches || this.isBellfoundry || this.isFreeplay) return
+    if (this.isDaily || this.isWatches || this.isBellfoundry || this.isFreeplay || this.trial) return
     if (this.enemies.some(e => e.alive) || this.projectiles.length) return
     if (this.waves.phase === 'spawning') return
     const waveIndex = this.waves.waveIndex + 1
@@ -768,6 +769,7 @@ export class Game implements World {
     const h = this.hero
     if (this.paused || !h) return
     if (h.signatureRank >= HERO_RANK_MAX) { this.sfx('error'); return }
+    if (this.trial) { this.sfx('error'); this.hud.showToast(`${this.trial.name}: the champion fights as he is`, 2.4); return }
     const cost = heroRankCost(h.signatureRank)
     if (this.shards < cost) { this.sfx('error'); this.hud.showToast(`Needs ${cost} shards`, 2); return }
     this.shards -= cost
@@ -821,27 +823,41 @@ export class Game implements World {
 
   /** Second Wind: the hero returns in half the time */
   get heroReviveMult(): number {
-    return hasArmory(this.save, 'secondwind') ? 0.5 : 1
+    return hasArmory(this.loadout, 'secondwind') ? 0.5 : 1
   }
 
   /** Full Salvage: sell for everything invested rather than 70% */
   get sellRefund(): number {
-    return hasArmory(this.save, 'salvage') ? 1 : SELL_REFUND
+    return hasArmory(this.loadout, 'salvage') ? 1 : SELL_REFUND
   }
 
   /** Gate Ward: eat the first leak of the battle */
   private gateWardSpent = false
 
   soldierHpMult(): number {
-    return 1 + 0.15 * armoryTier(this.save, 'drill')
+    return 1 + 0.15 * armoryTier(this.loadout, 'drill')
   }
 
   armoryTier(id: string): number {
-    return armoryTier(this.save, id)
+    return armoryTier(this.loadout, id)
+  }
+
+  /**
+   * The trial being fought, if any. Trials switch the Armory off, cap the
+   * tier, restrict the families and hold the hero at level one; every rule
+   * lives on the def, and the game only asks.
+   */
+  trial: TrialDef | null = null
+  private blankLoadout: SaveData | null = null
+  /** the save the Armory is read from: the player's, or a blank one in a trial */
+  private get loadout(): SaveData {
+    if (!this.trial) return this.save
+    if (!this.blankLoadout || this.blankLoadout.xp !== this.save.xp) this.blankLoadout = { ...this.save, armory: {} }
+    return this.blankLoadout
   }
 
   trapCooldownMult(): number {
-    return 1 - 0.2 * armoryTier(this.save, 'runesmith')
+    return 1 - 0.2 * armoryTier(this.loadout, 'runesmith')
   }
 
   findPath(fromX: number, fromZ: number, toX: number, toZ: number): THREE.Vector3[] | null {
@@ -849,7 +865,7 @@ export class Game implements World {
   }
 
   meteorCooldown(): number {
-    return METEOR_CD * (armoryTier(this.save, 'comet') > 0 ? 0.8 : 1)
+    return METEOR_CD * (armoryTier(this.loadout, 'comet') > 0 ? 0.8 : 1)
   }
 
   // ---------------- level lifecycle ----------------
@@ -915,7 +931,7 @@ export class Game implements World {
     difficulty: Difficulty = 'normal',
     heroId: HeroId = 'aldric',
     mode: 'campaign' | 'endless' = 'campaign',
-    opts: { seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean } = {},
+    opts: { seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean, trial?: TrialDef } = {},
   ): void {
     this.disposeLevel()
     const resume = opts.resume ?? null
@@ -930,7 +946,11 @@ export class Game implements World {
     this.isFreeplay = false
     this.liveXp = 0
     this.isEndless = mode === 'endless'
-    this.level = this.isEndless ? { ...level, waves: generateEndlessWaves(level, undefined, this.runSeed) } : level
+    this.trial = opts.trial ?? null
+    this.blankLoadout = null
+    if (this.trial) heroId = 'aldric'   // a trial is fought by the first champion, at level one
+    this.level = this.trial ? trialLevel(level, this.trial.kind, this.trial.startGold)
+      : this.isEndless ? { ...level, waves: generateEndlessWaves(level, undefined, this.runSeed) } : level
     level = this.level
     this.difficulty = difficulty
     this.save.lastHero = heroId
@@ -961,9 +981,9 @@ export class Game implements World {
     this.engine.resetView(level.width, level.height,
       tallestLandmark((level.landmarks ?? []).map(([, , k]) => k)))
 
-    this.gold = level.startGold + 40 * armoryTier(this.save, 'coffers')
-    this.shards = (level.startShards ?? 2) + 3 * armoryTier(this.save, 'prospector')
-    this.lives = difficultyMods(level.id, difficulty, this.isEndless ? 'endless' : 'campaign').lives
+    this.gold = level.startGold + 40 * armoryTier(this.loadout, 'coffers')
+    this.shards = (level.startShards ?? 2) + 3 * armoryTier(this.loadout, 'prospector')
+    this.lives = this.trial ? this.trial.lives : difficultyMods(level.id, difficulty, this.isEndless ? 'endless' : 'campaign').lives
     this.speed = 1
     this.paused = false
     this.time = 0
@@ -996,7 +1016,7 @@ export class Game implements World {
         )
         // Long Night Rations: a life back every ten waves held past the end
         if (depth > 0 && depth % 10 === 0 && (this.isFreeplay || this.isEndless)) {
-          const back = armoryTier(this.save, 'rations') >= 2 ? 2 : armoryTier(this.save, 'rations') >= 1 ? 1 : 0
+          const back = armoryTier(this.loadout, 'rations') >= 2 ? 2 : armoryTier(this.loadout, 'rations') >= 1 ? 1 : 0
           if (back > 0) {
             this.lives += back
             this.hud.spawnFloater(window.innerWidth / 2, 156, `+${back} ${back === 1 ? 'life' : 'lives'} - rations`, 'gold')
@@ -1043,10 +1063,11 @@ export class Game implements World {
     this.firstBuildAt = -1
     this.heroHasMoved = false
     // the guided opening runs once, on a player's very first battle
-    this.onboarding = (!this.save.taughtBasics && !this.isDaily && !this.isWatches)
+    this.onboarding = (!this.save.taughtBasics && !this.isDaily && !this.isWatches && !this.trial)
       ? new OnboardingDirector() : null
     if (this.isWatches) this.raiseGhosts()
     if (resume) this.applyCheckpoint(resume)
+    else if (this.trial) this.hud.showToast(this.trial.rules, 7)
     else if (level.intro) this.hud.showToast(level.intro, 5)
   }
 
@@ -1061,7 +1082,7 @@ export class Game implements World {
    * where the campaign left it rather than restarting.
    */
   holdTheLine(): void {
-    if (this.phase !== 'victory' || !this.level || !this.waves || this.isEndless || this.isDaily || this.isWatches || this.isBellfoundry) return
+    if (this.phase !== 'victory' || !this.level || !this.waves || this.isEndless || this.isDaily || this.isWatches || this.isBellfoundry || this.trial) return
     this.isFreeplay = true
     this.liveXp = 0
     this.phase = 'playing'
@@ -1341,7 +1362,7 @@ export class Game implements World {
         Math.round(this.earlyCallSeconds) * 2 +
         (this.isEndless ? reached * 60 : won ? 1000 : 0)
       ) * diffMult)
-      const scoreKey = `${this.level.id}:${this.isEndless ? 'endless' : this.isFreeplay ? `freeplay:${this.difficulty}` : this.difficulty}`
+      const scoreKey = `${this.level.id}:${this.trial ? `trial:${this.trial.kind}` : this.isEndless ? 'endless' : this.isFreeplay ? `freeplay:${this.difficulty}` : this.difficulty}`
       this.lastPrevBestScore = this.save.bestScore[scoreKey] ?? 0
       this.lastNewBestScore = this.lastScore > this.lastPrevBestScore
       if (this.lastNewBestScore) this.save.bestScore[scoreKey] = this.lastScore
@@ -1369,6 +1390,13 @@ export class Game implements World {
         const prevBestWave = this.save.bestEndless[this.level.id] ?? 0
         this.lastNewWaveRecord = reached > prevBestWave
         if (this.lastNewWaveRecord) this.save.bestEndless[this.level.id] = reached
+      } else if (won && this.trial) {
+        // a trial is worth one Armory star, once; it never touches the map's
+        // stars, medals or unlocks
+        const wonList = this.save.trials[this.level.id] ?? []
+        this.lastNewTrialStar = !wonList.includes(this.trial.kind)
+        if (this.lastNewTrialStar) this.save.trials[this.level.id] = [...wonList, this.trial.kind]
+        stars = 1
       } else if (won) {
         const maxLives = this.mods().lives
         stars = starsFor(this.lives, maxLives)
@@ -1386,11 +1414,12 @@ export class Game implements World {
       // experience: every wave held counts, win or lose, and the account
       // levels on it. Ghost watches are the one thing that pays nothing extra
       // over the first watch, so replaying a siege three times is not a farm.
-      const firstClear = won && !this.isEndless && !this.isDaily && !this.isWatches && !this.isBellfoundry && !hadStars
+      const firstClear = won && !this.isEndless && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial && !hadStars
       this.lastFirstClear = firstClear
       this.lastXpBefore = this.save.xp
       this.lastXpEarned = battleXp({
-        mode: this.isDaily ? 'daily' : this.isWatches ? 'watches' : this.isBellfoundry ? 'bellfoundry' : this.isEndless || this.isFreeplay ? 'endless' : 'campaign',
+        // a trial pays at the Watches' rate: short, repeatable, and not a farm
+        mode: this.isDaily ? 'daily' : this.isWatches || this.trial ? 'watches' : this.isBellfoundry ? 'bellfoundry' : this.isEndless || this.isFreeplay ? 'endless' : 'campaign',
         difficulty: this.difficulty,
         // freeplay pays only for the waves past the clear, which was paid for already
         wavesHeld: this.isFreeplay ? Math.max(0, this.wavesCleared() - (this.waves?.authoredWaves ?? 0)) : this.wavesCleared(),
@@ -1418,6 +1447,7 @@ export class Game implements World {
   private lastXpBefore = 0
   private lastXpEarned = 0
   private lastFirstClear = false
+  private lastNewTrialStar = false
   /**
    * Experience earned so far this battle, as it happens.
    *
@@ -1500,6 +1530,8 @@ export class Game implements World {
     starLossLeak: { name: string, wave: number } | null,
     difficulty: Difficulty,
     firstClear: boolean,
+    /** the trial this was, and whether its star is new */
+    trial?: { kind: TrialKind, name: string, newStar: boolean },
   } {
     return {
       daily: this.isDaily ? {
@@ -1548,6 +1580,7 @@ export class Game implements World {
       starLossLeak: this.starLossLeak,
       difficulty: this.difficulty,
       firstClear: this.lastFirstClear,
+      trial: this.trial ? { kind: this.trial.kind, name: this.trial.name, newStar: this.lastNewTrialStar } : undefined,
     }
   }
 
@@ -1795,7 +1828,7 @@ export class Game implements World {
         this.abilities.meteor.max = this.meteorCooldown()
         this.abilities.meteor.cooldown = this.abilities.meteor.max
         this.sfx('meteor')
-        const count = METEOR_COUNT + (armoryTier(this.save, 'comet') > 0 ? 1 : 0)
+        const count = METEOR_COUNT + (armoryTier(this.loadout, 'comet') > 0 ? 1 : 0)
         for (let i = 0; i < count; i++) {
           const at = g.clone().add(new THREE.Vector3(randRange(-0.8, 0.8), 0, randRange(-0.8, 0.8)))
           at.y = 0
@@ -2054,6 +2087,7 @@ export class Game implements World {
     // the ladder is enforced here, not only in the menu, so a stale button or a
     // scripted call cannot build what the account has not earned
     if (!isUnlocked(this.save, 'tower', kind)) { this.sfx('error'); return }
+    if (this.trial && !this.trial.kinds.includes(kind)) { this.sfx('error'); this.hud.showToast(`${this.trial.name}: that family is not on this board`, 2.4); return }
     const cost = towerTrees[kind].levels[0].cost
     if (this.gold < cost) { this.sfx('error'); this.hud.flashGold(); return }
     this.gold -= cost
@@ -2254,7 +2288,7 @@ export class Game implements World {
   sellTrap(trap: Trap): void {
     if (this.paused) return
     if (trap.kills > 0 || trap.damage > 0) this.retiredKillers.push({ name: trap.def.name, kills: trap.kills, damage: trap.damage })
-    const refund = Math.round(trap.def.cost * (hasArmory(this.save, 'salvage') ? 1 : 0.6))
+    const refund = Math.round(trap.def.cost * (hasArmory(this.loadout, 'salvage') ? 1 : 0.6))
     this.addGold(refund, trap.group.position.x, 0.4, trap.group.position.z)
     this.goldEarned -= refund  // refunds are not earnings
     trap.spot.occupied = false
@@ -2409,6 +2443,7 @@ export class Game implements World {
     if (this.paused) return
     const opt = tower.upgradeOptions[optionIndex]
     if (!opt) return
+    if (this.trial && tower.level >= this.trial.maxTier) { this.sfx('error'); this.hud.showToast(`${this.trial.name}: tier ${this.trial.maxTier} is the ceiling`, 2.4); return }
     if (this.gold < opt.cost) { this.sfx('error'); this.hud.flashGold(); return }
     this.gold -= opt.cost
     tower.upgrade(tower.level === 3 ? optionIndex : 0, this)
@@ -2461,6 +2496,8 @@ export class Game implements World {
 
   callWave(): void {
     if (!this.waves || this.phase !== 'playing' || this.paused) return
+    // Silent Guns: the siege is one wave and it is not called in early
+    if (this.trial && !this.trial.earlyCall && this.waves.waveIndex >= 0) { this.sfx('error'); return }
     const secondsLeft = this.waves.countdown
     const surgeNext = this.waves.nextWaveIsSurge()
     const bonus = this.waves.callNext()

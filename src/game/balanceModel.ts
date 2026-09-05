@@ -138,6 +138,8 @@ export interface BuildProfile {
    * late maps will pick whichever side answers the board.
    */
   bothBranches?: boolean
+  /** highest tier the build may reach (trials cap at 4: no capstones) */
+  maxTier?: number
 }
 
 export const BASE_KINDS: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks']
@@ -166,11 +168,12 @@ export function affordableDps(gold: number, plots = 14, profile: BuildProfile = 
     let running = 0
     for (const lvl of tree.levels) { running += lvl.cost; rungs.push({ cost: running, def: lvl }) }
     // both branches, both crowns: the best rung on either side counts
+    const maxTier = profile.maxTier ?? 5
     for (const b of (profile.bothBranches ? [0, 1] : [0]) as (0 | 1)[]) {
       const branch = tree.branches[b]
-      rungs.push({ cost: running + branch.cost, def: branch })
+      if (maxTier >= 4) rungs.push({ cost: running + branch.cost, def: branch })
       const cap = tree.capstones[b]
-      rungs.push({ cost: running + branch.cost + cap.cost, def: cap })
+      if (maxTier >= 5) rungs.push({ cost: running + branch.cost + cap.cost, def: cap })
     }
     for (const rung of rungs) {
       if (!rung.def.damage || !rung.def.attackInterval) continue
@@ -240,7 +243,8 @@ export function judgeWave(
     if (d.flying) share *= ANTI_AIR_SHARE
     share = Math.max(0.05, share)
 
-    const hp = d.hp * mods.enemyHp * surge * g.count * campaignScale(waveIndex, level.waves.length)
+    const hp = d.hp * mods.enemyHp * surge * g.count * (g.hpMult ?? 1)
+      * (level.flatScale ? 1 : campaignScale(waveIndex, level.waves.length))
     const cost = hp / share
     lanes[li].effortHp += cost
     effortHp += cost

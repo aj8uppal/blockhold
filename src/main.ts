@@ -8,6 +8,7 @@ import { leaderboardEnabled, submitDaily } from './core/leaderboard.ts'
 import { acquisitionSource, isEmbedded } from './core/platform.ts'
 import { dailySeed, dailyNumber, newRunSeed } from './game/ruleset.ts'
 import { dailyLevel } from './game/levels.ts'
+import { trialFor } from './game/trials.ts'
 import { challengeIsCurrent, readChallenge } from './game/share.ts'
 import { canRecordTape, downloadTape, sharePostcard, shareTape, tapeFileExtension } from './core/capture.ts'
 import { Game } from './game/game.ts'
@@ -93,7 +94,8 @@ hud.onFullscreen = toggleFullscreen
 
 const isTouchDevice = () => window.matchMedia('(pointer: coarse)').matches
 
-screens.onPlayLevel = (id, difficulty, hero, mode) => {
+/** the chrome every battle start shares: HUD up, screens down, fullscreen on a phone */
+function enterBattle(): void {
   hud.reset()
   hud.setChrome(true)
   screens.show('none')
@@ -108,6 +110,16 @@ screens.onPlayLevel = (id, difficulty, hero, mode) => {
       setTimeout(() => hud.showToast('Tip: "Play fullscreen" on the main menu shows how to install Blockhold as a real fullscreen app', 8), 1500)
     }
   }
+}
+
+screens.onPlayTrial = (id, kind) => {
+  enterBattle()
+  const level = levelById(id)
+  game.startLevel(level, 'normal', 'aldric', 'campaign', { trial: trialFor(level, kind) })
+}
+
+screens.onPlayLevel = (id, difficulty, hero, mode) => {
+  enterBattle()
   // end-screen replays reuse the difficulty/hero/mode of the run that just ended
   game.startLevel(
     levelById(id),

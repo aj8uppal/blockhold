@@ -817,6 +817,19 @@ button:focus-visible {
 }
 .chip-value { font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tp-traits { font-size: 11px; line-height: 1.45; color: rgba(244, 232, 207, 0.78); margin-top: 5px; }
+.trial-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.trial-option {
+  text-align: left; padding: 10px 12px; border-radius: 12px; cursor: pointer;
+  background: rgba(0, 0, 0, 0.26); border: 1px solid rgba(232, 178, 60, 0.3); color: #f4e8cf;
+  display: flex; flex-direction: column; gap: 4px; font: inherit;
+}
+.trial-option:hover { border-color: rgba(232, 178, 60, 0.7); }
+.trial-option.won { border-color: rgba(232, 178, 60, 0.6); background: rgba(60, 40, 14, 0.4); }
+.trial-name { font-weight: 800; font-size: 13.5px; }
+.trial-star { color: #ffd98a; }
+.trial-blurb { font-size: 11.5px; color: rgba(244, 232, 207, 0.78); }
+.trial-stats { font-size: 10.5px; color: rgba(244, 232, 207, 0.6); }
+@media (max-width: 640px) { .trial-row { grid-template-columns: 1fr; } }
 .guide-card { max-height: min(86vh, 720px); overflow-y: auto; }
 .guide-sub { font-size: 12px; color: rgba(244, 232, 207, 0.7); margin: -4px 0 10px; }
 .guide-list { display: grid; gap: 8px; }

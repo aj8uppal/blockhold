@@ -1,9 +1,10 @@
 import { renderFieldGuide } from './fieldGuide.ts'
-import { levels } from '../game/levels.ts'
+import { levels, levelById } from '../game/levels.ts'
 import { Difficulty, HeroId } from '../game/types.ts'
 import { difficultyMods } from '../game/difficulty.ts'
 import { HERO_DEFS } from '../game/hero.ts'
-import { starsAvailable, starsEarned, buyTier, respec, armoryTier, crownStars, visibleTracks } from '../game/armory.ts'
+import { starsAvailable, starsEarned, buyTier, respec, armoryTier, crownStars, visibleTracks, trialStars, ARMORY_TOTAL_COST } from '../game/armory.ts'
+import { TRIAL_KINDS, TRIAL_NAMES, TRIAL_ICONS, trialFor, trialsWon, type TrialKind } from '../game/trials.ts'
 import { exportSave, importSave, writeSave } from '../core/save.ts'
 import type { SaveData } from '../core/save.ts'
 import { icon } from './icons.ts'
@@ -70,6 +71,7 @@ export interface BattleStats {
   difficulty: Difficulty,
   /** this win was the map's first */
   firstClear: boolean,
+  trial?: { kind: TrialKind, name: string, newStar: boolean },
 }
 
 /**
@@ -81,7 +83,7 @@ export interface BattleStats {
  * result card and the menu, so a session never closes without a reason to
  * open the next one.
  */
-export interface Objective { text: string, action: 'retry' | 'next' | 'replay' | 'veteran' | 'hold' | 'levels', levelId: string }
+export interface Objective { text: string, action: 'retry' | 'next' | 'replay' | 'veteran' | 'trial' | 'hold' | 'levels', levelId: string, trial?: TrialKind }
 
 export function nextObjective(save: SaveData, ctx: { won: boolean, levelId: string, stars: number, leak?: { name: string, wave: number } | null, livesShort?: number, firstClear?: boolean }): Objective {
   const idx = levels.findIndex(l => l.id === ctx.levelId)
@@ -106,6 +108,10 @@ export function nextObjective(save: SaveData, ctx: { won: boolean, levelId: stri
   }
   const medals = save.medals[ctx.levelId] ?? []
   if (!medals.includes('veteran')) return { text: `Conquer ${name} on Veteran`, action: 'veteran', levelId: ctx.levelId }
+  // the two trials are the map's last two stars
+  const won = trialsWon(save.trials, ctx.levelId)
+  const trial = TRIAL_KINDS.find(k => !won.includes(k))
+  if (trial) return { text: `${TRIAL_NAMES[trial]} on ${name}: one more star for the Armory`, action: 'trial', levelId: ctx.levelId, trial }
   if (nextLvl && (save.stars[nextLvl.id] ?? 0) === 0) return { text: `Next: ${nextLvl.name}`, action: 'next', levelId: nextLvl.id }
   const unbeaten = levels.find(l => (save.stars[l.id] ?? 0) === 0)
   if (unbeaten) return { text: `Next: ${unbeaten.name}`, action: 'levels', levelId: unbeaten.id }
@@ -153,6 +159,7 @@ export class Screens {
   onPlayBellfoundry: () => void = () => {}
   onNextWatch: () => void = () => {}
   onHoldTheLine: () => void = () => {}
+  onPlayTrial: (levelId: string, kind: TrialKind) => void = () => {}
 
   constructor(private save: () => SaveData) {
     this.root = document.getElementById('screens')!
@@ -357,6 +364,7 @@ export class Screens {
       el('div', 'level-stars', card, '★'.repeat(stars) + '<span class="dim">' + '★'.repeat(3 - stars) + '</span>' +
         (medals.includes('noleak') ? `<span class="level-medal" title="Flawless: won without a single leak"> ${icon('medal')}</span>` : '') +
         (medals.includes('veteran') ? `<span class="level-medal" title="Conquered on Veteran"> ${icon('medal', 'vet')}</span>` : '') +
+        (trialsWon(save.trials, lvl.id).length ? `<span class="level-medal" title="Trials won"> ${icon('flag')}${trialsWon(save.trials, lvl.id).length}</span>` : '') +
         (best > 0 ? `<span class="level-endless"> ${icon('moon')}${best}</span>` : '') +
         (held > 0 ? `<span class="level-endless" title="Waves held past the end"> ${icon('castle')}+${held}</span>` : ''))
       // the goal ladder: always show the next rung
@@ -562,6 +570,23 @@ export class Screens {
       mkMode('endless', `${icon('moon')} The Long Night${best > 0 ? ` · best ${best}` : ''}`)
     }
 
+    if (beaten) {
+      // Two more stars per map, each behind a short test. Shown where the map
+      // is chosen, so the pursuit is visible every time the player comes back.
+      const won = trialsWon(save.trials, levelId)
+      el('div', 'diff-sub', card, `Trials · ${won.length}/2 ★`)
+      const trialRow = el('div', 'trial-row', card)
+      for (const kind of TRIAL_KINDS) {
+        const def = trialFor(levelById(levelId), kind)
+        const done = won.includes(kind)
+        const btn = el('button', `trial-option${done ? ' won' : ''}`, trialRow) as HTMLButtonElement
+        btn.innerHTML = `<span class="trial-name">${icon(TRIAL_ICONS[kind])} ${def.name}${done ? ' <span class="trial-star">★</span>' : ''}</span>` +
+          `<span class="trial-blurb">${def.blurb}</span>` +
+          `<span class="trial-stats">${icon('coin')} ${def.startGold} · ${icon('heart')} 1 · ${icon('gem')} ${def.shards} · tier ${def.maxTier} cap · no Armory</span>`
+        btn.onclick = () => this.onPlayTrial(levelId, kind)
+      }
+    }
+
     el('div', 'diff-sub', card, 'Choose your champion')
     const heroRow = el('div', 'hero-row', card)
     const heroBtns = new Map<HeroId, HTMLButtonElement>()
@@ -617,9 +642,15 @@ export class Screens {
     const card = el('div', `end-card ${won ? 'won' : 'lost'}`, wrap)
     if (daily) { this.renderDailyResult(card, daily, won, stats); return }
     const freeplay = stats?.freeplay ?? false
-    el('div', 'end-emoji', card, icon(endless ? 'moon' : freeplay ? 'castle' : won ? 'trophy' : 'skull'))
-    el('h2', 'end-title', card, endless ? 'The Long Night ends' : freeplay ? 'The line breaks' : won ? 'Victory!' : 'The gate has fallen')
-    if (freeplay && stats) {
+    const trial = stats?.trial
+    el('div', 'end-emoji', card, icon(trial ? TRIAL_ICONS[trial.kind] : endless ? 'moon' : freeplay ? 'castle' : won ? 'trophy' : 'skull'))
+    el('h2', 'end-title', card, trial ? (won ? `${trial.name} held!` : `${trial.name} lost`) : endless ? 'The Long Night ends' : freeplay ? 'The line breaks' : won ? 'Victory!' : 'The gate has fallen')
+    if (trial && stats) {
+      // a trial is one star, once; the card says whether this was the once
+      el('div', 'end-sub', card, won
+        ? (trial.newStar ? `A star for the Armory ${icon('medal')} — ${starsAvailable(this.save())}★ to spend` : 'Already won, and held again.')
+        : stats.lastLeak ? `A ${stats.lastLeak.name} broke through. One life was the whole point.` : 'The trial is lost. Try it again with what you learned.')
+    } else if (freeplay && stats) {
       // how far past the map's end the line held, which is the whole score
       const held = Math.max(0, stats.freeplayDepth - 1)
       el('div', 'end-sub', card,
@@ -670,7 +701,7 @@ export class Screens {
     }
     if (stats) this.renderXp(card, stats)
     // one named next objective, always, and the button that does it
-    const objective = !endless && !freeplay && idx >= 0
+    const objective = !endless && !freeplay && !trial && idx >= 0
       ? nextObjective(this.save(), { won, levelId, stars, leak: stats?.lastLeak, livesShort: stats?.livesShort, firstClear: stats?.firstClear ?? false })
       : null
     if (objective) el('div', 'end-objective', card, `${icon('flag')} ${objective.text}`)
@@ -679,19 +710,24 @@ export class Screens {
       const vet = el('button', 'btn primary', row, `${icon('medal', 'vet')} Play on Veteran`) as HTMLButtonElement
       vet.onclick = () => this.onPlayLevel(levelId, 'veteran')
     }
+    if (objective?.action === 'trial' && objective.trial) {
+      const t = objective.trial
+      const btn = el('button', 'btn primary', row, `${icon(TRIAL_ICONS[t])} ${TRIAL_NAMES[t]}`) as HTMLButtonElement
+      btn.onclick = () => this.onPlayTrial(levelId, t)
+    }
     // A cleared map is not over. Holding the line keeps the board the player
     // built and keeps the waves coming, with the ladder of bosses beyond.
-    if (won && !endless && !freeplay && !daily && this.watchesRemaining === 0) {
+    if (won && !endless && !freeplay && !daily && !trial && this.watchesRemaining === 0) {
       const hold = el('button', 'btn primary', row, `${icon('castle')} Hold the line`) as HTMLButtonElement
       hold.title = 'Keep your defense and keep fighting: harder waves, bigger bosses, a record to set'
       hold.onclick = () => this.onHoldTheLine()
     }
-    if (hasNext) {
+    if (hasNext && !trial) {
       const next = el('button', `btn${won && !endless && !freeplay ? '' : ' primary'}`, row, 'Next battle →') as HTMLButtonElement
       next.onclick = () => this.onPlayLevel(levels[idx + 1].id)
     }
     const retry = el('button', `btn ${won && !endless ? '' : 'primary'}`, row, endless ? 'Descend again' : won ? 'Replay' : 'Try again') as HTMLButtonElement
-    retry.onclick = () => this.onPlayLevel(levelId, undefined, undefined, endless ? 'endless' : 'campaign')
+    retry.onclick = () => trial ? this.onPlayTrial(levelId, trial.kind) : this.onPlayLevel(levelId, undefined, undefined, endless ? 'endless' : 'campaign')
     if (this.watchesRemaining > 0) {
       const nextWatch = el('button', 'btn primary', row,
         `Stand the next watch (${4 - this.watchesRemaining} of 3)`) as HTMLButtonElement
@@ -703,7 +739,8 @@ export class Screens {
     // Every finished run is worth handing on, not only the Daily's. The Long
     // Night record in particular is the number players most want to argue
     // about, and it used to have no way off the device that set it.
-    if (stats && this.runSeedForShare) {
+    // a trial's challenge link would open the campaign board, not the trial
+    if (stats && this.runSeedForShare && !trial) {
       const shareLabel = `${icon('share')} ${endless ? 'Share your depth' : 'Share this hold'}`
       const share = el('button', 'btn ghost', row, shareLabel) as HTMLButtonElement
       share.title = 'Copy a result and a link that drops a friend onto this exact board'
@@ -950,8 +987,9 @@ export class Screens {
 
     const rerender = () => {
       const crowns = crownStars(save)
-      starsLine.innerHTML = `<b>${starsAvailable(save)}★</b> to spend · ${starsEarned(save)}★ earned` +
-        (crowns ? ` <span class="dim">(${crowns} crown ${crowns === 1 ? 'star' : 'stars'} from Veteran clears)</span>` : ' <span class="dim">· a Veteran clear adds a fourth crown star</span>')
+      const trialN = trialStars(save)
+      starsLine.innerHTML = `<b>${starsAvailable(save)}★</b> to spend · ${starsEarned(save)}★ of ${ARMORY_TOTAL_COST} earned` +
+        (crowns ? ` <span class="dim">(${crowns} crown ${crowns === 1 ? 'star' : 'stars'} from Veteran clears${trialN ? `, ${trialN} from trials` : ''})</span>` : ' <span class="dim">· a Veteran clear adds a fourth crown star, and each map\'s two trials add two more</span>')
       grid.innerHTML = ''
       for (const track of visibleTracks(save)) {
         const tier = armoryTier(save, track.id)  // clamped to the track's real tier count

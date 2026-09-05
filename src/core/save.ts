@@ -9,6 +9,8 @@ export interface SaveData {
   bestFreeplay: Record<string, number>
   bestScore: Record<string, number>    // "levelId:difficulty|endless" -> best score
   medals: Record<string, string[]>     // level id -> earned medals (veteran, noleak)
+  /** level id -> trials won ('relief', 'silent'); each is an Armory star */
+  trials: Record<string, string[]>
   lastHero: string
   /** the guided first battle has been played, so it never runs again */
   taughtBasics: boolean
@@ -53,7 +55,7 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
 }
 
 const DEFAULT_SAVE = (): SaveData =>
-  ({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestFreeplay: {}, bestScore: {}, medals: {}, seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false, xp: 0 })
+  ({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestFreeplay: {}, bestScore: {}, medals: {}, trials: {}, seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false, xp: 0 })
 
 /** validate anything claiming to be a save; the same gate for disk and for imports */
 export function parseSave(d: unknown): SaveData | null {
@@ -97,6 +99,12 @@ export function parseSave(d: unknown): SaveData | null {
             if (Array.isArray(v)) medals[k] = v.filter((m): m is string => typeof m === 'string' && m.length < 16)
           }
         }
+        const trials: Record<string, string[]> = {}
+        if (o.trials && typeof o.trials === 'object') {
+          for (const [k, v] of Object.entries(o.trials as Record<string, unknown>)) {
+            if (Array.isArray(v)) trials[k] = [...new Set(v.filter((m): m is string => typeof m === 'string' && m.length < 16))]
+          }
+        }
         return {
           unlocked: clampInt(o.unlocked, 1, MAX_LEVELS, 1),
           stars,
@@ -105,6 +113,7 @@ export function parseSave(d: unknown): SaveData | null {
           bestFreeplay,
           bestScore,
           medals,
+          trials,
           lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',
           dailyBest: parseDailyBest(o.dailyBest),
           changedAt: clampInt(o.changedAt, 0, Number.MAX_SAFE_INTEGER, 0) || undefined,
