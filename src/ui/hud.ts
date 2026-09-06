@@ -26,8 +26,8 @@ function chip(label: string, value: string, cls = ''): string {
   return `<span class="chip${cls ? ' ' + cls : ''}"><span class="chip-label">${label}</span><span class="chip-value">${value}</span></span>`
 }
 
-const TOWER_ICONS: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm', beacon: 'flame', ballista: 'target' }
-const TOWER_NAMES: Record<TowerKind, string> = { arrow: 'Arrow', mage: 'Mage', cannon: 'Cannon', barracks: 'Barracks', beacon: 'Beacon', ballista: 'Ballista' }
+const TOWER_ICONS: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm', beacon: 'flame', ballista: 'target', seraph: 'seraph' }
+const TOWER_NAMES: Record<TowerKind, string> = { arrow: 'Arrow', mage: 'Mage', cannon: 'Cannon', barracks: 'Barracks', beacon: 'Beacon', ballista: 'Ballista', seraph: 'Seraph' }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, html?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag)
@@ -568,7 +568,7 @@ export class HUD {
   openBuildMenu(plot: PlotInfo, x: number, y: number): void {
     this.armedBuild = null
     this.buildMenu.innerHTML = ''
-    const kinds: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks', 'ballista', 'beacon']
+    const kinds: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks', 'ballista', 'beacon', 'seraph']
     for (const kind of kinds) {
       const def = towerTrees[kind].levels[0]
       // a tower the account has not reached stays on the menu, greyed and

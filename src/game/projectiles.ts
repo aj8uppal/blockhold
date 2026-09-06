@@ -488,8 +488,53 @@ function distToSegmentXZ(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): 
   return Math.hypot(p.x - cx, p.z - cz)
 }
 
+/**
+ * A ray of light: instant, drawn as a bright bar from the heart of the idol to
+ * the body it struck, gone in a tenth of a second. One shared geometry; the
+ * material is per ray because its opacity fades.
+ */
+const RAY_GEO = new THREE.BoxGeometry(1, 1, 1)
+const RAY_LIFE = 0.1
+class RayProjectile implements Projectile {
+  mesh: THREE.Mesh
+  done = false
+  private life = 0
+  private mat: THREE.MeshBasicMaterial
+  private width: number
+  constructor(spec: Extract<ProjectileSpec, { kind: 'ray' }>) {
+    const { world, target, from } = spec
+    const to = target.pos.clone().setY(target.pos.y + 0.4)
+    this.width = spec.width
+    this.mat = new THREE.MeshBasicMaterial({ color: spec.color, transparent: true, opacity: 0.95, toneMapped: false, depthWrite: false })
+    this.mesh = new THREE.Mesh(RAY_GEO, this.mat)
+    const mid = from.clone().add(to).multiplyScalar(0.5)
+    this.mesh.position.copy(mid)
+    this.mesh.lookAt(to)
+    this.mesh.scale.set(spec.width, spec.width, Math.max(0.05, from.distanceTo(to)))
+    // the hit lands now
+    if (target.alive) {
+      const dealt = target.takeDamage(spec.damage, spec.damageType, world, { crit: spec.crit, credit: spec.credit, flavor: spec.damageType === 'magic' ? 'magic' : 'fire' })
+      if (dealt > 0) {
+        if (spec.armorShred) target.shredArmor(spec.armorShred)
+        if (spec.crit) world.particles.magicImpact(to.x, to.y, to.z, spec.color)
+        else world.particles.hitSpark(to.x, to.y, to.z, spec.color)
+      }
+    }
+  }
+  update(dt: number): void {
+    this.life += dt
+    const k = Math.max(0, 1 - this.life / RAY_LIFE)
+    this.mat.opacity = 0.95 * k
+    // the bar thins as it fades, so the flash reads as light and not a stick
+    this.mesh.scale.x = this.mesh.scale.y = Math.max(0.01, this.width * (0.5 + 0.5 * k))
+    if (this.life >= RAY_LIFE) this.done = true
+  }
+  dispose(): void { this.mat.dispose() }
+}
+
 export function createProjectile(spec: ProjectileSpec): Projectile {
   switch (spec.kind) {
+    case 'ray': return new RayProjectile(spec)
     case 'arrow': return new ArrowProjectile(spec)
     case 'bolt': return new BoltProjectile(spec)
     case 'bomb': return new BombProjectile(spec)

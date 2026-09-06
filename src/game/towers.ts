@@ -4,7 +4,7 @@ import {
   OVERCHARGE_SHARD_COST, OVERCHARGE_DURATION, OVERCHARGE_COOLDOWN, OVERCHARGE_RATE_BONUS,
 } from './types.ts'
 import { towerTrees, investedGold, resolveCapstone, SELL_REFUND, RETAINER, MUSTER_COOLDOWN, MUSTER_LIFETIME } from './towerDefs.ts'
-import { addConvergenceRune } from './projectiles.ts'
+import { addConvergenceRune, addBurnZone } from './projectiles.ts'
 import { World } from './world.ts'
 import { Enemy, Soldier } from './units.ts'
 import { PlotInfo } from './terrain.ts'
@@ -146,7 +146,15 @@ function towerCrownHeight(model: string): number {
   if (model.startsWith('cannon')) return t5 ? 1.35 : 1.15
   if (model.startsWith('beacon')) return t5 ? 1.75 : 1.5
   if (model.startsWith('ballista')) return t5 ? 1.2 : 1.0
+  if (model.startsWith('seraph')) return t5 ? 3.1 : model.includes('4') ? 2.7 : 2.0 + 0.3 * (Number(model.slice(-1)) || 1)
   return t5 ? 1.45 : 1.25
+}
+
+/** the colour of each Seraph's light: the aspects differ, the crowns burn hotter */
+const SERAPH_LIGHT: Record<string, number> = {
+  seraph1: 0xfff1b0, seraph2: 0xfff1b0, seraph3: 0xfff4c8,
+  seraph4a: 0xffd166, seraph5a: 0xffe08a,
+  seraph4b: 0x9d6bff, seraph5b: 0xb98cff,
 }
 
 export class Tower {
@@ -204,6 +212,11 @@ export class Tower {
   private kindleAt = 0
   /** a short local flash when the signature fires, so the payoff is seen */
   private signatureFlashT = 0
+  /** Dawnfall / Eclipse: when the Seraph's crown next speaks */
+  private seraphAt = 0
+  private static readonly DAWNFALL_EVERY = 8
+  private static readonly ECLIPSE_EVERY = 10
+  private seraphT = 0
 
   /**
    * The special attack, counted down where the player can see it.
@@ -232,7 +245,84 @@ export class Tower {
         const left = Math.max(0, this.musterReadyAt - time)
         return { text: left <= 0 ? 'Last Muster ready' : `Last Muster in ${Math.ceil(left)}s`, next: left <= 0 }
       }
+      case 'dawnfall':
+      case 'eclipse': {
+        const name = sig === 'dawnfall' ? 'Dawnfall' : 'Eclipse'
+        const every = sig === 'dawnfall' ? Tower.DAWNFALL_EVERY : Tower.ECLIPSE_EVERY
+        const left = this.seraphAt === 0 ? every : Math.max(0, this.seraphAt - time)
+        return { text: left < 1 ? `${name} now` : `${name} in ${Math.ceil(left)}s`, next: left < 3 }
+      }
       default: return null
+    }
+  }
+
+  /**
+   * The idol is alive: the halo turns, the wings beat slowly (faster while it
+   * fires), the heart pulses with each ray. The crowns speak on a timer.
+   */
+  private animateSeraph(dt: number, world: World): void {
+    this.seraphT += dt
+    const firing = this.target !== null
+    const halo = getPart(this.model, 'halo')
+    if (halo) {
+      halo.rotation.y += dt * (firing ? 2.6 : 0.9)
+      halo.position.y = (halo.userData.baseY ??= halo.position.y) + Math.sin(this.seraphT * 1.4) * 0.03
+    }
+    const beat = Math.sin(this.seraphT * (firing ? 4.2 : 1.3))
+    const wingL = getPart(this.model, 'wingL'), wingR = getPart(this.model, 'wingR')
+    if (wingL) { wingL.rotation.z = -beat * 0.16; wingL.rotation.y = beat * 0.08 }
+    if (wingR) { wingR.rotation.z = beat * 0.16; wingR.rotation.y = -beat * 0.08 }
+    const heart = getPart(this.model, 'heart')
+    if (heart) heart.scale.setScalar(1 + (firing ? Math.abs(Math.sin(this.seraphT * 30)) * 0.5 : Math.sin(this.seraphT * 2) * 0.12))
+    if (this.isGhost || this.level < 5 || !this.def.signature) return
+    // the crowns
+    const every = this.def.signature === 'dawnfall' ? Tower.DAWNFALL_EVERY : Tower.ECLIPSE_EVERY
+    if (this.seraphAt === 0) this.seraphAt = world.time + every
+    if (world.time < this.seraphAt) return
+    if (!world.enemies.some(e => e.targetable && Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) <= this.range + e.radius)) return
+    this.seraphAt = world.time + every
+    if (this.def.signature === 'dawnfall') this.dawnfall(world)
+    else this.eclipse(world)
+  }
+
+  /** Dawnfall: a column of true light on the toughest thing in reach, and a burning road beneath it */
+  private dawnfall(world: World): void {
+    let best: Enemy | null = null
+    for (const e of world.enemies) {
+      if (!e.targetable || Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) > this.range + e.radius) continue
+      if (!best || e.hp > best.hp) best = e
+    }
+    if (!best) return
+    this.signatureFired(world)
+    const at = best.pos.clone()
+    const dmg = 600 * (this.perk?.id === 'radiance' ? 1.2 : 1) * (1 + this.auraDamage)
+    best.takeDamage(dmg, 'true', world, { crit: true, credit: this, flavor: 'fire' })
+    for (let i = 0; i < 4; i++) world.particles.magicImpact(at.x, at.y + 0.3 + i * 0.55, at.z, 0xfff1b0)
+    world.particles.explosion(at.x, 0.1, at.z, 0.9)
+    addBurnZone(world, new THREE.Vector3(at.x, 0, at.z), 1.2, 40, 4, this)
+    world.floater(at.x, at.y + 1.2, at.z, 'Dawnfall!', 'crit')
+    world.sfx('dawnfall', 0.9)
+    world.shake(0.2)
+    world.impact('heavy')
+  }
+
+  /** Eclipse: everything in reach stands stunned in the dark, and comes out of it less armored */
+  private eclipse(world: World): void {
+    this.signatureFired(world)
+    let hit = 0
+    for (const e of world.enemies) {
+      if (!e.targetable || Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) > this.range + e.radius) continue
+      e.applyStun(1.5, world)
+      e.shredArmor(0.2)
+      e.shredResist(0.2)
+      world.particles.magicImpact(e.pos.x, e.pos.y + 0.5, e.pos.z, 0x9d6bff)
+      hit++
+    }
+    if (hit) {
+      world.particles.magicImpact(this.pos.x, this.pos.y + 2.0, this.pos.z, 0x2b2333)
+      world.floater(this.pos.x, this.pos.y + 2.6, this.pos.z, 'Eclipse!', 'crit')
+      world.sfx('dawnfall', 0.7)
+      world.shake(0.14)
     }
   }
 
@@ -276,6 +366,7 @@ export class Tower {
   get pos(): THREE.Vector3 { return this.group.position }
   get isBarracks(): boolean { return this.kind === 'barracks' }
   get isBeacon(): boolean { return this.kind === 'beacon' }
+  get isSeraph(): boolean { return this.kind === 'seraph' }
   /** the beacon's light reaches this far; the perk widens it */
   get auraReach(): number {
     return this.def.range + (this.perk?.id === 'farsight' ? 0.6 : 0) + 0.3 * this.world.armoryTier('lamplighters')
@@ -376,6 +467,7 @@ export class Tower {
       * (this.has('ranging') ? 1.12 : 1)
       * (this.has('longshot') ? 1.10 : 1)
       * (this.onHighGround ? 1 + RAMPART_RANGE_BONUS : 1)
+      + (this.perk?.id === 'zenith' ? 0.8 : 0)
       * (1 + this.auraRange)
   }
 
@@ -786,6 +878,8 @@ export class Tower {
     const flag = getPart(this.model, 'flag')
     if (flag) flag.rotation.y = Math.sin(world.time * 2.5 + this.pos.x) * 0.22
 
+    if (this.isSeraph) this.animateSeraph(dt, world)
+
     // ascension sigil + overcharge ring
     if (this.crownMesh) {
       this.crownMesh.rotation.y += dt * 2.2
@@ -885,7 +979,7 @@ export class Tower {
       let aimDiff = Math.abs(desired - this.turretYaw) % (Math.PI * 2)
       if (aimDiff > Math.PI) aimDiff = Math.PI * 2 - aimDiff
       // crystals don't swivel; point-blank foes shuffle faster than any turret tracks
-      if (this.kind === 'mage' || dx * dx + dz * dz < 1.7 || this.holdLine) aimDiff = 0
+      if (this.kind === 'mage' || this.isSeraph || dx * dx + dz * dz < 1.7 || this.holdLine) aimDiff = 0
       // watchdog: a ready tower staring at a live target must never stall out
       if (this.cooldown <= 0 && aimDiff >= 0.35) {
         this.stallT += dt
@@ -970,10 +1064,25 @@ export class Tower {
     }
     if (this.perk?.id === 'serrated') dmg *= 1.2
     if (this.perk?.id === 'heavybolts') dmg *= 1.2
+    if (this.perk?.id === 'radiance') dmg *= 1.2
     dmg *= 1 + this.auraDamage
     const from = this.muzzle()
     switch (this.kind) {
       case 'beacon': break   // a beacon never reaches fire(); guarded in update()
+      case 'seraph': {
+        // a ray a tick: hitscan, drawn for a tenth of a second
+        const special = def.special
+        const crit = special?.kind === 'crit' && simChance(special.chance)
+        const shred = special?.kind === 'armorShred' ? special.amount : undefined
+        const color = SERAPH_LIGHT[def.model] ?? 0xfff1b0
+        world.fireProjectile({
+          kind: 'ray', from, target, damage: dmg * (crit ? special!.mult : 1),
+          damageType: def.damageType ?? 'physical', color, width: this.level >= 5 ? 0.09 : this.level >= 4 ? 0.07 : 0.05,
+          crit: crit || undefined, armorShred: shred, credit: this, world,
+        })
+        world.sfx('ray', 0.6)
+        break
+      }
       case 'ballista': {
         // Aim through the target and out to full reach: the bolt is a line.
         // On a held line the bearing is the player's, not the target's, so an

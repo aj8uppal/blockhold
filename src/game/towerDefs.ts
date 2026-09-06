@@ -2,7 +2,7 @@ import { TowerTree, TowerKind, TowerLevelDef, SoldierDef } from './types.ts'
 
 export const towerTrees: Record<TowerKind, TowerTree> = {
   // beacon and ballista are assigned below, after their own definition
-  ...({} as Pick<Record<TowerKind, TowerTree>, 'beacon' | 'ballista'>),
+  ...({} as Pick<Record<TowerKind, TowerTree>, 'beacon' | 'ballista' | 'seraph'>),
   arrow: {
     kind: 'arrow',
     levels: [
@@ -338,6 +338,73 @@ const BEACON_AND_BALLISTA: Pick<Record<TowerKind, TowerTree>, 'beacon' | 'ballis
 }
 
 Object.assign(towerTrees, BEACON_AND_BALLISTA)
+
+/**
+ * The Seraph: the seventh family, and the one that costs a fortune.
+ *
+ * Bloons has the Super Monkey - a single plot that, funded, out-damages a
+ * whole row of cheaper towers, and whose price is the decision. The Seraph is
+ * that: a winged idol of the old gods that fires rays of light many times a
+ * second at anything in reach, air included, and grows into a colossus. A
+ * first Seraph costs fifteen arrow towers; the crown costs more than most maps
+ * pay in total. It is unlocked at account level 25, deep in the ladder, and
+ * the trials and the balance model both leave it out: it is a luxury, not the
+ * baseline the maps are tuned against.
+ */
+const SERAPH: Record<'seraph', TowerTree> = {
+  seraph: {
+    kind: 'seraph',
+    levels: [
+      {
+        name: 'Seraph Idol', cost: 1050, model: 'seraph1', range: 3.6,
+        damage: [7, 11], damageType: 'physical', attackInterval: 0.16, flying: true,
+        description: 'A winged idol that wakes when the road fills. Rays of light, six a second, at anything in reach - the sky included.',
+      },
+      {
+        name: 'Seraph Ascendant', cost: 1500, model: 'seraph2', range: 4.0,
+        damage: [12, 18], damageType: 'physical', attackInterval: 0.14, flying: true,
+        description: 'The idol rises off its plinth. Brighter rays, faster, further.',
+      },
+      {
+        name: 'Seraph Sovereign', cost: 2100, model: 'seraph3', range: 4.4,
+        damage: [20, 30], damageType: 'physical', attackInterval: 0.12, flying: true,
+        description: 'A colossus with a lance of light. Its rays come eight a second and it looks down on every tower you own.',
+      },
+    ],
+    branches: [
+      {
+        name: 'Solar Seraph', cost: 3600, model: 'seraph4a', range: 5.0,
+        damage: [34, 50], damageType: 'physical', attackInterval: 0.12, flying: true,
+        special: { kind: 'crit', chance: 0.25, mult: 2.5 },
+        description: 'The sun made a statue. One ray in four is a flare that burns for 2.5x.',
+      },
+      {
+        name: 'Void Seraph', cost: 3600, model: 'seraph4b', range: 4.6,
+        damage: [40, 58], damageType: 'magic', attackInterval: 0.14, flying: true,
+        special: { kind: 'armorShred', amount: 0.04 },
+        description: 'Turned to the dark between stars. Its rays are magic, ignore armor, and strip 4% of it from whatever they touch.',
+      },
+    ],
+    capstones: [
+      {
+        name: 'The Dawnbringer', cost: 7500, model: 'seraph5a', range: 5.6,
+        damage: [60, 90], damageType: 'physical', attackInterval: 0.1, flying: true,
+        special: { kind: 'crit', chance: 0.3, mult: 2.5 },
+        signature: 'dawnfall',
+        description: 'Ten rays a second, and every eight seconds Dawnfall: a column of true light on the toughest thing in reach for 600, leaving the road burning.',
+      },
+      {
+        name: 'The Eventide', cost: 7500, model: 'seraph5b', range: 5.0,
+        damage: [90, 130], damageType: 'magic', attackInterval: 0.14, flying: true,
+        special: { kind: 'armorShred', amount: 0.06 },
+        signature: 'eclipse',
+        description: 'Armor-ignoring rays seven a second, and every ten seconds an Eclipse: everything in reach is stunned for 1.5s and loses a fifth of its armor and resistance.',
+      },
+    ],
+  },
+}
+
+Object.assign(towerTrees, SERAPH)
 
 /** the tier-5 tower a given tier-4 branch leads to */
 export function resolveCapstone(kind: TowerKind, branch: 0 | 1): TowerLevelDef {

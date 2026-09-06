@@ -6,7 +6,7 @@ export type SfxName =
   | 'coin' | 'build' | 'sell' | 'upgrade' | 'die' | 'leak' | 'horn'
   | 'victory' | 'defeat' | 'meteor' | 'reinforce' | 'heal' | 'click'
   | 'error' | 'crit' | 'poison'
-  | 'dieMagic' | 'dieFire' | 'dieShock' | 'heroAck' | 'heroLevel' | 'signature'
+  | 'dieMagic' | 'dieFire' | 'dieShock' | 'heroAck' | 'heroLevel' | 'signature' | 'ray' | 'dawnfall'
 
 export class AudioSystem {
   private ctx: AudioContext | null = null
@@ -69,7 +69,8 @@ export class AudioSystem {
     // the hero speaking is the player being answered
     heroAck: 62, heroLevel: 68, signature: 48,
     // the constant background of a battle
-    cannon: 30, magic: 25, poison: 20, arrow: 15, hit: 10,
+    cannon: 30, magic: 25, poison: 20, arrow: 15, hit: 10, ray: 8,
+    dawnfall: 58,
   }
 
   /** how many voices may start in one window before the budget starts refusing */
@@ -274,6 +275,16 @@ export class AudioSystem {
         this.tone(784, 0.07, { type: 'square', vol: 0.06 * v })
         this.tone(1175, 0.16, { type: 'triangle', vol: 0.08 * v, delay: 0.05 })
         this.noise(0.08, { vol: 0.04 * v, filterFreq: 4200, type: 'highpass', delay: 0.05 })
+        break
+      case 'ray':
+        // a ray: the shortest, brightest thing the synth makes; ten a second must not clatter
+        this.tone(2100, 0.045, { type: 'sine', vol: 0.035 * v, slide: 900 })
+        break
+      case 'dawnfall':
+        // the column of light: a low bloom under a high sustained shimmer
+        this.tone(110, 0.6, { type: 'sine', vol: 0.22 * v, attack: 0.05, slide: -40 })
+        this.tone(1760, 0.5, { type: 'triangle', vol: 0.07 * v, attack: 0.1 })
+        this.noise(0.4, { vol: 0.12 * v, filterFreq: 2600, slide: -1800 })
         break
       case 'heroAck':
         // the hero answers: two short notes, up

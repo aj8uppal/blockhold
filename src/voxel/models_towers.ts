@@ -527,6 +527,112 @@ function exchequer(): VoxModel {
   return m
 }
 
+// ---------------- The Seraph ----------------
+// A winged idol on a plinth, and the tallest thing on any board. The whole
+// figure is authored around x = 0 and never turns (a statue does not swivel;
+// its rays go where they are sent), so the wings and the halo can be their own
+// parts and move: the wings beat slowly from pivots at the shoulders, the halo
+// spins, the heart pulses. Every tier adds height, gold and light; the two
+// crowns change the light itself.
+
+type SeraphAspect = 'plain' | 'solar' | 'void'
+
+function seraph(level: 1 | 2 | 3 | 4 | 5, aspect: SeraphAspect = 'plain'): VoxModel {
+  const marble = aspect === 'void' ? 0x3a3550 : W.white
+  const marbleDark = aspect === 'void' ? 0x26223a : 0xc9c4b2
+  const trim = aspect === 'void' ? 0x8f7ad8 : W.gold
+  const light = aspect === 'void' ? 0x9d6bff : aspect === 'solar' ? 0xffd166 : 0xfff1b0
+  const lightHot = aspect === 'void' ? 0xd8b8ff : 0xffffff
+
+  // the plinth grows a step per tier
+  const plinthH = 1.2 + level * 0.5
+  const base: VoxBox[] = [
+    box(0, 0.6, 0, 7.6, 1.2, 7.6, W.stoneDark),
+    box(0, 1.2 + plinthH / 2, 0, 5.6, plinthH, 5.6, marbleDark),
+    box(0, 1.2 + plinthH + 0.25, 0, 6.2, 0.5, 6.2, trim),
+  ]
+  if (level >= 2) base.push(...crenels(0, 1.2 + plinthH + 0.5, 0, 5.8, 5.8, marbleDark))
+  if (level >= 3) {
+    // four braziers of the aspect's light at the corners
+    for (const [dx, dz] of [[-2.6, -2.6], [2.6, -2.6], [-2.6, 2.6], [2.6, 2.6]] as const) {
+      base.push(box(dx, 1.2 + plinthH + 0.9, dz, 0.8, 1.0, 0.8, trim))
+      base.push(box(dx, 1.2 + plinthH + 1.7, dz, 0.6, 0.6, 0.6, light, true))
+    }
+  }
+  if (level >= 5) {
+    // the crown stands in a ring of its own light
+    base.push(box(0, 1.35, 0, 8.6, 0.3, 8.6, light, true))
+  }
+
+  // the figure: feet at the top of the plinth
+  const f = 1.2 + plinthH + 0.5
+  const bodyH = 6.0 + level * 1.1
+  const figure: VoxBox[] = [
+    box(0, f + 0.6, 0, 3.4, 1.2, 2.4, marbleDark),                  // robe hem
+    box(0, f + bodyH * 0.35, 0, 2.8, bodyH * 0.7, 2.0, marble),      // robe
+    box(0, f + bodyH * 0.8, 0, 3.2, bodyH * 0.3, 2.2, marble),       // chest
+    box(0, f + bodyH * 0.72, 0, 3.4, 0.5, 2.4, trim),                // belt
+    box(0, f + bodyH + 0.5, 0, 1.6, 1.2, 1.6, marble),               // head
+    box(0, f + bodyH + 1.35, 0, 2.0, 0.5, 2.0, trim),                // circlet
+    box(-2.0, f + bodyH * 0.6, 0.3, 0.9, bodyH * 0.45, 0.9, marble), // arms, raised a little
+    box(2.0, f + bodyH * 0.6, 0.3, 0.9, bodyH * 0.45, 0.9, marble),
+  ]
+  // the heart: where the rays come from
+  const heart: VoxBox[] = [box(0, f + bodyH * 0.82, 1.2, 1.1, 1.1, 0.5, lightHot, true)]
+  if (level >= 3) {
+    // a lance of light held across the body
+    figure.push(box(0, f + bodyH * 0.55, 1.6, 0.35, bodyH * 0.9, 0.35, light, true))
+    figure.push(box(0, f + bodyH * 1.02, 1.6, 0.8, 1.2, 0.8, lightHot, true))
+  }
+  if (level >= 4) {
+    // an aspect mantle over the shoulders
+    figure.push(box(0, f + bodyH * 0.95, -0.4, 4.2, 0.7, 1.4, trim))
+  }
+
+  // wings: swept back and up in steps, one part each, pivoting at the shoulder
+  const shoulderY = f + bodyH * 0.85
+  const span = 2.6 + level * 0.9
+  const wing = (side: 1 | -1): VoxBox[] => {
+    const out: VoxBox[] = []
+    const steps = 3 + Math.min(2, level - 1)
+    for (let i = 0; i < steps; i++) {
+      const k = i / (steps - 1)
+      out.push(box(side * (1.8 + k * span), shoulderY + 0.4 + k * (1.4 + level * 0.6) - (k > 0.6 ? (k - 0.6) * 3 : 0), -0.9 - k * 0.6,
+        1.4 + (1 - k) * 0.6, 3.0 - k * 1.2 + level * 0.25, 0.5, i % 2 ? marbleDark : marble))
+      if (level >= 4) out.push(box(side * (1.8 + k * span), shoulderY - 1.0 + k * 0.6, -0.95 - k * 0.6, 0.5, 0.8, 0.3, light, true))
+    }
+    return out
+  }
+  const wingL = wing(-1), wingR = wing(1)
+
+  // the halo: a square ring of light above the head, which spins
+  const hy = f + bodyH + 2.4 + (level >= 5 ? 0.6 : 0)
+  const hr = 1.5 + level * 0.25
+  const halo: VoxBox[] = [
+    box(0, hy, -hr, hr * 2, 0.3, 0.3, light, true),
+    box(0, hy, hr, hr * 2, 0.3, 0.3, light, true),
+    box(-hr, hy, 0, 0.3, 0.3, hr * 2, light, true),
+    box(hr, hy, 0, 0.3, 0.3, hr * 2, light, true),
+  ]
+  if (level >= 5) {
+    // a second, wider ring, and four motes that orbit with it
+    const hr2 = hr + 1.2
+    halo.push(box(0, hy + 0.5, -hr2, hr2 * 2, 0.22, 0.22, lightHot, true), box(0, hy + 0.5, hr2, hr2 * 2, 0.22, 0.22, lightHot, true),
+      box(-hr2, hy + 0.5, 0, 0.22, 0.22, hr2 * 2, lightHot, true), box(hr2, hy + 0.5, 0, 0.22, 0.22, hr2 * 2, lightHot, true))
+    for (const [dx, dz] of [[-hr2, -hr2], [hr2, -hr2], [-hr2, hr2], [hr2, hr2]] as const) halo.push(box(dx, hy + 0.5, dz, 0.6, 0.6, 0.6, lightHot, true))
+  }
+
+  return {
+    parts: { base, figure, heart, wingL, wingR, halo },
+    pivots: {
+      wingL: [-1.8, shoulderY, -0.9], wingR: [1.8, shoulderY, -0.9],
+      halo: [0, hy, 0], heart: [0, f + bodyH * 0.82, 1.2],
+    },
+    // the crowns are colossi: they stand a third again over every other tower
+    scale: level >= 5 ? 0.135 : level >= 4 ? 0.12 : 0.105,
+  }
+}
+
 // ---------------- Ballistae ----------------
 // Low and wide where the arrow towers are tall: a siege engine on a mount,
 // and the whole bow is the turret so it visibly swings to aim.
@@ -645,6 +751,7 @@ export type TowerModelId =
   | 'barracks1' | 'barracks2' | 'barracks3' | 'barracks4a' | 'barracks4b' | 'barracks5a' | 'barracks5b'
   | 'beacon1' | 'beacon2' | 'beacon3' | 'beacon4a' | 'beacon4b' | 'beacon5a' | 'beacon5b'
   | 'ballista1' | 'ballista2' | 'ballista3' | 'ballista4a' | 'ballista4b' | 'ballista5a' | 'ballista5b'
+  | 'seraph1' | 'seraph2' | 'seraph3' | 'seraph4a' | 'seraph4b' | 'seraph5a' | 'seraph5b'
 
 const factories: Record<TowerModelId, () => VoxModel> = {
   arrow1: () => arrowTower(1), arrow2: () => arrowTower(2), arrow3: () => arrowTower(3),
@@ -665,6 +772,9 @@ const factories: Record<TowerModelId, () => VoxModel> = {
   ballista1: () => ballistaTower(1), ballista2: () => ballistaTower(2), ballista3: () => ballistaTower(3),
   ballista4a: skyharrow, ballista4b: wallbreaker,
   ballista5a: heavensplitter, ballista5b: godsbaneRam,
+  seraph1: () => seraph(1), seraph2: () => seraph(2), seraph3: () => seraph(3),
+  seraph4a: () => seraph(4, 'solar'), seraph4b: () => seraph(4, 'void'),
+  seraph5a: () => seraph(5, 'solar'), seraph5b: () => seraph(5, 'void'),
 }
 
 const modelCache = new Map<TowerModelId, VoxModel>()
@@ -683,6 +793,8 @@ export const muzzleHeights: Record<TowerModelId, number> = {
   // a beacon fires nothing; the height is where its light is drawn from
   beacon1: 0.85, beacon2: 1.0, beacon3: 1.2, beacon4a: 1.25, beacon4b: 1.2, beacon5a: 1.3, beacon5b: 1.25,
   ballista1: 0.5, ballista2: 0.56, ballista3: 0.62, ballista4a: 0.65, ballista4b: 0.66, ballista5a: 0.68, ballista5b: 0.68,
+  // the rays leave the idol's heart
+  seraph1: 1.3, seraph2: 1.55, seraph3: 1.85, seraph4a: 2.3, seraph4b: 2.3, seraph5a: 2.9, seraph5b: 2.9,
 }
 
 /** Build plot marker */

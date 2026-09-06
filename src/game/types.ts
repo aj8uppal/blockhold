@@ -44,7 +44,7 @@ export interface EnemyDef {
   description: string
 }
 
-export type TowerKind = 'arrow' | 'mage' | 'cannon' | 'barracks' | 'beacon' | 'ballista'
+export type TowerKind = 'arrow' | 'mage' | 'cannon' | 'barracks' | 'beacon' | 'ballista' | 'seraph'
 
 /** the signature mechanic a tier-5 tower brings; one per capstone */
 export type CapstoneSignature =
@@ -60,6 +60,8 @@ export type CapstoneSignature =
   | 'tithe'            // kills in the aura pay more, and every twelfth pays a shard
   | 'skyfall'          // a flyer struck is knocked from the air
   | 'greatbolt'        // every fourth shot pierces the whole line at double weight
+  | 'dawnfall'         // on a timer, a column of light falls on the strongest foe in reach
+  | 'eclipse'          // on a timer, a nova stuns everything in reach and strips its defenses
 
 export interface TowerLevelDef {
   name: string
@@ -247,6 +249,10 @@ export const PERKS: Record<TowerKind, [PerkDef, PerkDef]> = {
   ballista: [
     { id: 'heavybolts', name: 'Heavy Bolts', icon: 'blast', description: '+20% damage.' },
     { id: 'windlass', name: 'Windlass', icon: 'hourglass', description: 'Reloads 15% faster.' },
+  ],
+  seraph: [
+    { id: 'radiance', name: 'Radiance', icon: 'sparkle', description: '+20% damage.' },
+    { id: 'zenith', name: 'Zenith', icon: 'range', description: '+0.8 range.' },
   ],
 }
 

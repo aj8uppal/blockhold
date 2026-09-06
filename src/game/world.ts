@@ -1,3 +1,4 @@
+import type { DamageType } from './types.ts'
 import * as THREE from 'three'
 import type { DeathFlavor } from './debris.ts'
 import type { LanePath } from './path.ts'
@@ -83,6 +84,12 @@ export type ProjectileSpec =
   | { kind: 'bomb', from: THREE.Vector3, at: THREE.Vector3, damage: number, splash: number, cluster?: { count: number, damage: [number, number], radius: number }, burn?: { dps: number, duration: number, radius: number }, mine?: MineSpec, stunChance?: number, slow?: boolean, submunition?: boolean, credit?: KillCredit, world: World }
   | { kind: 'chain', from: THREE.Vector3, first: Enemy, damage: number, targets: number, falloff: number, stunChance: number, stunDur: number, mrPierce?: number, credit?: KillCredit, world: World }
   | { kind: 'warlockBolt', from: THREE.Vector3, target: Soldier, damage: number, world: World }
+  /**
+   * A Seraph's ray: hitscan. The damage lands the instant it is fired and the
+   * beam is drawn for a tenth of a second; at ten rays a second a travelling
+   * projectile would be a swarm of meshes and a second of latency.
+   */
+  | { kind: 'ray', from: THREE.Vector3, target: Enemy, damage: number, damageType: DamageType, color: number, width: number, crit?: boolean, armorShred?: number, credit?: KillCredit, world: World }
   | { kind: 'meteor', at: THREE.Vector3, damage: number, world: World }
   /** a Stormhowl's thrown axe: leaves a soldier's hand, tumbles, and hits a flyer */
   | { kind: 'axe', from: THREE.Vector3, target: Enemy, damage: number, armorPierce?: number, credit?: KillCredit, world: World }
