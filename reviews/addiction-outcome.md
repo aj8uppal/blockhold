@@ -47,10 +47,14 @@ Built: 1 (objective), 2 (star line), 3 (readouts), 4 (previews, early-call barga
 
 Items 6, 7b, 8 and 9 were built in the second session, above.
 
+## The seventh family (2026-09-05, evening)
+
+The owner asked for a Super-Monkey-class tower. **The Seraph** (src/game/towerDefs.ts, models in models_towers.ts `seraph()`): a winged idol that fires hitscan rays of light six to ten a second at anything in reach, air included. 1050 gold for the idol, 15,750 to a crown; unlocked at account level 25; three tiers, Solar (2.5x flares) or Void (magic, strips armor), and two crowns - the Dawnbringer (Dawnfall: a 600 true-damage column of light on the toughest foe every 8s, leaving a burn zone) and the Eventide (Eclipse: everything in reach stunned 1.5s and stripped of a fifth of its defenses every 10s). Left out of the balance model's baseline and out of the trials on purpose. Merged to main and deployed with the addiction branch.
+
 ## Waiting on the owner
 
-- **A seventh tower family.** Astra's advice, which I followed: not now. The account ladder already gates two families behind levels 15 and 20, twelve capstones exist, and a new family multiplies models, menus and balance before those choices are legible. If you want one regardless, the Ballista hold-line (item 6) or a support family that does not add damage (a bell tower that marks the beat, or a watchtower that reveals and slows) would be my pick.
-- Deploying this branch. Everything is on `addiction`, pushed; nothing is on `main` yet. The Fly sync server needs a redeploy with it (shared save schema).
+- ~~A seventh tower family~~ built as the Seraph, see above. Astra's original advice was: not now. The account ladder already gates two families behind levels 15 and 20, twelve capstones exist, and a new family multiplies models, menus and balance before those choices are legible. If you want one regardless, the Ballista hold-line (item 6) or a support family that does not add damage (a bell tower that marks the beat, or a watchtower that reveals and slows) would be my pick.
+- ~~Deploying this branch~~ done 2026-09-05: `addiction` fast-forwarded into `main`, Pages deployed, Fly sync server redeployed.
 
 ## Verification
 
