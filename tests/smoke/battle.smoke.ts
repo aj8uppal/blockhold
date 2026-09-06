@@ -14,8 +14,14 @@ test('pressing Play reaches a running battle with enemies and a moving wave coun
 
   const waveBefore = await hudWave(page)
 
-  // the first wave marches on its own after a ~14s grace countdown; poll rather
-  // than sleep so a faster start does not cost the suite 40 seconds
+  // Call the first wave in through the real button rather than waiting out the
+  // 14s grace countdown. The sim advances per rendered frame, and a software-
+  // rendered CI browser draws a few frames a second: the countdown alone used
+  // to outlast this test's whole budget. Calling early is also what a player
+  // who knows the game does, so the path is worth driving.
+  const call = page.getByRole('button', { name: /Begin the assault|Call wave/ })
+  await expect(call).toBeVisible({ timeout: 20_000 })
+  await call.click()
   await page.waitForFunction(
     (before: number) => {
       const g = window.vg.game

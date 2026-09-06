@@ -24,7 +24,9 @@ export default defineConfig({
   testMatch: '**/*.smoke.ts',
   outputDir: 'output',
   fullyParallel: true,
-  workers: process.env.CI ? 2 : 3,
+  // SwiftShader renders on the CPU, and a runner has two cores: two battles at
+  // once ran each at a third of real time and timed the suite out
+  workers: process.env.CI ? 1 : 3,
   retries: process.env.CI ? 1 : 0,
   // a battle test waits out a ~14s wave countdown; everything else is seconds
   timeout: 90_000,
