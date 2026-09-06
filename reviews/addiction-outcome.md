@@ -29,22 +29,29 @@ better gameplay, etc."
 
 Left out on purpose, as advised: per-voxel physics, a post-fx stack, affix icons on health bars (the restored tints do that job), boss damage-threshold poses and the brood spill.
 
+## Second session (2026-09-05, daytime): the rest of the ranked plan
+
+Everything Astra left for later sessions, built in ranked order on the same branch:
+
+- **6. Ballista hold-line.** A second mode for the engine: one click lays it on a bearing, it fires only when something enters a corridor the bolt's own width, and the bolt flies down the bearing rather than at the body. Corridor drawn while selected; bearing in checkpoints and the replay log; `onHoldLine()` tested.
+- **8. Trials.** Every map has a Relief Siege (the last waves from an empty board, four families) and a Silent Guns (the whole map back to back, arrows/mages/barracks, no early calls). One life, six shards, Aldric at level one, tier-four ceiling, Armory off. Banks derive from the campaign's economy; the tide is thinned by the Armory's share; late maps open every family. Twenty trial stars close the 60-against-40 Armory gap. `tests/trials.test.ts` holds every trial to the model's verdict on the campaign finale.
+- **7b. Capstone cards.** Twelve, stamped on a campaign win with the crown standing; a Cards view; a pennant over the Hold per family with both crowns stamped.
+- **9. Freeplay banks itself.** Freeplay boards checkpoint at clear-field boundaries and resume in freeplay; the pause card says 'Bank and leave' and where; the menu offers 'Hold the line on <map> · +N'.
+- The siege-tape/postcard recorder is a lazy chunk; bundle budgets rose once, 130/250 to 136/262 KB, with the reason dated in the script.
+
+Not built: pre-wave queuing of first-encounter dossiers (item 5's second half), and telemetry on objective impressions. The sync server shares `saveMerge.ts` and needs a redeploy for `trials` and `capstones` to survive a cloud merge.
+
 ## Systems plan: items 1 to 5 and 7 (in part)
 
 Built: 1 (objective), 2 (star line), 3 (readouts), 4 (previews, early-call bargain spelled out), 5 (field guide, without pre-wave queuing), 7 (damage records, without capstone cards or Hold pennants).
 
-Not built, in Astra's ranked order, each a session of its own:
-
-- **6. Ballista firing-line control** (Track / Hold line). The closest thing to a new tower feel without a seventh family; needs the direction in checkpoints and the build log.
-- **7b. Capstone cards** stamped on a first win, family pennants in the Hold.
-- **8. Two trials per map** (Relief Siege, Silent Guns) funding the last 20 Armory stars. The Armory costs 60 against 40 earnable today; only trials close that gap.
-- **9. Freeplay bank-and-suspend** (L).
+Items 6, 7b, 8 and 9 were built in the second session, above.
 
 ## Waiting on the owner
 
 - **A seventh tower family.** Astra's advice, which I followed: not now. The account ladder already gates two families behind levels 15 and 20, twelve capstones exist, and a new family multiplies models, menus and balance before those choices are legible. If you want one regardless, the Ballista hold-line (item 6) or a support family that does not add damage (a bell tower that marks the beat, or a watchtower that reveals and slows) would be my pick.
-- Deploying this branch. Everything is on `addiction`, pushed; nothing is on `main` yet.
+- Deploying this branch. Everything is on `addiction`, pushed; nothing is on `main` yet. The Fly sync server needs a redeploy with it (shared save schema).
 
 ## Verification
 
-Typecheck, lint, 192 unit tests (7 new: star thresholds and the objective rule), Playwright smoke (7), and scripted screenshots of the reveal, hero caption, end card, capstone panel, placement tooltip and the field guide.
+Typecheck, lint, 228 unit tests (new: star thresholds, the objective rule, the hold-line corridor, every map's two trials against the model, the Hold's pennants), the sync server's 30 tests, Playwright smoke (7), bundle budget, and scripted browser round trips of the reveal, hero caption, end card, capstone panel, placement tooltip, field guide, hold-line firing, a trial from picker to star, capstone stamping, and a freeplay bank-and-resume.
