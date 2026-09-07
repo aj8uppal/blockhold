@@ -368,6 +368,11 @@ button:disabled { cursor: not-allowed; }
 .btn.upgrade .u-cost { float: right; font-size: 12.5px; color: var(--gold-bright); }
 .btn.upgrade .u-desc { display: block; font-size: 11px; font-weight: 600; color: rgba(244, 232, 207, 0.8); margin-top: 2px; line-height: 1.35; }
 .btn.upgrade:disabled .u-cost { color: var(--danger); }
+/* short of gold is 'not yet', not 'locked': the option stays legible */
+.btn.upgrade:disabled { opacity: 0.82; }
+.btn.upgrade .u-need { display: block; font-size: 10.5px; font-weight: 800; color: #ff9d8a; margin-top: 3px; }
+.btn.upgrade .u-need:empty { display: none; }
+.tp-choice { font-size: 11px; line-height: 1.4; color: rgba(255, 228, 168, 0.9); margin: 4px 0 2px; }
 .btn.upgrade.ascend { border-color: rgba(143, 223, 255, 0.45); }
 .btn.upgrade.ascend .u-name, .btn.upgrade.ascend .u-cost { color: #8fdfff; }
 .btn.upgrade.ascend:hover:not(:disabled) { background: rgba(143, 223, 255, 0.14); border-color: #8fdfff; }

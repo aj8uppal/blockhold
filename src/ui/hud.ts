@@ -527,11 +527,21 @@ export class HUD {
     }
     // tower panel gold/shard-dependent button states
     if (this.currentTower && !this.towerPanel.classList.contains('hidden')) {
+      const setNeed = (b: HTMLButtonElement, text: string) => {
+        const n = b.querySelector('.u-need')
+        if (n && n.textContent !== text) n.textContent = text
+      }
       this.towerPanel.querySelectorAll<HTMLButtonElement>('button[data-cost]').forEach(b => {
-        b.disabled = game.gold < Number(b.dataset.cost)
+        const short = Number(b.dataset.cost) - game.gold
+        b.disabled = short > 0
+        setNeed(b, short > 0 ? `Needs ${short} more gold` : '')
       })
       this.towerPanel.querySelectorAll<HTMLButtonElement>('button.ascend').forEach(b => {
-        b.disabled = game.shards < ASCEND_SHARD_COST || game.gold < ASCEND_GOLD_COST
+        const shards = Math.max(0, ASCEND_SHARD_COST - game.shards), gold = Math.max(0, ASCEND_GOLD_COST - game.gold)
+        b.disabled = shards > 0 || gold > 0
+        setNeed(b, shards > 0 || gold > 0
+          ? `Needs ${[shards > 0 ? `${shards} more ${shards === 1 ? 'shard' : 'shards'}` : '', gold > 0 ? `${gold} more gold` : ''].filter(Boolean).join(' and ')}`
+          : '')
       })
       const oc = document.getElementById('oc-btn') as HTMLButtonElement | null
       if (oc) {
@@ -984,11 +994,17 @@ export class HUD {
     const actions = el('div', 'tp-actions', p)
     const capped = !!this.game.trial && tower.level >= this.game.trial.maxTier
     if (capped) el('div', 'tp-traits', actions, `${icon('lock')} ${this.game.trial!.name}: tier ${this.game.trial!.maxTier} is the ceiling`)
+    // Tier four is a fork, and the two greyed options used to read as locked
+    // when the only thing between the player and either was gold. Say what
+    // the step is, and (below, live) exactly how much gold is missing.
+    if (!capped && tower.level === 3) {
+      el('div', 'tp-choice', actions, `${icon('sparkle')} Tier 4 is a choice: one of two specializations, permanent. Nothing else is needed - only the gold.`)
+    }
     if (!capped) tower.upgradeOptions.forEach((opt, i) => {
       const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, actions) as HTMLButtonElement
       btn.dataset.cost = `${opt.cost}`
       btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span><span class="u-desc">${opt.description}</span>` +
-        `<span class="u-delta">${deltaLines(tower, opt, m)}</span>`
+        `<span class="u-delta">${deltaLines(tower, opt, m)}</span><span class="u-need"></span>`
       // show what the upgrade actually buys in range terms, on both pointers:
       // hover for a mouse, and the first tap for touch (which arms before it
       // commits, so the preview is visible before any gold is spent)
@@ -999,13 +1015,14 @@ export class HUD {
         () => { this.game.previewUpgradeRange(tower, null); this.game.upgradeTower(tower, i) },
       )
       btn.disabled = this.game.gold < opt.cost
+      if (btn.disabled) btn.querySelector('.u-need')!.textContent = `Needs ${opt.cost - this.game.gold} more gold`
     })
     // ascension: tier-4+ towers pick one of two shard-bought perks
     if (tower.level >= 4 && !tower.perk) {
       PERKS[tower.kind].forEach((perk, i) => {
         const btn = el('button', 'btn upgrade ascend', actions) as HTMLButtonElement
         btn.innerHTML = `<span class="u-name">${icon(perk.icon)} Ascend: ${perk.name}</span><span class="u-cost">${icon('gem')}${ASCEND_SHARD_COST} ${icon('coin')}${ASCEND_GOLD_COST}</span><span class="u-desc">${perk.description}</span>` +
-          `<span class="u-delta">${perkDeltaLines(tower, perk.id, m)}</span>`
+          `<span class="u-delta">${perkDeltaLines(tower, perk.id, m)}</span><span class="u-need"></span>`
         // a perk that reaches further draws the reach it would buy, the same
         // way a tier upgrade does; the others have nothing spatial to show
         if (perk.id === 'hawkeye') {
