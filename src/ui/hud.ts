@@ -1,4 +1,3 @@
-import { renderFieldGuide } from './fieldGuide.ts'
 import { fmtDamage } from './screens.ts'
 import type { Game, TargetMode } from '../game/game.ts'
 import type { Hero } from '../game/hero.ts'
@@ -324,7 +323,7 @@ export class HUD {
     const resume = el('button', 'btn primary', card, 'Resume') as HTMLButtonElement
     resume.onclick = () => this.game.togglePause()
     const guide = el('button', 'btn ghost', card, `${icon('eye')} Field guide`) as HTMLButtonElement
-    guide.onclick = () => { renderFieldGuide(this.root, this.game.save.seenEnemies, () => {}) }
+    guide.onclick = async () => { const { renderFieldGuide } = await import('./fieldGuide.ts'); renderFieldGuide(this.root, this.game.save.seenEnemies, () => {}) }
 
     const settings = el('div', 'pause-settings', card)
     const sfxIcon = () => icon(this.game.save.sfxMuted ? 'soundOff' : 'soundOn', 'plain')
