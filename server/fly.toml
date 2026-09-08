@@ -9,7 +9,7 @@ primary_region = "iad"
 [env]
   PORT = "8080"
   DB_PATH = "/data/blockhold.db"
-  ALLOWED_ORIGINS = "https://aj8uppal.github.io,http://localhost:5173,http://localhost:4173,http://localhost:4174"
+  ALLOWED_ORIGINS = "https://aj8uppal.github.io,http://localhost:5173,http://localhost:4173,http://localhost:4174,http://localhost:4180"
   # STATS_TOKEN is deliberately not here. It is a credential, so it belongs in
   # `fly secrets set`, not in a file in the repository. With it unset,
   # GET /v1/stats answers 404 and the dashboard simply does not exist.

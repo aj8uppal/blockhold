@@ -71,7 +71,7 @@ export interface AppConfig {
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     allowedOrigins: (env.ALLOWED_ORIGINS
-      ?? 'https://aj8uppal.github.io,http://localhost:5173,http://localhost:4173,http://localhost:4174')
+      ?? 'https://aj8uppal.github.io,http://localhost:5173,http://localhost:4173,http://localhost:4174,http://localhost:4180')
       .split(',').map(s => s.trim()).filter(Boolean),
     statsToken: env.STATS_TOKEN && env.STATS_TOKEN.length >= 16 ? env.STATS_TOKEN : null,
   }
