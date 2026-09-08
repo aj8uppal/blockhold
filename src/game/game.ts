@@ -12,11 +12,11 @@ import { Hazard, createHazard } from './hazards.ts'
 import { enemyDef } from './enemyDefs.ts'
 import { towerTrees, SELL_REFUND } from './towerDefs.ts'
 import { tallestLandmark } from '../voxel/models_env.ts'
-import { reactionFor, REACTION_RADIUS, HOLD_LINE_HALF_WIDTH } from './towers.ts'
+import { reactionFor, REACTION_RADIUS, HOLD_LINE_HALF_WIDTH, type TargetPolicy } from './towers.ts'
 import { buildPaths, LanePath } from './path.ts'
 import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
 import { holdModel, holdPieces, holdCacheKey, holdSummary } from './hold.ts'
-import { isNotable } from './dossier.ts'
+import { isNotable, counterFor } from './dossier.ts'
 import { AFFIX_IDS } from './affixes.ts'
 import { difficultyMods } from './difficulty.ts'
 import { starsFor, starThresholds } from './stars.ts'
@@ -26,6 +26,8 @@ import { OnboardingDirector } from './onboarding.ts'
 import { HERO_RANK_MAX, heroRankCost } from './hero.ts'
 import { levels, generateEndlessWaves, generateFreeplayChunk, ladderRung } from './levels.ts'
 import { trialLevel, type TrialDef, type TrialKind } from './trials.ts'
+import { stateHash, type CoopCommand } from './coopCommands.ts'
+import type { CoopSession, CoopEvent } from '../core/coop.ts'
 import { Terrain, PlotInfo, THEMES } from './terrain.ts'
 import { Particles } from './particles.ts'
 import { Enemy, Soldier } from './units.ts'
@@ -148,6 +150,7 @@ export class Game implements World {
    */
   raisePlot(plot: PlotInfo): void {
     if (this.paused || !this.terrain || plot.raised) return
+    if (this.route({ kind: 'raise', plot: plot.index })) return
     const cost = this.nextRaiseCost()
     if (this.gold < cost) { this.sfx('error'); this.hud.flashGold(); return }
     this.gold -= cost
@@ -274,7 +277,9 @@ export class Game implements World {
         && Math.hypot(b.pos.x - e.pos.x, b.pos.z - e.pos.z) <= b.def.raises.radius)
       if (bone) {
         const rx = e.pos.x, rz = e.pos.z, lane = e.laneIndex, dist = e.dist, tag = e.waveTag
-        this.deferFx(0.7, () => {
+        // on the sim's clock, not the wall's: a spawn is part of the run, and a
+        // replay or a co-op ally must raise the same Husk on the same tick
+        this.deferSim(0.7, () => {
           if (!bone.alive) return
           this.particles.magicImpact(rx, 0.4, rz, 0x8fe08a)
           this.spawnEnemyAt(bone.def.raises!.id, lane, Math.max(0, dist), { waveTag: tag, noReward: true, raised: true })
@@ -439,7 +444,11 @@ export class Game implements World {
       this.save.seenEnemies.push(id)
       writeSave(this.save)
       this.mechanicsSeen.add(id)
-      if (!this.paused) {
+      // in co-op a modal would stop one board and not the other; the room's
+      // clock keeps running, so the introduction is a line, not a pause
+      if (this.coop) {
+        this.hud.showToast(`${def.name}: ${counterFor(def)}`, 5)
+      } else if (!this.paused) {
         this.paused = true
         dossierShown = true
         this.hud.showDossier(def, () => {
@@ -565,7 +574,7 @@ export class Game implements World {
     // the most invested thing in the game, and it used to be the one thing the
     // player could not put down. The chunks regenerate from the seed, so the
     // snapshot is the same one the campaign takes plus a flag.
-    if (this.isDaily || this.isWatches || this.isBellfoundry || this.trial) return
+    if (this.isDaily || this.isWatches || this.isBellfoundry || this.trial || this.coop) return
     if (this.enemies.some(e => e.alive) || this.projectiles.length) return
     if (this.waves.phase === 'spawning') return
     const waveIndex = this.waves.waveIndex + 1
@@ -778,6 +787,7 @@ export class Game implements World {
     if (this.paused || !h) return
     if (h.signatureRank >= HERO_RANK_MAX) { this.sfx('error'); return }
     if (this.trial) { this.sfx('error'); this.hud.showToast(`${this.trial.name}: the champion fights as he is`, 2.4); return }
+    if (this.route({ kind: 'heroRank' })) return
     const cost = heroRankCost(h.signatureRank)
     if (this.shards < cost) { this.sfx('error'); this.hud.showToast(`Needs ${cost} shards`, 2); return }
     this.shards -= cost
@@ -793,6 +803,7 @@ export class Game implements World {
     if (this.paused || this.phase !== 'playing') return
     const h = this.hero
     if (!h || !h.signatureReady) { this.sfx('error'); return }
+    if (this.route({ kind: 'heroSig' })) return
     if (!h.castSignature(this)) {
       this.sfx('error')
       this.hud.showToast(`${h.heroDef.ability.name}: nothing in reach`, 1.6)
@@ -865,8 +876,217 @@ export class Game implements World {
    */
   trial: TrialDef | null = null
   private blankLoadout: SaveData | null = null
-  /** the save the Armory is read from: the player's, or a blank one in a trial */
+
+  // ---------------- co-op ----------------
+  /**
+   * Lockstep. Every player runs the whole simulation from the same seed; the
+   * room only carries commands and a clock. The sim here advances only as far
+   * as the server's turn markers allow, and each turn's commands are applied
+   * at that turn's first tick - so the same command lands on the same tick on
+   * every board. See server/src/coop.ts and src/core/coop.ts.
+   */
+  coop: CoopSession | null = null
+  private coopLoadout: SaveData | null = null
+  private coopUnsub: (() => void) | null = null
+  /** turn markers not yet consumed, in order */
+  private coopMarkers: { n: number, ticks: number }[] = []
+  /** commands stamped for turns not yet reached */
+  private coopCmds = new Map<number, { seat: number, cmd: CoopCommand }[]>()
+  /** ticks the current turn still allows */
+  private coopBudget = 0
+  private coopAccum = 0
+  private coopTurn = 0
+  /** a command from the room is being applied (as opposed to issued here) */
+  private applying = false
+  private applyingSeat = -1
+  private coopHashes = new Map<number, Map<number, number>>()
+  private lastDesyncToastAt = -100
+  private coopWaitingT = 0
+
+  /** the save unlocks and the Armory are read from: the host's in co-op */
+  get roster(): SaveData { return this.coopLoadout ?? this.save }
+
+  /** true when this client is the author of what is being applied (or nothing is) */
+  private get localAction(): boolean {
+    return !this.applying || this.applyingSeat === (this.coop?.seat ?? -1)
+  }
+
+  /**
+   * Send a decision to the room instead of doing it. Returns true when it
+   * went to the room (the caller returns); false when the game is not in
+   * co-op, or the command is arriving back from the room to be applied.
+   */
+  private route(cmd: CoopCommand): boolean {
+    if (!this.coop || this.applying) return false
+    if (this.phase !== 'playing' && cmd.kind !== 'hold') return false
+    void this.coop.send('cmd', cmd)
+    return true
+  }
+
+  private onCoopEvent(e: CoopEvent): void {
+    switch (e.type) {
+      case 'turn':
+        this.coopMarkers.push({ n: e.n, ticks: e.ticks })
+        break
+      case 'cmd': {
+        const list = this.coopCmds.get(e.turn) ?? []
+        list.push({ seat: e.seat, cmd: e.cmd as CoopCommand })
+        this.coopCmds.set(e.turn, list)
+        break
+      }
+      case 'speed':
+        this.speed = e.speed === 2 ? 2 : 1
+        this.hud.setSpeed(this.speed)
+        if (e.seat !== this.coop?.seat) this.hud.showToast(`Ally set the speed to ${e.speed}x`, 1.6)
+        break
+      case 'pause':
+        this.paused = e.on
+        this.hud.setPaused(this.paused)
+        if (e.seat !== this.coop?.seat) this.hud.showToast(e.on ? 'Ally paused the battle' : 'Ally resumed the battle', 1.6)
+        break
+      case 'presence':
+        this.hud.setCoop(this.coop ? { code: this.coop.code, seats: e.seats, connected: e.connected.length } : null)
+        if (this.phase === 'playing' && e.connected.length < e.seats) this.hud.showToast('An ally lost their connection', 3)
+        break
+      case 'hash': {
+        const turn = e.payload.turn
+        const seen = this.coopHashes.get(turn) ?? new Map<number, number>()
+        seen.set(e.seat, e.payload.h)
+        this.coopHashes.set(turn, seen)
+        const mine = seen.get(this.coop?.seat ?? -1)
+        if (mine !== undefined && [...seen.values()].some(h => h !== mine) && this.time - this.lastDesyncToastAt > 30) {
+          this.lastDesyncToastAt = this.time
+          this.hud.showToast('Out of sync with your ally: the boards have diverged', 5)
+        }
+        for (const k of this.coopHashes.keys()) if (k < turn - 200) this.coopHashes.delete(k)
+        break
+      }
+      case 'end':
+        if (this.phase === 'playing') this.hud.showToast('The room was closed', 3)
+        break
+    }
+  }
+
+  /** apply one turn's worth of commands, in the room's order */
+  private applyCoopTurn(n: number): void {
+    const list = this.coopCmds.get(n)
+    if (!list) return
+    this.coopCmds.delete(n)
+    for (const { seat, cmd } of list) this.applyCoopCommand(cmd, seat)
+  }
+
+  private applyCoopCommand(cmd: CoopCommand, seat: number): void {
+    this.applying = true
+    this.applyingSeat = seat
+    try {
+      const t = 'plot' in cmd ? this.towers.find(o => o.plot.index === cmd.plot) ?? null : null
+      const plot = 'plot' in cmd && this.terrain ? this.terrain.plots[cmd.plot] : null
+      const spot = 'spot' in cmd && this.terrain ? this.terrain.trapSpots[cmd.spot] : null
+      switch (cmd.kind) {
+        case 'build': if (plot) this.buildTower(cmd.tower, plot); break
+        case 'upgrade': if (t) this.upgradeTower(t, cmd.opt); break
+        case 'sell': if (t) this.sellTower(t); break
+        case 'ascend': if (t) this.ascendTower(t, cmd.perk); break
+        case 'overcharge': if (t) this.overchargeTower(t); break
+        case 'policy': if (t) this.cycleTargetPolicy(t); break
+        case 'trackline': if (t) this.clearHoldLine(t); break
+        case 'holdline': if (t) this.performTarget('holdline', cmd.x, cmd.z, t); break
+        case 'rally': if (t) this.performTarget('rally', cmd.x, cmd.z, t); break
+        case 'trap': if (spot) this.buildTrap(cmd.trap, spot); break
+        case 'sellTrap': { const tr = this.traps.find(o => o.spot.index === cmd.spot); if (tr) this.sellTrap(tr); break }
+        case 'earthwork': { const es = this.terrain?.earthworkSpots.find(o => o.index === cmd.spot); if (es) this.buildEarthwork(es); break }
+        case 'raise': if (plot) this.raisePlot(plot); break
+        case 'wave': this.callWave(); break
+        case 'heroMove': if (this.hero && !this.hero.dead) this.hero.orderMove(new THREE.Vector3(cmd.x, 0, cmd.z), this); break
+        case 'heroSig': this.castHeroSignature(); break
+        case 'heroRank': this.upgradeHeroSignature(); break
+        case 'meteor': this.performTarget('meteor', cmd.x, cmd.z, null); break
+        case 'reinforce': this.performTarget('reinforce', cmd.x, cmd.z, null); break
+        case 'hold': this.holdTheLine(); break
+      }
+      // the ally's hand, shown where it landed
+      if (seat !== (this.coop?.seat ?? -1)) {
+        const at = plot?.pos ?? spot?.pos ?? t?.pos ?? null
+        if (at && cmd.kind !== 'heroMove') this.floater(at.x, at.y + 1.0, at.z, 'Ally', 'shard')
+      }
+    } finally {
+      this.applying = false
+      this.applyingSeat = -1
+    }
+  }
+
+  /**
+   * Advance the lockstep clock. A turn is taken only once the previous one is
+   * fully simulated, its commands go first, and the sim never runs past what
+   * the room has cleared; if the room is ahead (a hiccup, a slow frame) the
+   * sim catches up at up to three times speed.
+   */
+  private coopAdvance(dtRaw: number, H: number): void {
+    // outside a battle the clock still runs; the commands (a 'hold') still
+    // matter, the ticks do not
+    if (this.phase !== 'playing') {
+      while (this.coopMarkers.length) { const m = this.coopMarkers.shift()!; this.coopTurn = m.n; this.applyCoopTurn(m.n) }
+      this.coopBudget = 0
+      return
+    }
+    let dtSim = dtRaw
+    if (this.hitstopT > 0) {
+      this.hitstopT = Math.max(0, this.hitstopT - dtRaw)
+      dtSim *= this.hitstopScale
+    }
+    const behind = this.coopMarkers.length
+    const rate = behind > 3 ? 3 : behind > 1 ? 1.5 : 1
+    this.coopAccum = Math.min(this.coopAccum + dtSim * this.speed * rate / H, 36)
+    let ran = 0
+    while (this.coopAccum >= 1 && this.phase === 'playing') {
+      if (this.coopBudget <= 0) {
+        const m = this.coopMarkers.shift()
+        if (!m) break                      // waiting on the room
+        this.coopTurn = m.n
+        this.applyCoopTurn(m.n)
+        this.coopBudget = m.ticks
+        if (m.n % 25 === 0) this.sendCoopHash(m.n)
+        if (m.ticks === 0) continue        // a paused turn
+      }
+      this.coopBudget--
+      this.coopAccum--
+      this.simStep(H)
+      ran++
+    }
+    // the room has gone quiet: say so rather than freeze in silence
+    this.coopWaitingT = ran === 0 && !this.paused ? this.coopWaitingT + dtRaw : 0
+    this.hud.setCoopWaiting(this.coopWaitingT > 1.5)
+  }
+
+  private sendCoopHash(turn: number): void {
+    if (!this.coop) return
+    let hp = 0, alive = 0
+    for (const e of this.enemies) if (e.alive) { alive++; hp += e.hp }
+    const h = stateHash([this.gold, this.lives, this.shards, alive, hp, this.towers.length, this.waves?.waveIndex ?? -1, this.time])
+    const seen = this.coopHashes.get(turn) ?? new Map<number, number>()
+    seen.set(this.coop.seat, h)
+    this.coopHashes.set(turn, seen)
+    void this.coop.send('hash', { turn, h })
+  }
+
+  /** leave the room: the session closes, and the next battle is a solo one */
+  leaveCoop(): void {
+    if (!this.coop) return
+    this.coopUnsub?.()
+    this.coopUnsub = null
+    this.coop.close()
+    this.coop = null
+    this.coopLoadout = null
+    this.coopMarkers = []
+    this.coopCmds.clear()
+    this.coopBudget = 0
+    this.hud.setCoop(null)
+    this.hud.setCoopWaiting(false)
+  }
+
+  /** the save the Armory is read from: the player's, the host's in co-op, or a blank one in a trial */
   private get loadout(): SaveData {
+    if (this.coopLoadout) return this.coopLoadout
     if (!this.trial) return this.save
     if (!this.blankLoadout || this.blankLoadout.xp !== this.save.xp) this.blankLoadout = { ...this.save, armory: {} }
     return this.blankLoadout
@@ -947,9 +1167,26 @@ export class Game implements World {
     difficulty: Difficulty = 'normal',
     heroId: HeroId = 'aldric',
     mode: 'campaign' | 'endless' = 'campaign',
-    opts: { seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean, trial?: TrialDef } = {},
+    opts: { seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean, trial?: TrialDef, coop?: { session: CoopSession, loadout: { armory: Record<string, number>, xp: number } } } = {},
   ): void {
     this.disposeLevel()
+    // co-op: the room's clock and the host's loadout, for everyone
+    if (opts.coop) {
+      if (this.coop && this.coop !== opts.coop.session) this.leaveCoop()
+      this.coop = opts.coop.session
+      this.coopLoadout = { ...this.save, armory: { ...opts.coop.loadout.armory }, xp: opts.coop.loadout.xp }
+      this.coopUnsub?.()
+      this.coopUnsub = this.coop.on(e => this.onCoopEvent(e))
+      this.coopMarkers = []
+      this.coopCmds.clear()
+      this.coopBudget = 0
+      this.coopAccum = 0
+      this.coopTurn = 0
+      this.coopHashes.clear()
+      this.hud.setCoop({ code: this.coop.code, seats: this.coop.seats, connected: this.coop.connected.length })
+    } else if (this.coop) {
+      this.leaveCoop()
+    }
     const resume = opts.resume ?? null
     // Seed before anything draws: endless wave generation itself is a
     // consumer, so the run is only reproducible if this comes first.
@@ -987,6 +1224,7 @@ export class Game implements World {
     this.titheKills = 0
     this.mechanicsSeen.clear()
     this.retiredKillers = []
+    this.pendingSim = []
     const paths = buildPaths(level)
     this.lanes = paths.lanes
     this.terrain = new Terrain(level, paths)
@@ -1074,13 +1312,13 @@ export class Game implements World {
     telemetry.track({
       type: 'battle_start',
       level: level.id, difficulty, hero: heroId,
-      mode: this.isEndless ? 'endless' : 'campaign',
+      mode: this.coop ? 'coop' : this.isEndless ? 'endless' : 'campaign',
       seed: this.runSeed, resumed: !!resume,
     })
     this.firstBuildAt = -1
     this.heroHasMoved = false
     // the guided opening runs once, on a player's very first battle
-    this.onboarding = (!this.save.taughtBasics && !this.isDaily && !this.isWatches && !this.trial)
+    this.onboarding = (!this.save.taughtBasics && !this.isDaily && !this.isWatches && !this.trial && !this.coop)
       ? new OnboardingDirector() : null
     if (this.isWatches) this.raiseGhosts()
     if (resume) this.applyCheckpoint(resume)
@@ -1100,6 +1338,7 @@ export class Game implements World {
    */
   holdTheLine(): void {
     if (this.phase !== 'victory' || !this.level || !this.waves || this.isEndless || this.isDaily || this.isWatches || this.isBellfoundry || this.trial) return
+    if (this.route({ kind: 'hold' })) { this.hud.showToast('Holding the line together: waiting for the room', 2); return }
     this.isFreeplay = true
     this.liveXp = 0
     this.phase = 'playing'
@@ -1790,7 +2029,9 @@ export class Game implements World {
     const enemy = this.pickEnemy(sx, sy)
     if (enemy) {
       if (this.heroSelected && this.hero && !this.hero.dead) {
-        this.hero.orderMove(enemy.pos.clone(), this)   // attack-move onto the target
+        if (!this.route({ kind: 'heroMove', x: enemy.pos.x, z: enemy.pos.z })) {
+          this.hero.orderMove(enemy.pos.clone(), this)   // attack-move onto the target
+        }
         this.heroHasMoved = true
       } else {
         this.hud.showEnemyTip(enemy, sx, sy)           // tap-to-inspect (touch has no hover)
@@ -1800,6 +2041,7 @@ export class Game implements World {
     if (this.heroSelected && this.hero && !this.hero.dead) {
       const g = this.groundPoint(sx, sy)
       if (g) {
+        if (this.route({ kind: 'heroMove', x: g.x, z: g.z })) { this.heroHasMoved = true; return }
         if (!this.hero.orderMove(g, this)) this.sfx('error')
         else this.heroHasMoved = true
         return
@@ -1862,6 +2104,21 @@ export class Game implements World {
     const mode = this.targetMode
     if (!mode) return
     if (!this.targetValid(g)) { this.sfx('error'); return }
+    const tower = this.selectedTower
+    const routed = mode === 'meteor' ? this.route({ kind: 'meteor', x: g.x, z: g.z })
+      : mode === 'reinforce' ? this.route({ kind: 'reinforce', x: g.x, z: g.z })
+      : mode === 'rally' && tower ? this.route({ kind: 'rally', plot: tower.plot.index, x: g.x, z: g.z })
+      : mode === 'holdline' && tower ? this.route({ kind: 'holdline', plot: tower.plot.index, x: g.x, z: g.z })
+      : false
+    if (!routed) this.performTarget(mode, g.x, g.z, tower)
+    this.targetMode = null
+    this.targetRing.visible = false
+    this.hud.setTargetMode(null)
+  }
+
+  /** the targeted action itself, from either the click here or the room */
+  private performTarget(mode: Exclude<TargetMode, null>, x: number, z: number, tower: Tower | null): void {
+    const g = new THREE.Vector3(x, 0, z)
     switch (mode) {
       case 'meteor': {
         this.abilities.meteor.max = this.meteorCooldown()
@@ -1897,25 +2154,21 @@ export class Game implements World {
         break
       }
       case 'rally': {
-        this.selectedTower?.setRally(g.x, g.z, this)
+        tower?.setRally(g.x, g.z, this)
         break
       }
       case 'holdline': {
-        const t = this.selectedTower
+        const t = tower
         if (t && t.setHoldLine(g.x, g.z)) {
           // the bearing is a player decision like any other, so a replay that
           // cannot reproduce it cannot reproduce the run
           this.replay.record({ t: this.time, kind: 'holdline', plot: t.plot.index, dx: t.holdLine!.x, dz: t.holdLine!.z })
-          this.showHoldLine(t)
-          this.hud.openTowerPanel(t)
+          if (this.selectedTower === t) { this.showHoldLine(t); this.hud.openTowerPanel(t) }
           this.sfx('build', 0.6)
         }
         break
       }
     }
-    this.targetMode = null
-    this.targetRing.visible = false
-    this.hud.setTargetMode(null)
   }
 
   /**
@@ -2119,13 +2372,13 @@ export class Game implements World {
     }
   }
 
-  buildTower(kind: TowerKind): void {
+  buildTower(kind: TowerKind, plot: PlotInfo | null = this.selectedPlot): void {
     if (this.paused) return
-    const plot = this.selectedPlot
     if (!plot || plot.occupied) return
+    if (this.route({ kind: 'build', plot: plot.index, tower: kind })) { this.hud.closeBuildMenu(); return }
     // the ladder is enforced here, not only in the menu, so a stale button or a
     // scripted call cannot build what the account has not earned
-    if (!isUnlocked(this.save, 'tower', kind)) { this.sfx('error'); return }
+    if (!isUnlocked(this.roster, 'tower', kind)) { this.sfx('error'); return }
     if (this.trial && !this.trial.kinds.includes(kind)) { this.sfx('error'); this.hud.showToast(`${this.trial.name}: that family is not on this board`, 2.4); return }
     const cost = towerTrees[kind].levels[0].cost
     if (this.gold < cost) { this.sfx('error'); this.hud.flashGold(); return }
@@ -2145,8 +2398,10 @@ export class Game implements World {
     this.teachSightline(tower)
     this.particles.buildDust(plot.pos.x, plot.pos.y + 0.1, plot.pos.z)
     this.sfx('build')
-    this.clearSelection()
-    this.selectTower(tower)
+    if (this.localAction) {
+      this.clearSelection()
+      this.selectTower(tower)
+    }
   }
 
   // ---------------- traps ----------------
@@ -2191,10 +2446,10 @@ export class Game implements World {
     this.sfx('click')
   }
 
-  buildEarthwork(): void {
+  buildEarthwork(spot: EarthworkSpot | null = this.selectedEarthSpot): void {
     if (this.paused) return
-    const spot = this.selectedEarthSpot
     if (!spot || spot.occupied) return
+    if (this.route({ kind: 'earthwork', spot: spot.index })) { this.hud.closeBuildMenu(); return }
     const def = EARTHWORK_DEFS[spot.kind]
     if (this.gold < def.cost) { this.sfx('error'); this.hud.flashGold(); return }
     this.gold -= def.cost
@@ -2307,10 +2562,10 @@ export class Game implements World {
     this.sfx('click')
   }
 
-  buildTrap(kind: TrapKind): void {
+  buildTrap(kind: TrapKind, spot: TrapSpotInfo | null = this.selectedTrapSpot): void {
     if (this.paused) return
-    const spot = this.selectedTrapSpot
     if (!spot || spot.occupied) return
+    if (this.route({ kind: 'trap', spot: spot.index, trap: kind })) { this.hud.closeBuildMenu(); return }
     const cost = TRAP_DEFS[kind].cost
     if (this.gold < cost) { this.sfx('error'); this.hud.flashGold(); return }
     this.gold -= cost
@@ -2326,6 +2581,7 @@ export class Game implements World {
 
   sellTrap(trap: Trap): void {
     if (this.paused) return
+    if (this.route({ kind: 'sellTrap', spot: trap.spot.index })) return
     if (trap.kills > 0 || trap.damage > 0) this.retiredKillers.push({ name: trap.def.name, kills: trap.kills, damage: trap.damage })
     const refund = Math.round(trap.def.cost * (hasArmory(this.loadout, 'salvage') ? 1 : 0.6))
     this.addGold(refund, trap.group.position.x, 0.4, trap.group.position.z)
@@ -2482,6 +2738,7 @@ export class Game implements World {
     if (this.paused) return
     const opt = tower.upgradeOptions[optionIndex]
     if (!opt) return
+    if (this.route({ kind: 'upgrade', plot: tower.plot.index, opt: optionIndex })) return
     if (this.trial && tower.level >= this.trial.maxTier) { this.sfx('error'); this.hud.showToast(`${this.trial.name}: tier ${this.trial.maxTier} is the ceiling`, 2.4); return }
     if (this.gold < opt.cost) { this.sfx('error'); this.hud.flashGold(); return }
     this.gold -= opt.cost
@@ -2491,11 +2748,12 @@ export class Game implements World {
     // that here: reactions were already recomputed on build and sell, never on
     // upgrade, so an upgraded beacon lit nothing new until something else changed
     this.recomputeResonance()
-    this.selectTower(tower)
+    if (this.localAction) this.selectTower(tower)
   }
 
   sellTower(tower: Tower): void {
     if (this.paused) return
+    if (this.route({ kind: 'sell', plot: tower.plot.index })) return
     if (tower.kills > 0) this.retiredKillers.push({ name: tower.def.name, kills: tower.kills, damage: tower.damage })
     this.addGold(tower.sellValue, tower.pos.x, tower.pos.y + 0.6, tower.pos.z)
     this.goldEarned -= tower.sellValue  // refunds are not earnings
@@ -2509,20 +2767,36 @@ export class Game implements World {
     this.recomputeResonance()
     this.particles.buildDust(tower.pos.x, tower.pos.y + 0.1, tower.pos.z)
     this.sfx('sell')
-    this.clearSelection()
+    if (this.localAction || this.selectedTower === tower) this.clearSelection()
   }
 
   overchargeTower(tower: Tower): void {
     if (this.paused) return
+    if (this.route({ kind: 'overcharge', plot: tower.plot.index })) return
     if (!tower.canOvercharge(this)) { this.sfx('error'); return }
     this.shards -= OVERCHARGE_SHARD_COST
     tower.overcharge(this)
-    this.selectTower(tower)
+    if (this.localAction) this.selectTower(tower)
+  }
+
+  /** the targeting rule, cycled; the new rule when it changed at once, null when it went to the room */
+  cycleTargetPolicy(tower: Tower): TargetPolicy | null {
+    if (this.route({ kind: 'policy', plot: tower.plot.index })) return null
+    const next = tower.cycleTargetPolicy()
+    if (!this.localAction && this.selectedTower === tower) this.hud.openTowerPanel(tower)
+    return next
+  }
+
+  clearHoldLine(tower: Tower): void {
+    if (this.route({ kind: 'trackline', plot: tower.plot.index })) return
+    tower.clearHoldLine()
+    if (this.selectedTower === tower) { this.showHoldLine(null); this.hud.openTowerPanel(tower) }
   }
 
   ascendTower(tower: Tower, perkIndex: 0 | 1): void {
     if (this.paused) return
     if (tower.level < 4 || tower.perk !== null) return
+    if (this.route({ kind: 'ascend', plot: tower.plot.index, perk: perkIndex })) return
     if (this.shards < ASCEND_SHARD_COST || this.gold < ASCEND_GOLD_COST) {
       this.sfx('error'); this.hud.flashGold(); return
     }
@@ -2530,11 +2804,12 @@ export class Game implements World {
     this.gold -= ASCEND_GOLD_COST
     tower.ascend(perkIndex, this)
     this.recomputeResonance()   // Far Sight and Zeal change what a beacon lights
-    this.selectTower(tower)
+    if (this.localAction) this.selectTower(tower)
   }
 
   callWave(): void {
     if (!this.waves || this.phase !== 'playing' || this.paused) return
+    if (this.route({ kind: 'wave' })) return
     // Silent Guns: the siege is one wave and it is not called in early
     if (this.trial && !this.trial.earlyCall && this.waves.waveIndex >= 0) { this.sfx('error'); return }
     const secondsLeft = this.waves.countdown
@@ -2558,12 +2833,15 @@ export class Game implements World {
   }
 
   togglePause(): void {
+    // in co-op the pause is the room's, so both boards stop on the same turn
+    if (this.coop && this.phase === 'playing') { void this.coop.send('pause', !this.paused); return }
     this.paused = !this.paused
     this.hud.setPaused(this.paused)
   }
 
   toggleSpeed(): void {
     if (this.paused) return
+    if (this.coop) { void this.coop.send('speed', this.speed === 1 ? 2 : 1); return }
     this.speed = this.speed === 1 ? 2 : 1
     this.hud.setSpeed(this.speed)
   }
@@ -2621,6 +2899,12 @@ export class Game implements World {
     this.pendingFx.push({ at: performance.now() / 1000 + delaySec, run })
   }
 
+  /** something that changes the run, scheduled on simulation time */
+  private pendingSim: { at: number, run: () => void }[] = []
+  private deferSim(delaySec: number, run: () => void): void {
+    this.pendingSim.push({ at: this.time + delaySec, run })
+  }
+
   update(dtRaw: number): void {
     if (this.pendingFx.length) {
       const now = performance.now() / 1000
@@ -2656,15 +2940,19 @@ export class Game implements World {
       // fixed-timestep simulation so game speed is frame-rate independent;
       // budget covers a 0.1s frame at 2x speed (12 steps) before slowing down
       const H = 1 / 60
-      let dtSim = dtRaw
-      if (this.hitstopT > 0) {
-        this.hitstopT = Math.max(0, this.hitstopT - dtRaw)
-        dtSim *= this.hitstopScale
-      }
-      this.simAccumulator = Math.min(this.simAccumulator + dtSim * this.speed, H * 14)
-      while (this.simAccumulator >= H && this.phase === 'playing') {
-        this.simAccumulator -= H
-        this.simStep(H)
+      if (this.coop) {
+        this.coopAdvance(dtRaw, H)
+      } else {
+        let dtSim = dtRaw
+        if (this.hitstopT > 0) {
+          this.hitstopT = Math.max(0, this.hitstopT - dtRaw)
+          dtSim *= this.hitstopScale
+        }
+        this.simAccumulator = Math.min(this.simAccumulator + dtSim * this.speed, H * 14)
+        while (this.simAccumulator >= H && this.phase === 'playing') {
+          this.simAccumulator -= H
+          this.simStep(H)
+        }
       }
       // selection ring pulse
       if (this.selectRing.visible) {
@@ -2688,6 +2976,7 @@ export class Game implements World {
       }
       this.updateLanePreview(dtRaw)
     } else if (this.phase !== 'playing') {
+      if (this.coop) this.coopAdvance(dtRaw, 1 / 60)
       // menu/end-screen ambience; backdrop dioramas drift slowly with weather
       if (this.phase === 'idle' && this.terrain) {
         this.engine.yawGoal += dtRaw * 0.045
@@ -2701,6 +2990,11 @@ export class Game implements World {
   }
 
   private simStep(dt: number): void {
+    if (this.pendingSim.length) {
+      for (let i = 0; i < this.pendingSim.length; i++) {
+        if (this.pendingSim[i].at <= this.time) { const p = this.pendingSim[i]; this.pendingSim.splice(i--, 1); p.run() }
+      }
+    }
     this.time += dt
     this.waves!.update(dt)
 

@@ -1,5 +1,7 @@
 import { renderFieldGuide } from './fieldGuide.ts'
 import { renderCapstoneCards, CAPSTONE_COUNT } from './capstoneCards.ts'
+import { CoopSession, coopEnabled, type CoopSetup } from '../core/coop.ts'
+import { newRunSeed } from '../game/ruleset.ts'
 import { levels, levelById } from '../game/levels.ts'
 import { Difficulty, HeroId } from '../game/types.ts'
 import { difficultyMods } from '../game/difficulty.ts'
@@ -19,7 +21,7 @@ import { cloud, applyCloud, toCloud } from '../core/cloud.ts'
 import { mergeSaves } from '../core/saveMerge.ts'
 import { dailyShareText, challengeUrl, runChallengeUrl, runShareText, type DailyResult } from '../game/share.ts'
 
-export type ScreenName = 'menu' | 'levels' | 'victory' | 'defeat' | 'none'
+export type ScreenName = 'menu' | 'levels' | 'victory' | 'defeat' | 'coop' | 'none'
 
 const THEME_ART: Record<string, string> = {
   forest: 'linear-gradient(160deg, #79c057 0%, #4e9a3d 55%, #2e7a52 100%)',
@@ -167,13 +169,17 @@ export class Screens {
     this.root = document.getElementById('screens')!
   }
 
-  show(name: ScreenName, opts: { stars?: number, levelId?: string, stats?: BattleStats } = {}): void {
+  private current: ScreenName = 'none'
+
+  show(name: ScreenName, opts: { stars?: number, levelId?: string, stats?: BattleStats, coopCode?: string } = {}): void {
     this.root.innerHTML = ''
+    this.current = name
     this.root.classList.toggle('hidden', name === 'none')
     this.root.classList.toggle('transparent-bg', name === 'victory' || name === 'defeat')
     switch (name) {
       case 'menu': this.renderMenu(); break
       case 'levels': this.renderLevels(); break
+      case 'coop': this.renderCoop(opts.coopCode); break
       case 'victory': this.renderEnd(true, opts.stars ?? 1, opts.levelId!, opts.stats); break
       case 'defeat': this.renderEnd(false, 0, opts.levelId!, opts.stats); break
     }
@@ -234,6 +240,13 @@ export class Screens {
       body: 'One siege scored to its own soundtrack. Towers always fire the moment they are ready - but a shot that lands on the beat rings out and hits 40% harder. A meter shows where in the bar you are.',
       skill: 'The skill is arranging a defense whose rhythms fall on the beat more often than not.',
     })
+    if (coopEnabled()) {
+      this.modeRow(card, 'helmPlume', 'Co-op', () => this.show('coop'), {
+        tagline: 'Hold a road with a friend.',
+        body: 'Open a room, send the link, and fight one battle on one board together: shared gold, shared lives, both of you building and commanding the hero.',
+        skill: 'Talk. One of you takes the road, the other the air; nobody spends the last of the gold without saying so.',
+      })
+    }
     this.modeRow(card, 'respawn', 'The Three Watches', () => this.onPlayWatches(), {
       tagline: 'Fight beside your earlier self.',
       body: 'One short siege, fought three times over. Each watch, the defense you built last time returns as translucent echoes that still fight - faintly, and untouchable.',
@@ -340,6 +353,179 @@ export class Screens {
     const close = el('button', 'btn primary', card, 'Got it') as HTMLButtonElement
     close.onclick = () => overlay.remove()
     overlay.onclick = (e) => { if (e.target === overlay) overlay.remove() }
+  }
+
+  // ---------------- co-op lobby ----------------
+  private coopSession: CoopSession | null = null
+  private coopUnsub: (() => void) | null = null
+  private coopSetup: CoopSetup | null = null
+  onCoopStart: (session: CoopSession, setup: CoopSetup) => void = () => {}
+
+  /** leave whatever room the lobby holds */
+  leaveCoopLobby(): void {
+    this.coopUnsub?.()
+    this.coopUnsub = null
+    this.coopSession?.close()
+    this.coopSession = null
+    this.coopSetup = null
+  }
+
+  /**
+   * The room. A code to share, who is here, and - for the host - what to
+   * fight. The battle starts for everyone on the host's word; the room is
+   * then the game's, and this lobby only rerenders while it is on screen.
+   */
+  private renderCoop(prefill?: string): void {
+    const save = this.save()
+    const wrap = el('div', 'screen menu-screen', this.root)
+    const card = el('div', 'menu-hero coop-card', wrap)
+    el('h2', 'coop-title', card, `${icon('helmPlume')} Co-op`)
+    const session = this.coopSession
+
+    if (!session) {
+      el('div', 'coop-sub', card, 'One battle, one board, two or more wardens. Shared gold, shared lives, and everything either of you builds counts.')
+      const open = el('button', 'btn primary big', card, `${icon('castle')} Open a room`) as HTMLButtonElement
+      const err = el('div', 'coop-error', card, '')
+      open.onclick = async () => {
+        open.disabled = true
+        try {
+          this.coopSession = await CoopSession.create()
+          this.attachCoop()
+          this.show('coop')
+        } catch (e) {
+          err.textContent = e instanceof Error ? e.message : 'Could not open a room'
+          open.disabled = false
+        }
+      }
+      el('div', 'diff-sub', card, 'or join a friend')
+      const row = el('div', 'coop-join', card)
+      const input = el('input', 'coop-input', row) as HTMLInputElement
+      input.placeholder = 'ROOM CODE'
+      input.maxLength = 5
+      input.autocapitalize = 'characters'
+      input.spellcheck = false
+      if (prefill) input.value = prefill
+      const join = el('button', 'btn', row, 'Join') as HTMLButtonElement
+      const doJoin = async () => {
+        const code = input.value.trim()
+        if (code.length < 5) { err.textContent = 'A room code is five letters'; return }
+        join.disabled = true
+        try {
+          this.coopSession = await CoopSession.join(code)
+          this.attachCoop()
+          this.show('coop')
+        } catch (e) {
+          err.textContent = e instanceof Error ? e.message : 'Could not join'
+          join.disabled = false
+        }
+      }
+      join.onclick = doJoin
+      input.onkeydown = ev => { if (ev.key === 'Enter') void doJoin() }
+      if (prefill && prefill.length === 5) void doJoin()
+      const back = el('button', 'btn ghost', card, '← Menu') as HTMLButtonElement
+      back.onclick = () => this.show('menu')
+      return
+    }
+
+    // in a room
+    el('div', 'coop-code', card, session.code)
+    el('div', 'coop-sub', card, session.isHost ? 'Send this code, or the link, to whoever is joining you.' : 'You are in. The host chooses the battle and starts it.')
+    const share = el('button', 'btn', card, `${icon('share')} Copy invite link`) as HTMLButtonElement
+    share.onclick = async () => {
+      const url = session.shareUrl()
+      try { await navigator.clipboard.writeText(url); share.textContent = 'Link copied' } catch { share.textContent = url }
+      setTimeout(() => { share.innerHTML = `${icon('share')} Copy invite link` }, 2200)
+    }
+    const who = el('div', 'coop-who', card, '')
+    const paintWho = () => {
+      const n = session.connected.length
+      who.innerHTML = `${icon('helmPlume')} <b>${n}</b> of <b>${session.seats}</b> ${session.seats === 1 ? 'warden' : 'wardens'} connected` +
+        (session.seats < 2 ? ' · waiting for a friend' : n < session.seats ? ' · someone is reconnecting' : '')
+    }
+    paintWho()
+
+    if (session.isHost) {
+      const setup = this.coopSetup ?? this.defaultCoopSetup(save)
+      this.coopSetup = setup
+      const sendSetup = () => { this.coopSetup = setup; void session.send('setup', setup) }
+      el('div', 'diff-sub', card, 'Choose the battlefield')
+      const sel = el('select', 'coop-select', card) as HTMLSelectElement
+      levels.forEach((lvl, i) => {
+        if (i >= save.unlocked) return
+        const o = document.createElement('option')
+        o.value = lvl.id; o.textContent = `${i + 1}. ${lvl.name}`
+        if (lvl.id === setup.levelId) o.selected = true
+        sel.appendChild(o)
+      })
+      sel.onchange = () => { setup.levelId = sel.value; sendSetup() }
+      el('div', 'diff-sub', card, 'Champion')
+      const heroRow = el('div', 'mode-row', card)
+      for (const def of Object.values(HERO_DEFS)) {
+        if (!isUnlocked(save, 'hero', def.id)) continue
+        const b = el('button', `mode-option${setup.hero === def.id ? ' picked' : ''}`, heroRow, def.name) as HTMLButtonElement
+        b.onclick = () => { setup.hero = def.id; heroRow.querySelectorAll('.mode-option').forEach(x => x.classList.toggle('picked', x === b)); sendSetup() }
+      }
+      el('div', 'diff-sub', card, 'Challenge')
+      const diffRow = el('div', 'mode-row', card)
+      for (const key of ['casual', 'normal', 'veteran'] as Difficulty[]) {
+        const d = difficultyMods(setup.levelId, key)
+        const b = el('button', `mode-option${setup.difficulty === key ? ' picked' : ''}`, diffRow, d.name) as HTMLButtonElement
+        b.onclick = () => { setup.difficulty = key; diffRow.querySelectorAll('.mode-option').forEach(x => x.classList.toggle('picked', x === b)); sendSetup() }
+      }
+      const start = el('button', 'btn primary big', card, `${icon('swords')} Start the battle`) as HTMLButtonElement
+      const paintStart = () => { start.disabled = session.seats < 2 || session.connected.length < session.seats }
+      paintStart()
+      start.onclick = () => {
+        setup.seed = newRunSeed()
+        setup.loadout = { armory: { ...save.armory }, xp: save.xp }
+        void session.send('start', setup)
+      }
+      // the first setup goes out as soon as the room has a picture to send
+      sendSetup()
+      this.coopPaint = () => { paintWho(); paintStart() }
+    } else {
+      const plan = el('div', 'coop-plan', card, '')
+      const paintPlan = () => {
+        const st = session.setup
+        if (!st) { plan.textContent = 'The host is choosing…'; return }
+        const lvl = levels.find(l => l.id === st.levelId)
+        plan.innerHTML = `${icon('swords')} <b>${lvl?.name ?? st.levelId}</b> · ${difficultyMods(st.levelId, st.difficulty).name} · ${HERO_DEFS[st.hero]?.name ?? st.hero}`
+      }
+      paintPlan()
+      el('div', 'coop-sub dim', card, 'Waiting for the host to start…')
+      this.coopPaint = () => { paintWho(); paintPlan() }
+    }
+    const leave = el('button', 'btn ghost', card, 'Leave the room') as HTMLButtonElement
+    leave.onclick = () => { this.leaveCoopLobby(); this.show('menu') }
+  }
+
+  private coopPaint: () => void = () => {}
+
+  private defaultCoopSetup(save: SaveData): CoopSetup {
+    const last = levels[Math.max(0, Math.min(save.unlocked, levels.length) - 1)]
+    const hero = (isUnlocked(save, 'hero', save.lastHero as HeroId) ? save.lastHero : 'aldric') as HeroId
+    return { levelId: last.id, difficulty: 'normal', hero, seed: 0, loadout: { armory: { ...save.armory }, xp: save.xp } }
+  }
+
+  private attachCoop(): void {
+    const session = this.coopSession
+    if (!session) return
+    this.coopUnsub?.()
+    this.coopUnsub = session.on(e => {
+      if (e.type === 'start') {
+        // the game takes the room from here; the lobby lets go without closing it
+        this.coopUnsub?.()
+        this.coopUnsub = null
+        this.coopSession = null
+        this.coopSetup = null
+        this.onCoopStart(session, e.setup)
+        return
+      }
+      if (this.current !== 'coop') return
+      if (e.type === 'presence' || e.type === 'hello' || e.type === 'setup') this.coopPaint()
+      if (e.type === 'end') { this.leaveCoopLobby(); this.show('coop') }
+    })
+    session.connect()
   }
 
   private renderLevels(): void {

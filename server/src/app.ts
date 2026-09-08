@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { Store, type DailyScore, type EventIn } from './db.ts'
 import { mergeSaves, sanitizeCloudSave } from '../../src/core/saveMerge.ts'
+import { handleCoop } from './coop.ts'
 
 /**
  * Blockhold cloud saves, telemetry and the daily leaderboard.
@@ -70,7 +71,7 @@ export interface AppConfig {
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     allowedOrigins: (env.ALLOWED_ORIGINS
-      ?? 'https://aj8uppal.github.io,http://localhost:5173,http://localhost:4173')
+      ?? 'https://aj8uppal.github.io,http://localhost:5173,http://localhost:4173,http://localhost:4174')
       .split(',').map(s => s.trim()).filter(Boolean),
     statsToken: env.STATS_TOKEN && env.STATS_TOKEN.length >= 16 ? env.STATS_TOKEN : null,
   }
@@ -255,11 +256,27 @@ export function createApp(store: Store, cfg: AppConfig): Server {
     cors(req, res, cfg)
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
 
+    const url = new URL(req.url ?? '/', 'http://localhost')
+
+    // co-op rooms sit outside the coarse limiter: a player sends a command a
+    // second and holds one stream open, which the limiter would read as abuse.
+    // The rooms keep their own per-seat budget.
+    if (url.pathname.startsWith('/v1/coop/')) {
+      try {
+        if (await handleCoop(req, res, url, () => readBody(req))) return
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'error'
+        if (msg === 'bad json') { send(res, 400, { error: msg }); return }
+        if (msg === 'body too large') { send(res, 413, { error: msg }); return }
+        console.error('[blockhold-sync] coop', e)
+        send(res, 500, { error: 'server error' }); return
+      }
+    }
+
     const ip = String(req.headers['fly-client-ip'] ?? req.socket.remoteAddress ?? 'unknown')
     if (rateLimited(ip)) { send(res, 429, { error: 'slow down' }); return }
     const ipHash = store.ipHash(ip)
 
-    const url = new URL(req.url ?? '/', 'http://localhost')
     const route = `${req.method} ${url.pathname}`
 
     /** spend from one of the persisted buckets, or answer 429 */

@@ -822,6 +822,20 @@ button:focus-visible {
 }
 .chip-value { font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tp-traits { font-size: 11px; line-height: 1.45; color: rgba(244, 232, 207, 0.78); margin-top: 5px; }
+.coop-card { display: flex; flex-direction: column; gap: 10px; align-items: stretch; text-align: center; }
+.coop-title { font-family: var(--display, inherit); font-size: 26px; margin: 0; }
+.coop-sub { font-size: 13px; color: rgba(244, 232, 207, 0.8); line-height: 1.4; }
+.coop-sub.dim { opacity: 0.7; }
+.coop-code { font-family: var(--display, inherit); font-size: 44px; letter-spacing: 0.35em; color: #ffe4a8; text-shadow: 0 0 18px rgba(232, 178, 60, 0.5); margin: 4px 0; }
+.coop-join { display: flex; gap: 8px; }
+.coop-input { flex: 1; font: inherit; font-weight: 800; letter-spacing: 0.3em; text-transform: uppercase; text-align: center; padding: 10px; border-radius: 10px; border: 1px solid rgba(232, 178, 60, 0.45); background: rgba(0, 0, 0, 0.3); color: #f4e8cf; }
+.coop-error { color: #ff9d8a; font-size: 12.5px; min-height: 1em; }
+.coop-error:empty { display: none; }
+.coop-who, .coop-plan { font-size: 13px; color: #f4e8cf; }
+.coop-select { font: inherit; padding: 9px 12px; border-radius: 10px; border: 1px solid rgba(232, 178, 60, 0.45); background: rgba(26, 18, 12, 0.94); color: #f4e8cf; }
+.stat.coop .coop-code { font-size: 10px; letter-spacing: 0.08em; opacity: 0.7; margin-left: 4px; }
+.stat.coop.waiting { animation: coop-wait 1s ease-in-out infinite; }
+@keyframes coop-wait { 50% { opacity: 0.45; } }
 .pause-banked { font-size: 11.5px; color: rgba(244, 232, 207, 0.65); margin-top: 6px; min-height: 1em; }
 .pause-banked:empty { display: none; }
 .cards-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }

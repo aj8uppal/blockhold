@@ -132,6 +132,7 @@ export class HUD {
     this.shardsEl = el('div', 'stat shards', left, `${icon('gem')} <b>0</b>`)
     this.shardsEl.title = 'Veilshards — dropped by Shardbacks, elites, and bosses. Spend on tower Overcharge and Ascension.'
     this.waveEl = el('div', 'stat wave', left, `${icon('wave')} <b>0/10</b>`)
+    this.coopEl = el('div', 'stat coop hidden', left, '')
     // account experience, live: the level, a bar to the next, and the gain
     // from the last few kills. Before this the bar existed only on the menu,
     // so a battle never showed the thing it was earning.
@@ -180,6 +181,20 @@ export class HUD {
 
   private heroBtn!: HTMLButtonElement
 
+  private coopEl!: HTMLElement
+  /** the room this battle is shared with, or nothing */
+  setCoop(info: { code: string, seats: number, connected: number } | null): void {
+    this.coopEl.classList.toggle('hidden', !info)
+    if (!info) return
+    this.coopEl.innerHTML = `${icon('helmPlume')} <b>${info.connected}/${info.seats}</b> <span class="coop-code">${info.code}</span>`
+    this.coopEl.title = `Co-op room ${info.code}: ${info.connected} of ${info.seats} wardens connected`
+  }
+  /** the room's clock has gone quiet */
+  setCoopWaiting(on: boolean): void {
+    this.coopEl.classList.toggle('waiting', on)
+    if (on && !this.coopEl.dataset.waitSaid) { this.coopEl.dataset.waitSaid = '1'; this.showToast('Waiting for the room…', 2) }
+    if (!on) delete this.coopEl.dataset.waitSaid
+  }
   private sigEl: HTMLElement | null = null
   private lastSigText = ''
   private lastBarkAt = -10
@@ -584,7 +599,7 @@ export class HUD {
       // a tower the account has not reached stays on the menu, greyed and
       // labelled with its level, so the player knows the roster is bigger
       // than what they can build today and what it takes to grow it
-      if (!isUnlocked(this.game.save, 'tower', kind)) {
+      if (!isUnlocked(this.game.roster, 'tower', kind)) {
         const lockBtn = el('button', 'build-option locked', this.buildMenu) as HTMLButtonElement
         lockBtn.innerHTML = `<span class="b-icon">${icon('lock')}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">Lv ${unlockLevel('tower', kind)}</span>`
         lockBtn.disabled = true
@@ -1051,8 +1066,8 @@ export class HUD {
         `${icon('target')} ${TARGET_POLICY_LABEL[tower.targetPolicy]}`) as HTMLButtonElement
       tgt.title = 'Which enemy this tower shoots: closest to the gate, furthest from it, the toughest, or the weakest'
       tgt.onclick = this.menuGuard(() => {
-        const next = tower.cycleTargetPolicy()
-        tgt.innerHTML = `${icon('target')} ${TARGET_POLICY_LABEL[next]}`
+        const next = this.game.cycleTargetPolicy(tower)
+        if (next) tgt.innerHTML = `${icon('target')} ${TARGET_POLICY_LABEL[next]}`
       })
     }
     if (tower.canHoldLine) {
@@ -1067,11 +1082,7 @@ export class HUD {
       if (held) {
         const track = el('button', 'btn small', lineRow, `${icon('target')} Track again`) as HTMLButtonElement
         track.title = 'Go back to tracking whatever the targeting rule picks'
-        track.onclick = this.menuGuard(() => {
-          tower.clearHoldLine()
-          this.game.showHoldLine(null)
-          this.openTowerPanel(tower)
-        })
+        track.onclick = this.menuGuard(() => this.game.clearHoldLine(tower))
       }
     }
     const sell = el('button', 'btn small sell', row, `Sell ${icon('coin')}${tower.sellValue}`) as HTMLButtonElement

@@ -208,7 +208,7 @@ export class Enemy {
   wardedUntil = -1
   private wardTimer = 0
   private healAuraTimer = 0
-  private animT = Math.random() * 10
+  private animT = simRandom() * 10   // seeded: the walk bob is in pos.y, which the sim measures
   private flash = 0
   private dyingT = 0
   private yaw = 0
@@ -941,7 +941,7 @@ export class Soldier {
   reengageAt = 0
   /** how much room this soldier takes up, so fighters do not stand inside each other */
   readonly radius: number = 0.2
-  private animT = Math.random() * 10
+  private animT = simRandom() * 10   // seeded: the walk bob is in pos.y, which the sim measures
   private flash = 0
   private yaw = 0
   protected bar: HealthBar

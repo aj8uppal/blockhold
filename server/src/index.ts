@@ -1,5 +1,6 @@
 import { Store } from './db.ts'
 import { configFromEnv, createApp } from './app.ts'
+import { sweepRooms } from './coop.ts'
 
 /**
  * Process entry point: read the environment, open the database, listen.
@@ -26,6 +27,7 @@ const server = createApp(store, configFromEnv())
 
 function sweep(): void {
   try {
+    sweepRooms()
     const n = store.sweep()
     if (n.events || n.accounts || n.limits) {
       console.log(`[blockhold-sync] swept ${n.events} events, ${n.accounts} accounts, ${n.limits} limits`)

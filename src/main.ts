@@ -9,6 +9,7 @@ import { acquisitionSource, isEmbedded } from './core/platform.ts'
 import { dailySeed, dailyNumber, newRunSeed } from './game/ruleset.ts'
 import { dailyLevel } from './game/levels.ts'
 import { trialFor } from './game/trials.ts'
+import { inviteCodeFromUrl } from './core/coop.ts'
 import { challengeIsCurrent, readChallenge } from './game/share.ts'
 import { canRecordTape } from './core/captureSupport.ts'
 import { Game } from './game/game.ts'
@@ -110,6 +111,16 @@ function enterBattle(): void {
       setTimeout(() => hud.showToast('Tip: "Play fullscreen" on the main menu shows how to install Blockhold as a real fullscreen app', 8), 1500)
     }
   }
+}
+
+// a link with ?coop=CODE is an invitation: straight into the room
+const invite = inviteCodeFromUrl()
+if (invite) setTimeout(() => screens.show('coop', { coopCode: invite }), 0)
+
+screens.onCoopStart = (session, setup) => {
+  enterBattle()
+  game.startLevel(levelById(setup.levelId), setup.difficulty, setup.hero, 'campaign',
+    { seed: setup.seed, coop: { session, loadout: setup.loadout } })
 }
 
 screens.onPlayTrial = (id, kind) => {
@@ -241,6 +252,7 @@ screens.onResume = () => {
   game.startLevel(levelById(cp.levelId), cp.difficulty, cp.heroId, cp.endless ? 'endless' : 'campaign', { resume: cp })
 }
 screens.onMenu = () => {
+  game.leaveCoop()
   screens.watchesRemaining = 0
   game.resetWatches()
   game.showMenuBackdrop()
@@ -251,6 +263,7 @@ hud.onHome = () => {
   if (game.phase === 'playing') {
     telemetry.track({ type: 'quit_to_menu', level: game.level?.id ?? '', wave: (game.waves?.waveIndex ?? 0) + 1 })
   }
+  game.leaveCoop()
   game.showMenuBackdrop()
   hud.reset()
   hud.setChrome(false)
