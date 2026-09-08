@@ -51,6 +51,14 @@ Items 6, 7b, 8 and 9 were built in the second session, above.
 
 The owner asked for a Super-Monkey-class tower. **The Seraph** (src/game/towerDefs.ts, models in models_towers.ts `seraph()`): a winged idol that fires hitscan rays of light six to ten a second at anything in reach, air included. 1050 gold for the idol, 15,750 to a crown; unlocked at account level 25; three tiers, Solar (2.5x flares) or Void (magic, strips armor), and two crowns - the Dawnbringer (Dawnfall: a 600 true-damage column of light on the toughest foe every 8s, leaving a burn zone) and the Eventide (Eclipse: everything in reach stunned 1.5s and stripped of a fifth of its defenses every 10s). Left out of the balance model's baseline and out of the trials on purpose. Merged to main and deployed with the addiction branch.
 
+## Co-op (2026-09-07)
+
+Lockstep multiplayer on the deterministic sim, built in one session. Architecture: the sync server (server/src/coop.ts) is a relay and a metronome - rooms in memory, every message from every seat in one total order over Server-Sent Events, a turn marker every 200 ms worth 12 ticks (24 at 2x, 0 paused); a command arriving in turn n is stamped for n+1 and every client applies it at that turn's first tick. Client: src/core/coop.ts (room, stream, invite link), src/game/coopCommands.ts (every decision as data), Game.route()/applyCoopCommand()/coopAdvance() (routing, application, the clock). Shared gold and lives, one hero, the host's Armory and ladder for everyone. Boards hash their state every 25 turns and say so if they diverge. Lobby on the menu; `?coop=CODE` invites.
+
+Verified with two headless browsers on a local server: nine exchanged hashes at common turns, zero mismatches. Two determinism bugs were found and fixed on the way (unit walk-bob phase from Math.random leaking into pos.y; the Ossuary raise on the wall clock) - both also make replays and dailies more faithful.
+
+Known limits of v1: two to four seats, campaign maps only (no trials, Daily or Long Night), no mid-battle rejoin (a dropped stream is a desync), no in-game chat, and a cross-browser desync is possible in principle if two engines' Math.sin disagree in the last bit - the hash toast is the tell.
+
 ## Waiting on the owner
 
 - ~~A seventh tower family~~ built as the Seraph, see above. Astra's original advice was: not now. The account ladder already gates two families behind levels 15 and 20, twelve capstones exist, and a new family multiplies models, menus and balance before those choices are legible. If you want one regardless, the Ballista hold-line (item 6) or a support family that does not add damage (a bell tower that marks the beat, or a watchtower that reveals and slows) would be my pick.
