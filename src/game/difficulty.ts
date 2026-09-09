@@ -63,7 +63,8 @@ export function endlessScale(waveIndex: number): number {
   return (1 + depth * 0.035) * Math.pow(1.055, depth)
 }
 
-/** Continue smoothly from the campaign, then double HP about every ten waves. */
-export function freeplayScale(depth: number): number {
-  return Math.pow(1.075, Math.max(0, depth))
+/** Post-clear HP doubles in about 35 / 18 / 10 waves, by difficulty. */
+export function freeplayScale(depth: number, difficulty: Difficulty): number {
+  const growth = { casual: 1.02, normal: 1.04, veteran: 1.075 }[difficulty]
+  return Math.pow(growth, Math.max(0, depth))
 }

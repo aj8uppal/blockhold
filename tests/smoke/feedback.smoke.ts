@@ -54,3 +54,52 @@ test('rapid tower upgrades preserve authored colors and reveal the finished mode
   expect(colors.every(c => c.emissive === 0 && c.opacity === 1)).toBe(true)
   expect(consoleErrors).toEqual([])
 })
+
+test('Seraph chains render and the panel shows target growth with upgrades', async ({ page, consoleErrors }) => {
+  await bootToMenu(page)
+  await startBattle(page)
+  const hitCount = await page.evaluate(() => {
+    const game = window.vg.game as unknown as Game
+    game.save.xp = 9264
+    game.gold = 30000
+    const plot = game.terrain!.plots.find(p => !p.occupied)!
+    game.buildTower('seraph', plot)
+    const tower = game.towers[0]
+    game.paused = true
+    tower.update(1, game) // settle the build animation before inspecting the shot
+    for (let i = 0; i < 4; i++) {
+      game.spawnEnemyAt('husk', 0, 0)
+      const e = game.enemies[game.enemies.length - 1]
+      e.pos.set(tower.pos.x + 0.8 + i * 0.4, 0, tower.pos.z + (i % 2) * 0.6)
+      e.hp = e.maxHp = 10000
+    }
+    tower.update(1 / 60, game)
+    return game.enemies.filter(e => e.hp < e.maxHp).length
+  })
+  expect(hitCount).toBe(3)
+  const panel = page.locator('.tower-panel')
+  await expect(panel).toContainText('Targets3')
+  await expect(panel.locator('.u-delta')).toContainText('Targets3 → 4')
+  await page.screenshot({ path: 'tests/smoke/output/seraph-chain.png' })
+  expect(consoleErrors).toEqual([])
+})
+
+test('Beacon range and high-ground benefit are visible in the tower panel', async ({ page, consoleErrors }) => {
+  await bootToMenu(page)
+  await startBattle(page)
+  const reach = await page.evaluate(() => {
+    const game = window.vg.game as unknown as Game
+    game.save.xp = 9264
+    game.gold = 10000
+    const plot = game.terrain!.plots.find(p => !p.occupied && !game.terrain!.isOnHill(...p.cell))!
+    game.buildTower('beacon', plot)
+    const tower = game.towers[0]
+    game.raisePlot(plot)
+    return tower.auraReach
+  })
+  expect(reach).toBeCloseTo(4.14)
+  await expect(page.locator('.tower-panel')).toContainText('High ground: +15% aura reach')
+  await expect(page.locator('.tower-panel .stat-chips')).toContainText('Reach')
+  await expect(page.locator('.tower-panel .stat-chips')).toContainText('4.1')
+  expect(consoleErrors).toEqual([])
+})

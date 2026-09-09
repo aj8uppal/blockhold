@@ -99,10 +99,25 @@ describe('the new bosses', () => {
 describe('survival escalation', () => {
   it('doubles freeplay health within ten waves and keeps growing on a maxed board', async () => {
     const { freeplayScale } = await import('../src/game/difficulty.ts')
-    expect(freeplayScale(0)).toBe(1)
-    expect(freeplayScale(1)).toBeCloseTo(1.075)
-    expect(freeplayScale(10)).toBeGreaterThan(2)
-    expect(freeplayScale(30) / freeplayScale(20)).toBeGreaterThan(2)
+    expect(freeplayScale(0, 'veteran')).toBe(1)
+    expect(freeplayScale(1, 'veteran')).toBeCloseTo(1.075)
+    expect(freeplayScale(10, 'veteran')).toBeGreaterThan(2)
+    expect(freeplayScale(30, 'veteran') / freeplayScale(20, 'veteran')).toBeGreaterThan(2)
+  })
+
+  it('grows much more slowly on Casual and moderately on Normal', async () => {
+    const { freeplayScale } = await import('../src/game/difficulty.ts')
+    for (const difficulty of ['casual', 'normal', 'veteran'] as const) {
+      expect(freeplayScale(0, difficulty)).toBe(1)
+      expect(freeplayScale(2, difficulty)).toBeGreaterThan(freeplayScale(1, difficulty))
+    }
+    expect(freeplayScale(10, 'casual')).toBeLessThan(1.25)
+    expect(freeplayScale(10, 'normal')).toBeGreaterThan(1.45)
+    expect(freeplayScale(10, 'normal')).toBeLessThan(1.5)
+    expect(freeplayScale(35, 'casual')).toBeCloseTo(2, 1)
+    expect(freeplayScale(18, 'normal')).toBeCloseTo(2, 1)
+    expect(freeplayScale(30, 'casual')).toBeLessThan(freeplayScale(30, 'normal'))
+    expect(freeplayScale(30, 'normal')).toBeLessThan(freeplayScale(30, 'veteran'))
   })
 
   it('preserves the endless opening and compounds before wave twenty', async () => {

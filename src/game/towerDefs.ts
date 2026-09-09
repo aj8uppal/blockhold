@@ -243,42 +243,42 @@ const BEACON_AND_BALLISTA: Pick<Record<TowerKind, TowerTree>, 'beacon' | 'ballis
     kind: 'beacon',
     levels: [
       {
-        name: 'Signal Beacon', cost: 150, model: 'beacon1', range: 2.6,
+        name: 'Signal Beacon', cost: 150, model: 'beacon1', range: 3.6,
         aura: { damage: 0.10, range: 0, rate: 0 },
         description: 'A lit brazier. Every tower within its light deals +10% damage. It does not attack.',
       },
       {
-        name: "Warden's Beacon", cost: 220, model: 'beacon2', range: 2.9,
+        name: "Warden's Beacon", cost: 220, model: 'beacon2', range: 4.0,
         aura: { damage: 0.16, range: 0.05, rate: 0 },
         description: 'The light reaches further and burns brighter: +16% damage and +5% range to towers within it.',
       },
       {
-        name: 'High Beacon', cost: 320, model: 'beacon3', range: 3.2,
+        name: 'High Beacon', cost: 320, model: 'beacon3', range: 4.4,
         aura: { damage: 0.22, range: 0.08, rate: 0.08 },
         description: 'A tower of signal fire. +22% damage, +8% range and +8% attack speed to everything it lights.',
       },
     ],
     branches: [
       {
-        name: 'Watchfire', cost: 440, model: 'beacon4a', range: 3.4,
+        name: 'Watchfire', cost: 440, model: 'beacon4a', range: 4.8,
         aura: { damage: 0.22, range: 0.08, rate: 0.20, reveal: true },
         description: 'Nothing hides in its light. +20% attack speed, and phasing enemies inside the aura can be shot while they phase.',
       },
       {
-        name: 'Tithe Hall', cost: 440, model: 'beacon4b', range: 3.4,
+        name: 'Tithe Hall', cost: 440, model: 'beacon4b', range: 4.8,
         aura: { damage: 0.18, range: 0.08, rate: 0, bounty: 0.30 },
         description: 'The crown takes its share. Enemies killed within the light pay 30% more gold.',
       },
     ],
     capstones: [
       {
-        name: 'Crownfire', cost: 1100, model: 'beacon5a', range: 3.7,
+        name: 'Crownfire', cost: 1100, model: 'beacon5a', range: 5.2,
         aura: { damage: 0.28, range: 0.10, rate: 0.25, reveal: true },
         signature: 'kindling',
         description: 'The fire that lights the others. Every 20s, every tower in its light is Overcharged for 5s at no cost.',
       },
       {
-        name: 'The Exchequer', cost: 1100, model: 'beacon5b', range: 3.7,
+        name: 'The Exchequer', cost: 1100, model: 'beacon5b', range: 5.2,
         aura: { damage: 0.22, range: 0.10, rate: 0.08, bounty: 0.45 },
         signature: 'tithe',
         description: 'Kills within the light pay 45% more, and every twelfth one yields a Veilshard.',
@@ -357,48 +357,48 @@ const SERAPH: Record<'seraph', TowerTree> = {
     levels: [
       {
         name: 'Seraph Idol', cost: 1050, model: 'seraph1', range: 3.6,
-        damage: [7, 11], damageType: 'physical', attackInterval: 0.16, flying: true,
-        description: 'A winged idol that wakes when the road fills. Rays of light, six a second, at anything in reach - the sky included.',
+        damage: [7, 11], damageType: 'physical', attackInterval: 0.16, flying: true, chainTargets: 3,
+        description: 'A winged idol that wakes when the road fills. Six rays a second, each arcing through up to 3 nearby enemies at full damage, flyers included.',
       },
       {
         name: 'Seraph Ascendant', cost: 1500, model: 'seraph2', range: 4.0,
-        damage: [12, 18], damageType: 'physical', attackInterval: 0.14, flying: true,
-        description: 'The idol rises off its plinth. Brighter rays, faster, further.',
+        damage: [12, 18], damageType: 'physical', attackInterval: 0.14, flying: true, chainTargets: 4,
+        description: 'The idol rises off its plinth. Brighter, faster rays arc through up to 4 nearby enemies at full damage.',
       },
       {
         name: 'Seraph Sovereign', cost: 2100, model: 'seraph3', range: 4.4,
-        damage: [20, 30], damageType: 'physical', attackInterval: 0.12, flying: true,
-        description: 'A colossus with a lance of light. Its rays come eight a second and it looks down on every tower you own.',
+        damage: [20, 30], damageType: 'physical', attackInterval: 0.12, flying: true, chainTargets: 5,
+        description: 'A colossus with a lance of light. Eight rays a second, each arcing through up to 5 nearby enemies at full damage.',
       },
     ],
     branches: [
       {
         name: 'Solar Seraph', cost: 3600, model: 'seraph4a', range: 5.0,
-        damage: [34, 50], damageType: 'physical', attackInterval: 0.12, flying: true,
+        damage: [34, 50], damageType: 'physical', attackInterval: 0.12, flying: true, chainTargets: 6,
         special: { kind: 'crit', chance: 0.25, mult: 2.5 },
-        description: 'The sun made a statue. One ray in four is a flare that burns for 2.5x.',
+        description: 'Rays arc through up to 6 enemies at full damage. One ray in four is a solar flare that burns the whole chain for 2.5x.',
       },
       {
         name: 'Void Seraph', cost: 3600, model: 'seraph4b', range: 4.6,
-        damage: [40, 58], damageType: 'magic', attackInterval: 0.14, flying: true,
+        damage: [40, 58], damageType: 'magic', attackInterval: 0.14, flying: true, chainTargets: 6,
         special: { kind: 'armorShred', amount: 0.04 },
-        description: 'Turned to the dark between stars. Its rays are magic, ignore armor, and strip 4% of it from whatever they touch.',
+        description: 'Magic rays arc through up to 6 enemies at full damage, ignoring armor and stripping 4% from each target.',
       },
     ],
     capstones: [
       {
         name: 'The Dawnbringer', cost: 7500, model: 'seraph5a', range: 5.6,
-        damage: [60, 90], damageType: 'physical', attackInterval: 0.1, flying: true,
+        damage: [60, 90], damageType: 'physical', attackInterval: 0.1, flying: true, chainTargets: 7,
         special: { kind: 'crit', chance: 0.3, mult: 2.5 },
         signature: 'dawnfall',
-        description: 'Ten rays a second, and every eight seconds Dawnfall: a column of true light on the toughest thing in reach for 600, leaving the road burning.',
+        description: 'Ten rays a second, arcing through up to 7 enemies at full damage. Every eight seconds, Dawnfall: a column of true light on the toughest thing in reach for 600, leaving the road burning.',
       },
       {
         name: 'The Eventide', cost: 7500, model: 'seraph5b', range: 5.0,
-        damage: [90, 130], damageType: 'magic', attackInterval: 0.14, flying: true,
+        damage: [90, 130], damageType: 'magic', attackInterval: 0.14, flying: true, chainTargets: 7,
         special: { kind: 'armorShred', amount: 0.06 },
         signature: 'eclipse',
-        description: 'Armor-ignoring rays seven a second, and every ten seconds an Eclipse: everything in reach is stunned for 1.5s and loses a fifth of its armor and resistance.',
+        description: 'Seven-target magic chains at full damage. Every ten seconds, an Eclipse: everything in reach is stunned for 1.5s and loses a fifth of its armor and resistance.',
       },
     ],
   },

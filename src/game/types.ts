@@ -78,6 +78,8 @@ export interface TowerLevelDef {
   attackInterval?: number
   splash?: number            // explosion radius
   flying?: boolean           // can target flying
+  /** Seraph rays chain through this many distinct enemies at full damage. */
+  chainTargets?: number
   special?: TowerSpecial
   // barracks
   soldier?: SoldierDef

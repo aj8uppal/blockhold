@@ -89,7 +89,7 @@ export type ProjectileSpec =
    * beam is drawn for a tenth of a second; at ten rays a second a travelling
    * projectile would be a swarm of meshes and a second of latency.
    */
-  | { kind: 'ray', from: THREE.Vector3, target: Enemy, damage: number, damageType: DamageType, color: number, width: number, crit?: boolean, armorShred?: number, credit?: KillCredit, world: World }
+  | { kind: 'ray', from: THREE.Vector3, target: Enemy, targets: number, damage: number, damageType: DamageType, color: number, width: number, crit?: boolean, armorShred?: number, credit?: KillCredit, world: World }
   | { kind: 'meteor', at: THREE.Vector3, damage: number, world: World }
   /** a Stormhowl's thrown axe: leaves a soldier's hand, tumbles, and hits a flyer */
   | { kind: 'axe', from: THREE.Vector3, target: Enemy, damage: number, armorPierce?: number, credit?: KillCredit, world: World }

@@ -57,7 +57,7 @@ export interface EarthworkDef {
 export const EARTHWORK_DEFS: Record<EarthworkKind, EarthworkDef> = {
   rampart: {
     kind: 'rampart', name: 'Raise ground', icon: 'quake', cost: 70,
-    description: 'Raise this foundation onto high ground. The tower on it reaches +15% further, hits +10% harder, and sees over low ridges.',
+    description: 'Raise this foundation onto high ground. The tower on it reaches +15% further, hits +10% harder, and sees over low ridges. Beacons gain +15% aura reach.',
   },
   cutting: {
     kind: 'cutting', name: 'Cutting', icon: 'spike', cost: 90,

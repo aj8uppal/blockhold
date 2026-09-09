@@ -138,6 +138,12 @@ const boltColors: Record<string, number> = {
 /** each upgrade visibly grows the building: presence tracks power */
 const TIER_SCALE = [0.9, 1.0, 1.1, 1.2, 1.3]
 
+/** Shared by built Beacons, placement links and range previews. */
+export function beaconReach(range: number, highGround: boolean, lamplighters: number, farsight = false): number {
+  return (range + 0.3 * lamplighters + (farsight ? 0.6 : 0))
+    * (highGround ? 1 + RAMPART_RANGE_BONUS : 1)
+}
+
 /** where the ascension sigil floats, per tower model */
 function towerCrownHeight(model: string): number {
   const t5 = model.includes('5')
@@ -369,7 +375,7 @@ export class Tower {
   get isSeraph(): boolean { return this.kind === 'seraph' }
   /** the beacon's light reaches this far; the perk widens it */
   get auraReach(): number {
-    return this.def.range + (this.perk?.id === 'farsight' ? 0.6 : 0) + 0.3 * this.world.armoryTier('lamplighters')
+    return this.rangeFor(this.def)
   }
 
   /** how many soldiers this barracks fields: its tier's squad plus the Muster Roll */
@@ -449,13 +455,13 @@ export class Tower {
 
   /** the reach a given tier would have from this plot */
   rangeFor(def: TowerLevelDef): number {
-    if (def.aura) return def.range + (this.perk?.id === 'farsight' ? 0.6 : 0) + 0.3 * this.world.armoryTier('lamplighters')
-    return (def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0))
+    if (def.aura) return beaconReach(def.range, this.onHighGround, this.world.armoryTier('lamplighters'), this.perk?.id === 'farsight')
+    return ((def.range + (this.perk?.id === 'hawkeye' ? 0.8 : 0))
       * (this.kind === 'ballista' ? 1 + 0.06 * this.world.armoryTier('siegecraft') : 1)
       * (this.has('ranging') ? 1.12 : 1)
       * (this.has('longshot') ? 1.10 : 1)
       * (this.onHighGround ? 1 + RAMPART_RANGE_BONUS : 1)
-      + (this.perk?.id === 'zenith' ? 0.8 : 0)
+      + (this.perk?.id === 'zenith' ? 0.8 : 0))
       * (1 + this.auraRange)
   }
 
@@ -469,7 +475,7 @@ export class Tower {
       if (this.auraRate) bits.push(`+${Math.round(this.auraRate * 100)}% attack speed`)
       out.push(`Lit by a beacon: ${bits.join(', ')}`)
     }
-    if (this.onHighGround) out.push(`High ground: +${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range, sees over low ridges`)
+    if (this.onHighGround) out.push(this.isBeacon ? 'High ground: +15% aura reach' : `High ground: +${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range, sees over low ridges`)
     if (this.holdLine) out.push('Holding a line: fires only down its own bearing')
     return out
   }
@@ -1065,7 +1071,7 @@ export class Tower {
         const shred = special?.kind === 'armorShred' ? special.amount : undefined
         const color = SERAPH_LIGHT[def.model] ?? 0xfff1b0
         world.fireProjectile({
-          kind: 'ray', from, target, damage: dmg * (crit ? special!.mult : 1),
+          kind: 'ray', from, target, targets: def.chainTargets ?? 1, damage: dmg * (crit ? special!.mult : 1),
           damageType: def.damageType ?? 'physical', color, width: this.level >= 5 ? 0.09 : this.level >= 4 ? 0.07 : 0.05,
           crit: crit || undefined, armorShred: shred, credit: this, world,
         })

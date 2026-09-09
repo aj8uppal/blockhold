@@ -33,7 +33,7 @@ import { Terrain, PlotInfo, THEMES } from './terrain.ts'
 import { Particles } from './particles.ts'
 import { Enemy, Soldier } from './units.ts'
 import { Hero, HERO_DEFS } from './hero.ts'
-import { Tower } from './towers.ts'
+import { Tower, beaconReach } from './towers.ts'
 import { WaveManager } from './waves.ts'
 import { World, ProjectileSpec } from './world.ts'
 import { Projectile, createProjectile, updateBurnZones, clearBurnZones, updateMines, clearMines, updateRunes, clearRunes, clearOwnedEffects } from './projectiles.ts'
@@ -392,7 +392,7 @@ export class Game implements World {
   /** Freeplay grows from the campaign's final strength, by depth on this board. */
   private freeplayHpScale(): number {
     if (!this.isFreeplay || !this.waves) return 1
-    return freeplayScale(this.waves.freeplayDepth)
+    return freeplayScale(this.waves.freeplayDepth, this.difficulty)
   }
 
   /** the mode a difficulty is resolved for; freeplay keeps the campaign's per-map bite */
@@ -2260,11 +2260,10 @@ export class Game implements World {
       this.upgradeRing.visible = false
       return
     }
-    // the upgrade's own multipliers ride along, so the ring is the real number
-    const scale = opt.range / tower.def.range
+    // Include additive perks and ground bonuses in the preview too.
     this.upgradeRing.visible = true
     this.upgradeRing.position.set(tower.pos.x, tower.pos.y - 0.05, tower.pos.z)
-    this.upgradeRing.scale.setScalar(tower.range * scale)
+    this.upgradeRing.scale.setScalar(tower.rangeFor({ ...tower.def, range: opt.range }))
   }
 
   /** preview range for a build option (hover in build menu) */
@@ -2278,7 +2277,8 @@ export class Game implements World {
     const def = towerTrees[kind].levels[0]
     this.rangeRing.visible = true
     this.rangeRing.position.set(this.selectedPlot.pos.x, this.selectedPlot.pos.y - 0.06, this.selectedPlot.pos.z)
-    this.rangeRing.scale.setScalar(def.range)
+    const highGround = this.selectedPlot.raised || this.terrain?.isOnHill(...this.selectedPlot.cell) === true
+    this.rangeRing.scale.setScalar(kind === 'beacon' ? beaconReach(def.range, highGround, this.armoryTier('lamplighters')) : def.range)
     // what the ground and the neighbours would buy, drawn as links
     const pv = this.placementPreview(kind)
     const from = this.selectedPlot.pos
@@ -2305,6 +2305,7 @@ export class Game implements World {
     const plot = this.selectedPlot
     const out = { reactions: [] as { name: string, description: string, tower: Tower }[], beacon: null as { name: string, damage: number, tower: Tower } | null, lights: [] as Tower[], highGround: false }
     if (!plot) return out
+    out.highGround = plot.raised || this.terrain?.isOnHill(...plot.cell) === true
     const seen = new Set<string>()
     for (const o of this.towers) {
       if (o.pos.distanceTo(plot.pos) > REACTION_RADIUS) continue
@@ -2313,7 +2314,7 @@ export class Game implements World {
       else if (kind === 'barracks' && !seen.has('shieldwall')) { seen.add('shieldwall'); out.reactions.push({ name: 'Shield Wall', description: 'Soldiers guarded by a neighbouring tower gain +18% health.', tower: o }) }
     }
     if (kind === 'beacon') {
-      const reach = towerTrees.beacon.levels[0].range + 0.3 * this.armoryTier('lamplighters')
+      const reach = beaconReach(towerTrees.beacon.levels[0].range, out.highGround, this.armoryTier('lamplighters'))
       out.lights = this.towers.filter(t => !t.isBeacon && Math.hypot(t.pos.x - plot.pos.x, t.pos.z - plot.pos.z) <= reach)
     } else {
       let best = -1
@@ -2324,7 +2325,6 @@ export class Game implements World {
         if (dmg > best) { best = dmg; out.beacon = { name: b.def.name, damage: dmg, tower: b } }
       }
     }
-    out.highGround = plot.raised || this.terrain?.isOnHill(plot.cell[0], plot.cell[1]) === true
     return out
   }
 
@@ -2469,6 +2469,7 @@ export class Game implements World {
       // what it shoots from, so it can see over anything shorter than its footing
       t.footing = this.terrain?.cellTop(t.plot.cell[0], t.plot.cell[1]) ?? 0
     }
+    this.recomputeAuras()
   }
 
   /**

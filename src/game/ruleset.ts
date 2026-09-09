@@ -21,8 +21,9 @@
  *      Armory's six new tracks, the Veilward changing what a boss at the gate
  *      costs, and the freeplay ladder. All change what a seed produces.
  *   4  faster campaign/freeplay/endless escalation and boss crowd-control recovery.
+ *   5  Seraph chains, Beacon reach and height bonuses, difficulty-based freeplay growth.
  */
-export const RULESET_VERSION = 4
+export const RULESET_VERSION = 5
 
 /** identifies a reproducible run */
 export interface RunStamp {

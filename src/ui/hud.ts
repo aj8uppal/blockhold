@@ -778,7 +778,7 @@ export class HUD {
     for (const r of pv.reactions) gains.push(`${icon('sparkle')} <b>${r.name}</b> with ${r.tower.def.name}: ${r.description}`)
     if (pv.beacon) gains.push(`${icon('flame')} Lit by ${pv.beacon.name}: +${Math.round(pv.beacon.damage * 100)}% damage`)
     if (pv.lights.length) gains.push(`${icon('flame')} Would light ${pv.lights.length} tower${pv.lights.length === 1 ? '' : 's'}`)
-    if (pv.highGround) gains.push(`${icon('quake')} High ground: +${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range`)
+    if (pv.highGround) gains.push(kind === 'beacon' ? `${icon('quake')} High ground: +15% aura reach` : `${icon('quake')} High ground: +${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range`)
     tip.innerHTML = `<b>${def.name}</b><br>${def.description}<br><span class="tip-stats">${statLine(def, this.mults(kind))}</span>` +
       (gains.length ? `<span class="tip-gains">${gains.join('<br>')}</span>` : '')
     tip.classList.remove('hidden')
@@ -828,11 +828,12 @@ export class HUD {
     btn.innerHTML = cls.includes('build-option')
       ? `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${cost}</span>`
       : `${icon(def.icon)} ${def.name} ${icon('coin')}${cost}`
-    btn.title = def.description
+    const description = this.game.towers.find(t => t.plot === plot)?.isBeacon ? 'Raise this Beacon onto high ground to extend its aura by 15%.' : def.description
+    btn.title = description
     const showTip = () => {
       const tip = document.getElementById('build-tip')
       if (tip) {
-        tip.innerHTML = `<b>${def.name}</b><br>${def.description}<br><span class="tip-stats">+${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range, and it sees over low ridges. Permanent. The next foundation after this costs ${icon('coin')}${raiseCost(this.game.raisedCount() + 1)}.</span>`
+        tip.innerHTML = `<b>${def.name}</b><br>${description}<br><span class="tip-stats">Permanent. The next foundation after this costs ${icon('coin')}${raiseCost(this.game.raisedCount() + 1)}.</span>`
         tip.classList.remove('hidden')
       }
       this.game.previewRaise(plot)
@@ -953,6 +954,7 @@ export class HUD {
       const traits = [
         lit.length ? `${icon('flame')} lighting <b>${lit.length}</b>: ${lit.map(t => t.def.name).join(', ')}` : `${icon('flame')} lighting nothing yet — build inside the ring`,
       ]
+      for (const note of tower.modifierNotes()) traits.push(`${icon('quake')} ${note}`)
       if (a.reveal) traits.push(`${icon('eye')} phasing enemies in the light can be shot`)
       if (a.bounty) traits.push(`${icon('coin')} kills in the light pay +${Math.round(a.bounty * 100)}%`)
       el('div', 'tp-traits', p, traits.join('<br>'))
@@ -985,9 +987,11 @@ export class HUD {
         chip('Damage', `${icon(typeIco)} ${lo}–${hi}`, tower.damageMult > 1 ? 'lit' : '') +
         chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`, tower.rateMult > 1 ? 'lit' : '') +
         chip('Range', `${icon('range')} ${fmtNum(tower.range)}`, tower.range > def.range ? 'lit' : '') +
-        chip('DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : ''))
+        chip(def.chainTargets ? 'DPS / target' : 'DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : '') +
+        (def.chainTargets ? chip('Targets', `${def.chainTargets}`) : ''))
       const traits: string[] = []
       for (const note of tower.modifierNotes()) traits.push(`${icon('flame')} ${note}`)
+      if (def.chainTargets) traits.push('arcs at full damage between nearby enemies')
       if (def.splash) traits.push(`${icon('blast')} blast r${Math.round(def.splash * m.splash * 100) / 100}`)
       if (def.damageType === 'magic') traits.push(`${icon('sparkle')} ignores armor`)
       traits.push(def.flying ? `${icon('feather')} hits flyers` : 'no flyers')
@@ -1506,7 +1510,8 @@ function deltaLines(tower: Tower, to: TowerLevelDef, m: StatMults): string {
     const adps = (alo + ahi) / 2 / fi, bdps = (blo + bhi) / 2 / ti
     up('Damage', `${alo}\u2013${ahi}`, `${blo}\u2013${bhi}`, (blo + bhi) > (alo + ahi))
     up('Rate', fmtSecs(fi), fmtSecs(ti), ti < fi)
-    up('DPS', fmt(adps), fmt(bdps), bdps > adps)
+    up(to.chainTargets ? 'DPS / target' : 'DPS', fmt(adps), fmt(bdps), bdps > adps)
+    if (to.chainTargets) up('Targets', `${from.chainTargets ?? 1}`, `${to.chainTargets}`, to.chainTargets > (from.chainTargets ?? 1))
   }
   const ar = tower.rangeFor(from), br = tower.rangeFor(to)
   if (Math.abs(ar - br) > 1e-6) up('Range', fmt(ar), fmt(br), br > ar)
@@ -1537,7 +1542,7 @@ function perkDeltaLines(tower: Tower, perkId: string, m: StatMults): string {
   if (def.aura) {
     const a = def.aura
     const reach = tower.auraReach
-    row('Reach', fmt(reach), fmt(reach + (perkId === 'farsight' ? 0.6 : 0)))
+    row('Reach', fmt(reach), fmt(reach + (perkId === 'farsight' ? 0.6 * (tower.onHighGround ? 1 + RAMPART_RANGE_BONUS : 1) : 0)))
     row('Damage', pct(a.damage), pct(a.damage + (perkId === 'zeal' ? 0.08 : 0)))
     if (a.range) row('Range', pct(a.range), pct(a.range))
     if (a.rate) row('Speed', pct(a.rate), pct(a.rate))
@@ -1605,6 +1610,7 @@ function statLine(def: TowerLevelDef, m: StatMults): string {
   const dps = ((lo + hi) / 2 / def.attackInterval!).toFixed(1)
   const type = def.damageType === 'magic' ? `${icon('sparkle')} magic` : def.splash ? `${icon('blast')} splash` : `${icon('sword')} physical`
   const splash = def.splash ? Math.round(def.splash * m.splash * 100) / 100 : 0
-  return `${icon('swords')} ${lo}–${hi} (${type}) · ${icon('hourglass')} ${def.attackInterval}s · ${icon('range')} ${def.range} · DPS ${dps}` +
+  return `${icon('swords')} ${lo}–${hi} (${type}) · ${icon('hourglass')} ${def.attackInterval}s · ${icon('range')} ${def.range} · DPS${def.chainTargets ? '/target' : ''} ${dps}` +
+    (def.chainTargets ? ` · arcs to ${def.chainTargets} targets at full damage` : '') +
     (splash ? ` · ${icon('blast')} r${splash}` : '') + (def.flying ? ` · ${icon('feather')} hits flyers` : ' · no flyers')
 }
