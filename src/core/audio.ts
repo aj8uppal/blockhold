@@ -6,7 +6,7 @@ export type SfxName =
   | 'coin' | 'build' | 'sell' | 'upgrade' | 'die' | 'leak' | 'horn'
   | 'victory' | 'defeat' | 'meteor' | 'reinforce' | 'heal' | 'click'
   | 'error' | 'crit' | 'poison'
-  | 'dieMagic' | 'dieFire' | 'dieShock' | 'heroAck' | 'heroLevel' | 'signature' | 'ray' | 'dawnfall'
+  | 'dieMagic' | 'dieFire' | 'dieShock' | 'heroAck' | 'heroLevel' | 'signature' | 'ray' | 'dawnfall' | 'eclipse'
 
 export class AudioSystem {
   private ctx: AudioContext | null = null
@@ -70,7 +70,7 @@ export class AudioSystem {
     heroAck: 62, heroLevel: 68, signature: 48,
     // the constant background of a battle
     cannon: 30, magic: 25, poison: 20, arrow: 15, hit: 10, ray: 8,
-    dawnfall: 58,
+    dawnfall: 58, eclipse: 58,
   }
 
   /** how many voices may start in one window before the budget starts refusing */
@@ -281,10 +281,16 @@ export class AudioSystem {
         this.tone(2100, 0.045, { type: 'sine', vol: 0.035 * v, slide: 900 })
         break
       case 'dawnfall':
-        // the column of light: a low bloom under a high sustained shimmer
-        this.tone(110, 0.6, { type: 'sine', vol: 0.22 * v, attack: 0.05, slide: -40 })
-        this.tone(1760, 0.5, { type: 'triangle', vol: 0.07 * v, attack: 0.1 })
-        this.noise(0.4, { vol: 0.12 * v, filterFreq: 2600, slide: -1800 })
+        // Soft rising light: no bass drop, noise transient, or stacked signature cue.
+        this.tone(440, 0.65, { type: 'sine', vol: 0.085 * v, attack: 0.09, slide: 220 })
+        this.tone(880, 0.75, { type: 'sine', vol: 0.05 * v, attack: 0.14, delay: 0.07 })
+        this.tone(1320, 0.8, { type: 'sine', vol: 0.025 * v, attack: 0.18, delay: 0.12 })
+        break
+      case 'eclipse':
+        // A suspended, darker interval that dissolves without a percussive hit.
+        this.tone(330, 0.85, { type: 'sine', vol: 0.07 * v, attack: 0.12, slide: -36 })
+        this.tone(495, 0.9, { type: 'sine', vol: 0.045 * v, attack: 0.16, delay: 0.04, slide: -55 })
+        this.tone(990, 0.8, { type: 'sine', vol: 0.02 * v, attack: 0.18, delay: 0.1 })
         break
       case 'heroAck':
         // the hero answers: two short notes, up

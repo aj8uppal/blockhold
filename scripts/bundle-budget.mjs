@@ -33,9 +33,11 @@ const assets = join(root, 'dist', 'assets')
  * game does; an accidental 40 KB still fails here.
  * 137 / 264 KB for Seraph chains and Beacon/freeplay fixes: +0.5 KB app and
  * +0.9 KB Three.js instancing, which keeps each multi-target shot to one draw.
+ * 139 / 266 KB for distinct Seraph forms, independent beams and terrain-
+ * projected range indicators: about +1.6 KB of app code for this visual pass.
  */
-const APP_CHUNK_LIMIT = 137 * 1024
-const TOTAL_JS_LIMIT = 264 * 1024
+const APP_CHUNK_LIMIT = 139 * 1024
+const TOTAL_JS_LIMIT = 266 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

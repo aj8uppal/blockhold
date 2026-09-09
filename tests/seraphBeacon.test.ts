@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { Tower } from '../src/game/towers.ts'
 import { Game } from '../src/game/game.ts'
 import { towerTrees } from '../src/game/towerDefs.ts'
-import { createProjectile, type Projectile } from '../src/game/projectiles.ts'
+import { createProjectile, clearBurnZones, type Projectile } from '../src/game/projectiles.ts'
 import { Enemy } from '../src/game/units.ts'
 import { enemyDef } from '../src/game/enemyDefs.ts'
 import { LanePath } from '../src/game/path.ts'
@@ -25,18 +25,66 @@ function fixture(enemies: Enemy[] = []) {
     cameraQuat: new THREE.Quaternion(), isBellfoundry: false,
     towerDamageMult: () => 1, armoryTier: () => 0, soldierHpMult: () => 1,
     sightBlocked: () => false, groundY: () => 0,
-    sfx: vi.fn(), floater: vi.fn(), shatterUnit: vi.fn(), onEnemyKilled: vi.fn(),
-    particles: { hitSpark: vi.fn(), magicImpact: vi.fn(), buildDust: vi.fn() },
+    sfx: vi.fn(), shake: vi.fn(), impact: vi.fn(), floater: vi.fn(), shatterUnit: vi.fn(), onEnemyKilled: vi.fn(),
+    particles: { stunStars: vi.fn(), hitSpark: vi.fn(), magicImpact: vi.fn(), buildDust: vi.fn() },
     fireProjectile: (spec: ProjectileSpec) => shots.push(createProjectile(spec)),
   } as unknown as World
   return { world, shots }
 }
 function ray(world: World, targets = 3, extra: Partial<Extract<ProjectileSpec, { kind: 'ray' }>> = {}) {
-  return createProjectile({ kind: 'ray', from: new THREE.Vector3(0, 1, 0), target: world.enemies[0],
-    targets, damage: 10, damageType: 'physical', color: 0xffd166, width: 0.05, world, ...extra })
+  return createProjectile({ kind: 'ray', from: new THREE.Vector3(0, 1, 0),
+    targets: world.enemies.filter(e => e.targetable).slice(0, targets), damage: 10, damageType: 'physical', color: 0xffd166, width: 0.05, world, ...extra })
 }
 
-describe('Seraph arcs', () => {
+describe('Seraph independent beams', () => {
+  it('keeps both signatures effective without a camera jolt, hit stop, or tower scale pulse', () => {
+    for (const branch of [0, 1]) {
+      const e = enemy(1), { world, shots } = fixture([e])
+      const tower = new Tower('seraph', plot(), world)
+      for (let level = 1; level < 5; level++) { tower.upgrade(level === 3 ? branch : 0, world); tower.update(0.2, world) }
+      tower.update(1, world)
+      const hp = e.hp
+      vi.mocked(world.sfx).mockClear()
+      const signature = tower as unknown as { dawnfall(w: World): void, eclipse(w: World): void, signatureFlashT: number }
+      if (branch === 0) signature.dawnfall(world)
+      else signature.eclipse(world)
+      if (branch === 0) expect(hp - e.hp).toBe(600)
+      else expect(e.stunUntil).toBe(world.time + 1.5)
+      expect(world.shake).not.toHaveBeenCalled()
+      expect(world.impact).not.toHaveBeenCalled()
+      expect(world.sfx).not.toHaveBeenCalledWith('signature', expect.anything())
+      expect(signature.signatureFlashT).toBe(0)
+      const effect = shots.at(-1)!
+      expect(effect.mesh.name).toBe(branch === 0 ? 'dawnfall-light' : 'eclipse-halo')
+      effect.update(0.2)
+      expect(effect.done).toBe(false)
+      effect.update(0.7)
+      expect(effect.done).toBe(true)
+      for (const shot of shots) shot.dispose?.()
+      clearBurnZones(world)
+    }
+  })
+  it('lets enemy colors recover between rapid volleys', () => {
+    const e = enemy(0), { world } = fixture([e])
+    const materials: THREE.MeshStandardMaterial[] = []
+    e.group.traverse(o => { if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) materials.push(o.material) })
+    const baseIntensity = materials[0].emissiveIntensity
+    e.takeDamage(1, 'true', world)
+    expect(materials[0].emissiveIntensity).toBe(0.24)
+    world.time += 0.04
+    e.takeDamage(1, 'true', world)
+    // Isolate presentation expiry from movement and combat.
+    e.state = 'gone'
+    e.update(0.07, world)
+    e.state = 'walking'
+    world.time += 0.04
+    e.takeDamage(1, 'true', world)
+    expect(materials[0].emissiveIntensity).toBe(baseIntensity)
+    expect(materials[0].emissive.getHex()).toBe(0)
+    world.time += 0.12
+    e.takeDamage(1, 'true', world)
+    expect(materials[0].emissiveIntensity).toBe(0.24)
+  })
   it('hits 3 through 7 distinct enemies as either branch upgrades, at full damage', () => {
     for (const branch of [0, 1]) for (let tier = 1; tier <= 5; tier++) {
       const enemies = Array.from({ length: 8 }, (_, i) => enemy(1 + i * 0.2))
@@ -52,29 +100,48 @@ describe('Seraph arcs', () => {
       expect(damage, `tier ${tier}, branch ${branch}`).toHaveLength(tier + 2)
       expect(damage.every(d => d === damage[0])).toBe(true)
       expect(tower.damage).toBeCloseTo(damage[0] * damage.length)
-      expect((shots[0].mesh as THREE.InstancedMesh).count).toBe(tier + 2)
+      expect((shots[0].mesh.getObjectByName('ray-core') as THREE.InstancedMesh).count).toBe((tier + 2) * 3)
       shots[0].dispose?.()
     }
   })
 
-  it('jumps between nearby enemies, skipping dead and phased targets and reaching flyers', () => {
-    const first = enemy(0), phased = enemy(0.1), dead = enemy(0.2)
+  it('reaches enemies on opposite sides without bouncing, skipping hidden and distant targets', () => {
+    const first = enemy(-3), phased = enemy(0.1), dead = enemy(0.2)
     phased.phased = true
     dead.state = 'gone'
-    const flyer = enemy(2, 'gargoyle'), third = enemy(4), distant = enemy(9)
-    const { world } = fixture([first, phased, dead, flyer, third, distant])
-    const shot = ray(world, 7)
-    expect(first.hp).toBeLessThan(first.maxHp)
-    expect(flyer.hp).toBeLessThan(flyer.maxHp)
-    expect(third.hp).toBeLessThan(third.maxHp)
+    const flyer = enemy(3, 'gargoyle'), third = enemy(0), distant = enemy(4.5)
+    const { world, shots } = fixture([first, phased, dead, flyer, third, distant])
+    const tower = new Tower('seraph', plot(), world)
+    tower.update(1 / 60, world)
+    for (const e of [first, flyer, third]) expect(e.hp).toBeLessThan(e.maxHp)
     for (const e of [phased, dead, distant]) expect(e.hp).toBe(e.maxHp)
-    expect((shot.mesh as THREE.InstancedMesh).count).toBe(3)
-    shot.update(0.11)
-    expect(shot.done).toBe(true)
-    shot.dispose?.()
+    const core = shots[0].mesh.getObjectByName('ray-core') as THREE.InstancedMesh
+    const matrix = new THREE.Matrix4()
+    const starts = [0, 3, 6].map(i => {
+      core.getMatrixAt(i, matrix)
+      return new THREE.Vector3(0, 0, -0.5).applyMatrix4(matrix)
+    })
+    expect(starts[0].distanceTo(starts[1])).toBeLessThan(1e-6)
+    expect(starts[0].distanceTo(starts[2])).toBeLessThan(1e-6)
+    shots[0].update(0.09)
+    expect(shots[0].done).toBe(true)
+    shots[0].dispose?.()
   })
 
-  it('carries magic damage and armor shred through the chain and credits kills once', () => {
+  it('checks each beam for terrain, and applies range bonuses to the whole volley', () => {
+    const first = enemy(1), hidden = enemy(2), far = enemy(4.3)
+    const { world, shots } = fixture([first, hidden, far])
+    world.sightBlocked = (_x, _z, _y, x) => x === 2
+    const tower = new Tower('seraph', plot(), world)
+    tower.auraRange = 0.25
+    tower.update(1 / 60, world)
+    expect(first.hp).toBeLessThan(first.maxHp)
+    expect(far.hp).toBeLessThan(far.maxHp)
+    expect(hidden.hp).toBe(hidden.maxHp)
+    shots[0].dispose?.()
+  })
+
+  it('carries magic damage and armor shred to each beam and credits kills once', () => {
     const enemies = [enemy(0), enemy(1), enemy(2)]
     enemies.forEach(e => { e.armor = 0.5; e.magicResistNow = 0; e.hp = 15 })
     const { world } = fixture(enemies)
@@ -87,15 +154,29 @@ describe('Seraph arcs', () => {
   })
 
   it('keeps single-target damage when no other enemy can be reached', () => {
-    const { world } = fixture([enemy(0), enemy(10)])
-    const shot = ray(world, 7)
-    expect(world.enemies[0].hp).toBe(9990)
+    const { world, shots } = fixture([enemy(0), enemy(10)])
+    const tower = new Tower('seraph', plot(), world)
+    tower.update(1 / 60, world)
+    const shot = shots[0]
+    expect(world.enemies[0].hp).toBeLessThan(10000)
     expect(world.enemies[1].hp).toBe(10000)
     shot.dispose?.()
   })
 })
 
 describe('Beacon value and high ground', () => {
+  it('never charges for raising a naturally elevated plot', () => {
+    const raise = vi.fn(), route = vi.fn()
+    const game = Object.assign(Object.create(Game.prototype), {
+      paused: false, gold: 1000, terrain: { isOnHill: () => true, raisePlot: raise }, route,
+    }) as Game
+    const p = plot()
+    game.raisePlot(p)
+    expect(game.gold).toBe(1000)
+    expect(p.raised).toBe(false)
+    expect(raise).not.toHaveBeenCalled()
+    expect(route).not.toHaveBeenCalled()
+  })
   it('lights spaced plots immediately after its foundation is raised', () => {
     const { world } = fixture()
     const beacon = new Tower('beacon', plot(), world)
@@ -124,18 +205,24 @@ describe('Beacon value and high ground', () => {
     beacon.plot.raised = true
     beacon.onHighGround = true
     world.towers.push(arrow)
-    const ring = new THREE.Object3D()
+    const ring = new THREE.Mesh()
+    const upgradeRing = new THREE.Mesh()
+    const radiusOf = (mesh: THREE.Mesh) => {
+      const p = mesh.geometry.getAttribute('position')
+      return Math.max(...Array.from({ length: p.count }, (_, i) => Math.hypot(p.getX(i), p.getZ(i))))
+    }
     const game = Object.assign(Object.create(Game.prototype), world, {
-      selectedPlot: beacon.plot, rangeRing: ring, upgradeRing: new THREE.Object3D(),
+      selectedPlot: beacon.plot, rangeRing: ring, upgradeRing,
+      terrain: { level: { width: 30, height: 30, voids: [] }, cellTop: () => 0.5 },
       previewLinks: new THREE.Group(),
     }) as Game
     expect(game.placementPreview('beacon').lights).toEqual([arrow])
     game.previewRange('beacon')
-    expect(ring.scale.x).toBeCloseTo(beacon.auraReach)
+    expect(radiusOf(ring)).toBeCloseTo(beacon.auraReach)
     beacon.perk = { id: 'farsight', name: 'Far Sight', icon: 'eye', description: '' }
     game.previewUpgradeRange(beacon, towerTrees.beacon.levels[1])
-    const upgradeRing = (game as unknown as { upgradeRing: THREE.Object3D }).upgradeRing
-    expect(upgradeRing.scale.x).toBeCloseTo((4 + 0.6 + 0.6) * 1.15)
+    expect(radiusOf(upgradeRing)).toBeCloseTo((4 + 0.6 + 0.6) * 1.15)
+    ring.geometry.dispose(); upgradeRing.geometry.dispose()
   })
 
   it('actually grants its advertised range bonus to nearby attacking towers', () => {

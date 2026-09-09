@@ -532,8 +532,8 @@ function exchequer(): VoxModel {
 // figure is authored around x = 0 and never turns (a statue does not swivel;
 // its rays go where they are sent), so the wings and the halo can be their own
 // parts and move: the wings beat slowly from pivots at the shoulders, the halo
-// spins, the heart pulses. Every tier adds height, gold and light; the two
-// crowns change the light itself.
+// spins, the heart pulses. Light tiers change silhouette; Void retains its
+// monumental dark figure and square crowns.
 
 type SeraphAspect = 'plain' | 'solar' | 'void'
 
@@ -541,11 +541,11 @@ function seraph(level: 1 | 2 | 3 | 4 | 5, aspect: SeraphAspect = 'plain'): VoxMo
   const marble = aspect === 'void' ? 0x3a3550 : W.white
   const marbleDark = aspect === 'void' ? 0x26223a : 0xc9c4b2
   const trim = aspect === 'void' ? 0x8f7ad8 : W.gold
-  const light = aspect === 'void' ? 0x9d6bff : aspect === 'solar' ? 0xffd166 : 0xfff1b0
+  const light = aspect === 'void' ? 0x9d6bff : aspect === 'solar' ? 0xffd166 : level === 3 ? 0x99ddff : 0xfff1b0
   const lightHot = aspect === 'void' ? 0xd8b8ff : 0xffffff
 
-  // the plinth grows a step per tier
-  const plinthH = 1.2 + level * 0.5
+  const dark = aspect === 'void'
+  const plinthH = dark ? 1.2 + level * 0.5 : level === 1 ? 1.3 : 1.9
   const base: VoxBox[] = [
     box(0, 0.6, 0, 7.6, 1.2, 7.6, W.stoneDark),
     box(0, 1.2 + plinthH / 2, 0, 5.6, plinthH, 5.6, marbleDark),
@@ -565,8 +565,8 @@ function seraph(level: 1 | 2 | 3 | 4 | 5, aspect: SeraphAspect = 'plain'): VoxMo
   }
 
   // the figure: feet at the top of the plinth
-  const f = 1.2 + plinthH + 0.5
-  const bodyH = 6.0 + level * 1.1
+  const f = 1.2 + plinthH + 0.5 + (!dark && level >= 2 ? 0.8 : 0)
+  const bodyH = dark ? 6.0 + level * 1.1 : 6.0 + level * 0.42
   const figure: VoxBox[] = [
     box(0, f + 0.6, 0, 3.4, 1.2, 2.4, marbleDark),                  // robe hem
     box(0, f + bodyH * 0.35, 0, 2.8, bodyH * 0.7, 2.0, marble),      // robe
@@ -591,14 +591,16 @@ function seraph(level: 1 | 2 | 3 | 4 | 5, aspect: SeraphAspect = 'plain'): VoxMo
 
   // wings: swept back and up in steps, one part each, pivoting at the shoulder
   const shoulderY = f + bodyH * 0.85
-  const span = 2.6 + level * 0.9
+  const span = dark ? 2.6 + level * 0.9 : level === 1 ? 0.9 : level === 2 ? 5.8 : 4.4
   const wing = (side: 1 | -1): VoxBox[] => {
     const out: VoxBox[] = []
     const steps = 3 + Math.min(2, level - 1)
     for (let i = 0; i < steps; i++) {
       const k = i / (steps - 1)
-      out.push(box(side * (1.8 + k * span), shoulderY + 0.4 + k * (1.4 + level * 0.6) - (k > 0.6 ? (k - 0.6) * 3 : 0), -0.9 - k * 0.6,
-        1.4 + (1 - k) * 0.6, 3.0 - k * 1.2 + level * 0.25, 0.5, i % 2 ? marbleDark : marble))
+      const rise = dark ? 0.4 + k * (1.4 + level * 0.6) - (k > 0.6 ? (k - 0.6) * 3 : 0)
+        : level === 1 ? -k * 3 : level === 2 ? k * 0.7 : k * 2.6
+      out.push(box(side * (1.8 + k * span), shoulderY + rise, -0.9 - k * 0.6,
+        dark ? 1.4 + (1 - k) * 0.6 : 1.1, dark ? 3.0 - k * 1.2 + level * 0.25 : 2.5 - k * 0.8, 0.5, i % 2 ? marbleDark : marble))
       if (level >= 4) out.push(box(side * (1.8 + k * span), shoulderY - 1.0 + k * 0.6, -0.95 - k * 0.6, 0.5, 0.8, 0.3, light, true))
     }
     return out
@@ -622,14 +624,57 @@ function seraph(level: 1 | 2 | 3 | 4 | 5, aspect: SeraphAspect = 'plain'): VoxMo
     for (const [dx, dz] of [[-hr2, -hr2], [hr2, -hr2], [-hr2, hr2], [hr2, hr2]] as const) halo.push(box(dx, hy + 0.5, dz, 0.6, 0.6, 0.6, lightHot, true))
   }
 
+  const parts: VoxModel['parts'] = { base, figure, heart, wingL, wingR, halo }
+  const pivots: NonNullable<VoxModel['pivots']> = {
+    wingL: [-1.8, shoulderY, -0.9], wingR: [1.8, shoulderY, -0.9],
+    halo: [0, hy, 0], heart: [0, f + bodyH * 0.82, 1.2],
+  }
+  if (!dark && level >= 3) {
+    // The Sovereign is an orrery: two independently turning rings around
+    // the figure, a different outline even with every material unlit.
+    const orbitY = f + bodyH * 0.62
+    for (const [name, radius] of [['orbitInner', 4.6], ['orbitOuter', 5.8]] as const) {
+      pivots[name] = [0, orbitY, 0]
+      parts[name] = [
+        box(0, orbitY, -radius, radius * 2, 0.28, 0.28, light, true),
+        box(0, orbitY, radius, radius * 2, 0.28, 0.28, light, true),
+        box(-radius, orbitY, 0, 0.28, 0.28, radius * 2, light, true),
+        box(radius, orbitY, 0, 0.28, 0.28, radius * 2, light, true),
+      ]
+    }
+  }
+  if (aspect === 'solar') {
+    // A sun-disc behind the shoulders, replacing the little overhead halo.
+    // Dawnbringer adds a third pair of detached, orbiting solar vanes.
+    halo.length = 0
+    const sunY = f + bodyH * 0.92, radius = level === 5 ? 5.6 : 4.5
+    pivots.halo = [0, sunY, -1.8]
+    for (let i = 0; i < 16; i++) {
+      const angle = i / 16 * Math.PI * 2
+      const next = (i + 1) / 16 * Math.PI * 2
+      const x1 = Math.cos(angle) * radius, y1 = Math.sin(angle) * radius
+      const x2 = Math.cos(next) * radius, y2 = Math.sin(next) * radius
+      halo.push(box((x1 + x2) / 2, sunY + (y1 + y2) / 2, -1.8,
+        Math.abs(x2 - x1) + 0.25, Math.abs(y2 - y1) + 0.25, 0.3, light, true))
+      if (i % 4 === 0) halo.push(box(Math.cos(angle) * (radius + 0.8), sunY + Math.sin(angle) * (radius + 0.8), -1.8,
+        i % 8 === 0 ? 1.3 : 0.45, i % 8 === 0 ? 0.45 : 1.3, 0.4, trim))
+    }
+    for (const side of [-1, 1] as const) {
+      const name = side < 0 ? 'wingLowL' : 'wingLowR'
+      pivots[name] = [side * 1.8, shoulderY - 1, -0.9]
+      parts[name] = Array.from({ length: 4 }, (_, i) => box(side * (2.3 + i * 1.15),
+        shoulderY - 2 - i * 0.65, -1, 0.9, 1.8, 0.45, i % 2 ? trim : marble))
+      if (level === 5) {
+        const crown = side < 0 ? 'wingCrownL' : 'wingCrownR'
+        pivots[crown] = [side * 1.8, shoulderY + 1, -0.9]
+        parts[crown] = Array.from({ length: 3 }, (_, i) => box(side * (3 + i * 1.25),
+          shoulderY + 2.8 + i * 1.2, -0.8, 0.75, 1.7, 0.5, light, true))
+      }
+    }
+  }
   return {
-    parts: { base, figure, heart, wingL, wingR, halo },
-    pivots: {
-      wingL: [-1.8, shoulderY, -0.9], wingR: [1.8, shoulderY, -0.9],
-      halo: [0, hy, 0], heart: [0, f + bodyH * 0.82, 1.2],
-    },
-    // the crowns are colossi: they stand a third again over every other tower
-    scale: level >= 5 ? 0.135 : level >= 4 ? 0.12 : 0.105,
+    parts, pivots,
+    scale: dark ? (level >= 5 ? 0.135 : 0.12) : level >= 4 ? 0.11 : 0.105,
   }
 }
 

@@ -778,6 +778,7 @@ export class HUD {
     for (const r of pv.reactions) gains.push(`${icon('sparkle')} <b>${r.name}</b> with ${r.tower.def.name}: ${r.description}`)
     if (pv.beacon) gains.push(`${icon('flame')} Lit by ${pv.beacon.name}: +${Math.round(pv.beacon.damage * 100)}% damage`)
     if (pv.lights.length) gains.push(`${icon('flame')} Would light ${pv.lights.length} tower${pv.lights.length === 1 ? '' : 's'}`)
+    if (pv.reactions.length || pv.beacon || pv.lights.length) gains.unshift('Gold links show these bonuses:')
     if (pv.highGround) gains.push(kind === 'beacon' ? `${icon('quake')} High ground: +15% aura reach` : `${icon('quake')} High ground: +${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range`)
     tip.innerHTML = `<b>${def.name}</b><br>${def.description}<br><span class="tip-stats">${statLine(def, this.mults(kind))}</span>` +
       (gains.length ? `<span class="tip-gains">${gains.join('<br>')}</span>` : '')
@@ -789,6 +790,7 @@ export class HUD {
   }
 
   closeBuildMenu(): void {
+    this.game.previewRange(null)
     this.clearArmedBuild()
     this.buildMenu.classList.add('hidden')
   }
@@ -824,6 +826,14 @@ export class HUD {
     const def = EARTHWORK_DEFS.rampart
     const cost = this.game.nextRaiseCost()
     const btn = el('button', cls, parent) as HTMLButtonElement
+    if (plot.raised || this.game.terrain?.isOnHill(...plot.cell)) {
+      btn.disabled = true
+      btn.title = 'Already elevated: the high-ground bonus is active. Raising adds no range.'
+      btn.innerHTML = cls.includes('build-option')
+        ? `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">High ground<br><small>Bonus already active</small></span>`
+        : `${icon(def.icon)} High ground<span class="u-desc">Bonus already active; raising adds no range.</span>`
+      return btn
+    }
     btn.dataset.cost = `${cost}`
     btn.innerHTML = cls.includes('build-option')
       ? `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${cost}</span>`
@@ -988,11 +998,11 @@ export class HUD {
         chip('Damage', `${icon(typeIco)} ${lo}–${hi}`, tower.damageMult > 1 ? 'lit' : '') +
         chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`, tower.rateMult > 1 ? 'lit' : '') +
         chip('Range', `${icon('range')} ${fmtNum(tower.range)}`, tower.range > def.range ? 'lit' : '') +
-        chip(def.chainTargets ? 'DPS / target' : 'DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : '') +
-        (def.chainTargets ? chip('Targets', `${def.chainTargets}`) : ''))
+        chip(def.beamTargets ? 'DPS / target' : 'DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : '') +
+        (def.beamTargets ? chip('Targets', `${def.beamTargets}`) : ''))
       const traits: string[] = []
       for (const note of tower.modifierNotes()) traits.push(`${icon('flame')} ${note}`)
-      if (def.chainTargets) traits.push('arcs at full damage between nearby enemies')
+      if (def.beamTargets) traits.push('independent beams from the idol; full damage to each target')
       if (def.splash) traits.push(`${icon('blast')} blast r${Math.round(def.splash * m.splash * 100) / 100}`)
       if (def.damageType === 'magic') traits.push(`${icon('sparkle')} ignores armor`)
       traits.push(def.flying ? `${icon('feather')} hits flyers` : 'no flyers')
@@ -1511,8 +1521,8 @@ function deltaLines(tower: Tower, to: TowerLevelDef, m: StatMults): string {
     const adps = (alo + ahi) / 2 / fi, bdps = (blo + bhi) / 2 / ti
     up('Damage', `${alo}\u2013${ahi}`, `${blo}\u2013${bhi}`, (blo + bhi) > (alo + ahi))
     up('Rate', fmtSecs(fi), fmtSecs(ti), ti < fi)
-    up(to.chainTargets ? 'DPS / target' : 'DPS', fmt(adps), fmt(bdps), bdps > adps)
-    if (to.chainTargets) up('Targets', `${from.chainTargets ?? 1}`, `${to.chainTargets}`, to.chainTargets > (from.chainTargets ?? 1))
+    up(to.beamTargets ? 'DPS / target' : 'DPS', fmt(adps), fmt(bdps), bdps > adps)
+    if (to.beamTargets) up('Targets', `${from.beamTargets ?? 1}`, `${to.beamTargets}`, to.beamTargets > (from.beamTargets ?? 1))
   }
   const ar = tower.rangeFor(from), br = tower.rangeFor(to)
   if (Math.abs(ar - br) > 1e-6) up('Range', fmt(ar), fmt(br), br > ar)
@@ -1611,7 +1621,7 @@ function statLine(def: TowerLevelDef, m: StatMults): string {
   const dps = ((lo + hi) / 2 / def.attackInterval!).toFixed(1)
   const type = def.damageType === 'magic' ? `${icon('sparkle')} magic` : def.splash ? `${icon('blast')} splash` : `${icon('sword')} physical`
   const splash = def.splash ? Math.round(def.splash * m.splash * 100) / 100 : 0
-  return `${icon('swords')} ${lo}–${hi} (${type}) · ${icon('hourglass')} ${def.attackInterval}s · ${icon('range')} ${def.range} · DPS${def.chainTargets ? '/target' : ''} ${dps}` +
-    (def.chainTargets ? ` · arcs to ${def.chainTargets} targets at full damage` : '') +
+  return `${icon('swords')} ${lo}–${hi} (${type}) · ${icon('hourglass')} ${def.attackInterval}s · ${icon('range')} ${def.range} · DPS${def.beamTargets ? '/target' : ''} ${dps}` +
+    (def.beamTargets ? ` · ${def.beamTargets} independent beams at full damage` : '') +
     (splash ? ` · ${icon('blast')} r${splash}` : '') + (def.flying ? ` · ${icon('feather')} hits flyers` : ' · no flyers')
 }

@@ -223,6 +223,8 @@ export class Tower {
   private static readonly DAWNFALL_EVERY = 8
   private static readonly ECLIPSE_EVERY = 10
   private seraphT = 0
+  private seraphPulse = 0
+  private seraphSpeed = 1.3
 
   /**
    * The special attack, counted down where the player can see it.
@@ -267,19 +269,33 @@ export class Tower {
    * fires), the heart pulses with each ray. The crowns speak on a timer.
    */
   private animateSeraph(dt: number, world: World): void {
-    this.seraphT += dt
     const firing = this.target !== null
+    this.seraphSpeed += ((firing ? 3.2 : 1.3) - this.seraphSpeed) * (1 - Math.exp(-dt * 5))
+    this.seraphT += dt * this.seraphSpeed
+    this.seraphPulse = Math.max(0, this.seraphPulse - dt * 12)
     const halo = getPart(this.model, 'halo')
     if (halo) {
-      halo.rotation.y += dt * (firing ? 2.6 : 0.9)
-      halo.position.y = (halo.userData.baseY ??= halo.position.y) + Math.sin(this.seraphT * 1.4) * 0.03
+      if (this.branch === 0 && this.level >= 4) halo.rotation.z += dt * 0.22
+      else halo.rotation.y += dt * this.seraphSpeed * 0.65
+      halo.position.y = (halo.userData.baseY ??= halo.position.y) + Math.sin(world.time * 1.4) * 0.03
     }
-    const beat = Math.sin(this.seraphT * (firing ? 4.2 : 1.3))
+    const beat = Math.sin(this.seraphT)
     const wingL = getPart(this.model, 'wingL'), wingR = getPart(this.model, 'wingR')
     if (wingL) { wingL.rotation.z = -beat * 0.16; wingL.rotation.y = beat * 0.08 }
     if (wingR) { wingR.rotation.z = beat * 0.16; wingR.rotation.y = -beat * 0.08 }
+    for (const [name, sign] of [['wingLowL', 1], ['wingLowR', -1], ['wingCrownL', -1], ['wingCrownR', 1]] as const) {
+      const wing = getPart(this.model, name)
+      if (wing) wing.rotation.z = Math.sin(this.seraphT - 0.4) * 0.10 * sign
+    }
+    for (const [name, sign] of [['orbitInner', 1], ['orbitOuter', -1]] as const) {
+      const orbit = getPart(this.model, name)
+      if (orbit) { orbit.rotation.x = sign * 0.55; orbit.rotation.y += dt * sign * 0.55 }
+    }
     const heart = getPart(this.model, 'heart')
-    if (heart) heart.scale.setScalar(1 + (firing ? Math.abs(Math.sin(this.seraphT * 30)) * 0.5 : Math.sin(this.seraphT * 2) * 0.12))
+    if (heart) heart.scale.setScalar(1 + this.seraphPulse * 0.22 + Math.sin(world.time * 2) * 0.025)
+  }
+
+  private updateSeraphSignature(world: World): void {
     if (this.isGhost || this.level < 5 || !this.def.signature) return
     // the crowns
     const every = this.def.signature === 'dawnfall' ? Tower.DAWNFALL_EVERY : Tower.ECLIPSE_EVERY
@@ -299,36 +315,30 @@ export class Tower {
       if (!best || e.hp > best.hp) best = e
     }
     if (!best) return
-    this.signatureFired(world)
     const at = best.pos.clone()
     const dmg = 600 * (this.perk?.id === 'radiance' ? 1.2 : 1) * (1 + this.auraDamage)
     best.takeDamage(dmg, 'true', world, { crit: true, credit: this, flavor: 'fire' })
-    for (let i = 0; i < 4; i++) world.particles.magicImpact(at.x, at.y + 0.3 + i * 0.55, at.z, 0xfff1b0)
-    world.particles.explosion(at.x, 0.1, at.z, 0.9)
+    world.fireProjectile({ kind: 'seraphBloom', at, solar: true, world })
     addBurnZone(world, new THREE.Vector3(at.x, 0, at.z), 1.2, 40, 4, this)
     world.floater(at.x, at.y + 1.2, at.z, 'Dawnfall!', 'crit')
-    world.sfx('dawnfall', 0.9)
-    world.shake(0.2)
-    world.impact('heavy')
+    world.sfx('dawnfall', 0.65)
   }
 
   /** Eclipse: everything in reach stands stunned in the dark, and comes out of it less armored */
   private eclipse(world: World): void {
-    this.signatureFired(world)
     let hit = 0
     for (const e of world.enemies) {
       if (!e.targetable || Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) > this.range + e.radius) continue
       e.applyStun(1.5, world)
       e.shredArmor(0.2)
       e.shredResist(0.2)
-      world.particles.magicImpact(e.pos.x, e.pos.y + 0.5, e.pos.z, 0x9d6bff)
+      world.particles.hitSpark(e.pos.x, e.pos.y + 0.5, e.pos.z, 0x9d6bff)
       hit++
     }
     if (hit) {
-      world.particles.magicImpact(this.pos.x, this.pos.y + 2.0, this.pos.z, 0x2b2333)
+      world.fireProjectile({ kind: 'seraphBloom', at: this.muzzle(), solar: false, world })
       world.floater(this.pos.x, this.pos.y + 2.6, this.pos.z, 'Eclipse!', 'crit')
-      world.sfx('dawnfall', 0.7)
-      world.shake(0.14)
+      world.sfx('eclipse', 0.65)
     }
   }
 
@@ -580,6 +590,7 @@ export class Tower {
     // the new silhouette stays out of sight until the old one has crouched
     if (this.oldModel) this.model.visible = false
     this.applyTierPresence()
+    if (this.isSeraph) this.animateSeraph(0, world)
     if (this.isBarracks) {
       if (initial) this.pickDefaultRally(world)
       this.respawnAllSoldiers(world)
@@ -749,6 +760,10 @@ export class Tower {
   // ---------------- combat ----------------
 
   private muzzle(): THREE.Vector3 {
+    if (this.isSeraph) {
+      const heart = getPart(this.model, 'heart')
+      if (heart) return heart.getWorldPosition(new THREE.Vector3())
+    }
     return this.pos.clone().add(new THREE.Vector3(0, muzzleHeights[this.def.model] * this.sizeMult, 0))
   }
 
@@ -837,18 +852,19 @@ export class Tower {
       this.revealT -= dt
       const k = Math.max(0, this.revealT / Tower.REVEAL_HOLD)   // 1 -> 0 over the hold
       const squash = 1 - (1 - k) * 0.22
-      this.oldModel.scale.set(this.sizeMult * (2 - squash), this.sizeMult * squash, this.sizeMult * (2 - squash))
+      if (this.kind === 'seraph') this.oldModel.scale.setScalar(this.sizeMult * (0.94 + k * 0.06))
+      else this.oldModel.scale.set(this.sizeMult * (2 - squash), this.sizeMult * squash, this.sizeMult * (2 - squash))
       if (this.revealT <= 0) {
         this.group.remove(this.oldModel)
         disposeClonedMaterials(this.oldModel)
         this.oldModel = null
         this.model.visible = true
         this.buildT = 0
-        world.particles.buildDust(this.pos.x, this.pos.y + 0.15, this.pos.z)
+        if (this.kind !== 'seraph') world.particles.buildDust(this.pos.x, this.pos.y + 0.15, this.pos.z)
         world.sfx('upgrade')
         // a capstone is a transformation, and gets a second, lower note under it
-        if (this.level >= 5) { world.sfx('horn', 0.45); world.particles.magicImpact(this.pos.x, this.pos.y + 1.0, this.pos.z, 0xffe89f) }
-        else if (this.level === 4) world.particles.magicImpact(this.pos.x, this.pos.y + 0.8, this.pos.z, 0xffc76a)
+        if (this.kind !== 'seraph' && this.level >= 5) { world.sfx('horn', 0.45); world.particles.magicImpact(this.pos.x, this.pos.y + 1.0, this.pos.z, 0xffe89f) }
+        else if (this.kind !== 'seraph' && this.level === 4) world.particles.magicImpact(this.pos.x, this.pos.y + 0.8, this.pos.z, 0xffc76a)
       }
       return
     }
@@ -856,7 +872,10 @@ export class Tower {
     if (this.buildT < 1) {
       this.buildT = Math.min(1, this.buildT + dt * 3)
       const overshoot = 1 + Math.sin(this.buildT * Math.PI) * (this.level > 1 ? 0.2 : 0.12)
-      this.model.scale.setScalar(clamp(this.buildT * 1.15, 0.05, 1) * overshoot * this.sizeMult)
+      const scale = this.kind === 'seraph'
+        ? 0.94 + 0.06 * this.buildT * this.buildT * (3 - 2 * this.buildT)
+        : clamp(this.buildT * 1.15, 0.05, 1) * overshoot
+      this.model.scale.setScalar(scale * this.sizeMult)
     }
 
     if (this.signatureFlashT > 0) {
@@ -877,7 +896,7 @@ export class Tower {
     const flag = getPart(this.model, 'flag')
     if (flag) flag.rotation.y = Math.sin(world.time * 2.5 + this.pos.x) * 0.22
 
-    if (this.isSeraph) this.animateSeraph(dt, world)
+    if (this.isSeraph) { this.animateSeraph(dt, world); this.updateSeraphSignature(world) }
 
     // ascension sigil + overcharge ring
     if (this.crownMesh) {
@@ -1069,16 +1088,23 @@ export class Tower {
     switch (this.kind) {
       case 'beacon': break   // a beacon never reaches fire(); guarded in update()
       case 'seraph': {
-        // a ray a tick: hitscan, drawn for a tenth of a second
+        // Every beam starts at the idol. Pick all targets before damage can
+        // alter the enemy list; every secondary obeys the tower's own reach.
+        const targets = [target, ...world.enemies.filter(e => e !== target && e.targetable
+          && Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) <= this.range + e.radius
+          && this.canSee(e, world)).sort((a, b) => targetScore(this.targetPolicy, a) - targetScore(this.targetPolicy, b))]
+          .slice(0, def.beamTargets ?? 1)
         const special = def.special
         const crit = special?.kind === 'crit' && simChance(special.chance)
         const shred = special?.kind === 'armorShred' ? special.amount : undefined
         const color = SERAPH_LIGHT[def.model] ?? 0xfff1b0
         world.fireProjectile({
-          kind: 'ray', from, target, targets: def.chainTargets ?? 1, damage: dmg * (crit ? special!.mult : 1),
+          kind: 'ray', from, targets, damage: dmg * (crit ? special!.mult : 1),
           damageType: def.damageType ?? 'physical', color, width: this.level >= 5 ? 0.09 : this.level >= 4 ? 0.07 : 0.05,
           crit: crit || undefined, armorShred: shred, credit: this, world,
         })
+        this.seraphPulse = 1
+        getPart(this.model, 'heart')?.scale.setScalar(1.22)
         world.sfx('ray', 0.6)
         break
       }

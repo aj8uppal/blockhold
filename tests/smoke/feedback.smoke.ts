@@ -55,7 +55,7 @@ test('rapid tower upgrades preserve authored colors and reveal the finished mode
   expect(consoleErrors).toEqual([])
 })
 
-test('Seraph chains render and the panel shows target growth with upgrades', async ({ page, consoleErrors }) => {
+test('Seraph beams render and the panel shows target growth with upgrades', async ({ page, consoleErrors }) => {
   await bootToMenu(page)
   await startBattle(page)
   const hitCount = await page.evaluate(() => {
@@ -80,7 +80,7 @@ test('Seraph chains render and the panel shows target growth with upgrades', asy
   const panel = page.locator('.tower-panel')
   await expect(panel).toContainText('Targets3')
   await expect(panel.locator('.u-delta')).toContainText('Targets3 → 4')
-  await page.screenshot({ path: 'tests/smoke/output/seraph-chain.png' })
+  await page.screenshot({ path: 'tests/smoke/output/seraph-beams.png' })
   expect(consoleErrors).toEqual([])
 })
 
@@ -101,5 +101,52 @@ test('Beacon range and high-ground benefit are visible in the tower panel', asyn
   await expect(page.locator('.tower-panel')).toContainText('High ground: +15% aura reach')
   await expect(page.locator('.tower-panel .stat-chips')).toContainText('Reach')
   await expect(page.locator('.tower-panel .stat-chips')).toContainText('4.1')
+  expect(consoleErrors).toEqual([])
+})
+
+test('elevated range follows the ground, raising is disabled, and preview links clear', async ({ page, consoleErrors }) => {
+  await bootToMenu(page)
+  const result = await page.evaluate(() => {
+    const g = window.vg.game as unknown as Game
+    window.vg.screens.onPlayLevel('sunderfall', 'normal', 'aldric', 'campaign')
+    g.save.xp = 10000; g.gold = 10000
+    const plot = g.terrain!.plots.find(p => p.cell[0] === 19 && p.cell[1] === 6)!
+    g.buildTower('beacon', plot)
+    const before = g.gold
+    g.raisePlot(plot)
+    const ring = (g as unknown as { rangeRing: Mesh }).rangeRing
+    const positions = ring.geometry.getAttribute('position')
+    const heights = Array.from({ length: positions.count }, (_, i) => positions.getY(i))
+    g.paused = true
+    return { charged: before - g.gold, raised: plot.raised, min: Math.min(...heights), max: Math.max(...heights) }
+  })
+  expect(result.charged).toBe(0)
+  expect(result.raised).toBe(false)
+  expect(result.min).toBeCloseTo(0.035)
+  expect(result.max).toBeCloseTo(2.035)
+  const highGround = page.locator('.tower-panel button').filter({ hasText: 'Bonus already active' })
+  await expect(highGround).toBeDisabled()
+  await page.screenshot({ path: 'tests/smoke/output/projected-beacon-range.png' })
+  const links = await page.evaluate(() => {
+    const g = window.vg.game as unknown as Game
+    const group = (g as unknown as { previewLinks: { children: unknown[] } }).previewLinks
+    const beacon = g.towers[0]
+    const plot = g.terrain!.plots.find(p => !p.occupied && p.pos.distanceTo(beacon.pos) < 4)!
+    g.selectPlot(plot, 600, 300)
+    g.previewRange('arrow')
+    const first = group.children.length
+    g.previewRange('arrow')
+    const repeated = group.children.length
+    g.clearSelection()
+    const cleared = group.children.length
+    g.selectPlot(plot, 600, 300)
+    g.previewRange('arrow')
+    g.hud.closeBuildMenu()
+    return { first, repeated, cleared, closed: group.children.length }
+  })
+  expect(links.first).toBeGreaterThan(0)
+  expect(links.repeated).toBe(links.first)
+  expect(links.cleared).toBe(0)
+  expect(links.closed).toBe(0)
   expect(consoleErrors).toEqual([])
 })

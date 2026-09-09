@@ -99,7 +99,8 @@ try {
               let output=(def.damage[0]+def.damage[1])/2/def.attackInterval*effectiveness
               if(def.special?.kind==='crit')output*=1+def.special.chance*(def.special.mult-1)
               if(def.special?.kind==='chain')output*=Array.from({length:def.special.targets},(_,i)=>def.special.falloff**i).reduce((a,b)=>a+b,0)
-              if(def.chainTargets)output*=Math.min(3,def.chainTargets)
+              const beams=def.beamTargets??def.chainTargets // accepts older snapshots for paired audits
+              if(beams)output*=Math.min(3,beams)
               if(def.splash)output*=2.5
               if(def.special?.kind==='poison')output+=def.special.dps*.65
               if(def.special?.kind==='burnGround')output+=def.special.dps*2

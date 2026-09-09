@@ -9,6 +9,7 @@ import {
 import { Trap, TrapSpotInfo } from './traps.ts'
 import { Earthwork, EARTHWORK_DEFS, raiseCost, type EarthworkSpot } from './earthworks.ts'
 import { closedRoadsFor, openRoadFor } from './roads.ts'
+import { projectedRangeGeometry } from './rangeIndicator.ts'
 import { Hazard, createHazard } from './hazards.ts'
 import { enemyDef } from './enemyDefs.ts'
 import { towerTrees, SELL_REFUND } from './towerDefs.ts'
@@ -152,6 +153,7 @@ export class Game implements World {
    */
   raisePlot(plot: PlotInfo): void {
     if (this.paused || !this.terrain || plot.raised) return
+    if (this.terrain.isOnHill(...plot.cell)) return
     if (this.route({ kind: 'raise', plot: plot.index })) return
     const cost = this.nextRaiseCost()
     if (this.gold < cost) { this.sfx('error'); this.hud.flashGold(); return }
@@ -1543,6 +1545,7 @@ export class Game implements World {
   }
 
   disposeLevel(): void {
+    this.clearPreviewLinks()
     this.engine.clearDioramaRim()
     audio.stopMusic()
     audio.setMusicState({ pressure: 0, surge: false, boss: false, livesRatio: 1, phase: 'idle' })
@@ -1592,7 +1595,7 @@ export class Game implements World {
     this.targetMode = null
     this.surgeBlend = 0
     this.engine.setSurgeBlend(0)
-    this.rangeRing.visible = this.selectRing.visible = this.targetRing.visible = this.heroRing.visible = this.heroGuardRing.visible = this.holdLineMesh.visible = false
+    this.rangeRing.visible = this.upgradeRing.visible = this.selectRing.visible = this.targetRing.visible = this.heroRing.visible = this.heroGuardRing.visible = this.holdLineMesh.visible = false
     this.phase = 'idle'
   }
 
@@ -2207,14 +2210,22 @@ export class Game implements World {
     }
   }
 
+  private projectRange(ring: THREE.Mesh, center: THREE.Vector3, radius: number): void {
+    if (!this.terrain) return
+    ring.geometry.dispose()
+    ring.geometry = projectedRangeGeometry(this.terrain, center, radius)
+    ring.position.set(0, 0, 0)
+    ring.scale.setScalar(1)
+  }
+
   selectTower(tower: Tower): void {
+    this.clearPreviewLinks()
     this.selectedPlot = null
     this.selectedTower = tower
     this.hud.closeBuildMenu()
     this.hud.openTowerPanel(tower)
     this.rangeRing.visible = true
-    this.rangeRing.position.set(tower.pos.x, tower.pos.y - 0.06, tower.pos.z)
-    this.rangeRing.scale.setScalar(tower.range)
+    this.projectRange(this.rangeRing, tower.pos, tower.range)
     this.selectRing.visible = true
     this.selectRing.position.set(tower.pos.x, tower.pos.y - 0.05, tower.pos.z)
     this.showHoldLine(tower)
@@ -2222,6 +2233,7 @@ export class Game implements World {
   }
 
   selectPlot(plot: PlotInfo, sx: number, sy: number): void {
+    this.clearPreviewLinks()
     this.selectedTower = null
     this.hud.closeTowerPanel()
     this.selectedPlot = plot
@@ -2234,6 +2246,7 @@ export class Game implements World {
   }
 
   clearSelection(): void {
+    this.clearPreviewLinks()
     this.selectedTower = null
     this.selectedPlot = null
     this.selectedTrapSpot = null
@@ -2265,31 +2278,28 @@ export class Game implements World {
     if (!opt) {
       this.rangeRing.visible = !!this.selectedTower
       if (this.selectedTower) {
-        this.rangeRing.position.set(this.selectedTower.pos.x, this.selectedTower.pos.y - 0.06, this.selectedTower.pos.z)
-        this.rangeRing.scale.setScalar(this.selectedTower.range)
+        this.projectRange(this.rangeRing, this.selectedTower.pos, this.selectedTower.range)
       }
       this.upgradeRing.visible = false
       return
     }
     // Include additive perks and ground bonuses in the preview too.
     this.upgradeRing.visible = true
-    this.upgradeRing.position.set(tower.pos.x, tower.pos.y - 0.05, tower.pos.z)
-    this.upgradeRing.scale.setScalar(tower.rangeFor({ ...tower.def, range: opt.range }))
+    this.projectRange(this.upgradeRing, tower.pos, tower.rangeFor({ ...tower.def, range: opt.range }))
   }
 
   /** preview range for a build option (hover in build menu) */
   previewRange(kind: TowerKind | null): void {
+    this.clearPreviewLinks()
     if (!this.selectedPlot) return
     if (!kind) {
       if (!this.selectedTower) this.rangeRing.visible = false
-      this.clearPreviewLinks()
       return
     }
     const def = towerTrees[kind].levels[0]
     this.rangeRing.visible = true
-    this.rangeRing.position.set(this.selectedPlot.pos.x, this.selectedPlot.pos.y - 0.06, this.selectedPlot.pos.z)
     const highGround = this.selectedPlot.raised || this.terrain?.isOnHill(...this.selectedPlot.cell) === true
-    this.rangeRing.scale.setScalar(kind === 'beacon' ? beaconReach(def.range, highGround, this.armoryTier('lamplighters')) : def.range)
+    this.projectRange(this.rangeRing, this.selectedPlot.pos, kind === 'beacon' ? beaconReach(def.range, highGround, this.armoryTier('lamplighters')) : def.range)
     // what the ground and the neighbours would buy, drawn as links
     const pv = this.placementPreview(kind)
     const from = this.selectedPlot.pos
@@ -2342,7 +2352,7 @@ export class Game implements World {
   /** the raise-ground option, hovered: the tower's ring grows to what the high ground would give it */
   previewRaise(plot: PlotInfo | null): void {
     if (!plot) {
-      if (this.selectedTower) { this.rangeRing.scale.setScalar(this.selectedTower.range) }
+      if (this.selectedTower) this.projectRange(this.rangeRing, this.selectedTower.pos, this.selectedTower.range)
       else if (!this.selectedPlot) this.rangeRing.visible = false
       return
     }
@@ -2352,8 +2362,7 @@ export class Game implements World {
     const r = t.range
     t.onHighGround = false
     this.rangeRing.visible = true
-    this.rangeRing.position.set(plot.pos.x, plot.pos.y - 0.06, plot.pos.z)
-    this.rangeRing.scale.setScalar(r)
+    this.projectRange(this.rangeRing, plot.pos, r)
   }
 
   private previewLinks = new THREE.Group()

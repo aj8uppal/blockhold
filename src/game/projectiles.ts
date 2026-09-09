@@ -13,6 +13,53 @@ export interface Projectile {
   dispose?(): void
 }
 
+/** Presentation only: smooth signature light with no hit stop or combat timing changes. */
+class SeraphBloom implements Projectile {
+  mesh = new THREE.Group()
+  done = false
+  private age = 0
+  private column?: THREE.Mesh
+  private halo: THREE.Mesh
+  private materials: THREE.MeshBasicMaterial[] = []
+  constructor(private spec: Extract<ProjectileSpec, { kind: 'seraphBloom' }>) {
+    const material = (color: number) => {
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0,
+        depthWrite: false, toneMapped: false, side: THREE.DoubleSide })
+      this.materials.push(mat)
+      return mat
+    }
+    this.mesh.name = spec.solar ? 'dawnfall-light' : 'eclipse-halo'
+    this.mesh.position.copy(spec.at)
+    if (spec.solar) {
+      this.column = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.28, 4, 12, 1, true), material(0xfff3bb))
+      this.column.position.y = 1.8
+      this.mesh.add(this.column)
+    }
+    this.halo = new THREE.Mesh(new THREE.RingGeometry(0.88, 1, 48), material(spec.solar ? 0xffd982 : 0xb995ff))
+    if (spec.solar) this.halo.rotation.x = -Math.PI / 2
+    else this.halo.quaternion.copy(spec.world.cameraQuat)
+    this.halo.position.y = spec.solar ? 0.15 : 0
+    this.mesh.add(this.halo)
+    this.update(0)
+  }
+  update(dt: number): void {
+    this.age += dt
+    const t = Math.min(1, this.age / 0.85)
+    const eased = t * t * (3 - 2 * t)
+    // Zero opacity at both endpoints; a gentle attack and longer release.
+    const envelope = Math.sin(Math.PI * Math.min(1, t / 0.35) / 2) * (1 - eased)
+    this.materials.forEach((m, i) => { m.opacity = envelope * (i === 0 && this.column ? 0.38 : 0.65) })
+    this.halo.scale.setScalar(0.3 + eased * (this.spec.solar ? 0.95 : 1.5))
+    if (this.column) this.column.scale.set(1 - eased * 0.6, 1, 1 - eased * 0.6)
+    this.done = t >= 1
+  }
+  dispose(): void {
+    this.halo.geometry.dispose()
+    this.column?.geometry.dispose()
+    this.materials.forEach(m => m.dispose())
+  }
+}
+
 /** ballistic hop from A to B over a fixed flight time, arcing */
 abstract class Ballistic implements Projectile {
   mesh: THREE.Object3D
@@ -488,59 +535,70 @@ function distToSegmentXZ(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): 
   return Math.hypot(p.x - cx, p.z - cz)
 }
 
-/** A chain of rays shares geometry, material and one draw call per shot. */
+/** Short Tesla-like pulses: a colored edge and a narrow white core.
+ * All beams share two instanced draws per volley, including at tier five.
+ * Bends use visual math only; rendering never consumes combat randomness.
+ */
 const RAY_GEO = new THREE.BoxGeometry(1, 1, 1)
-const RAY_LIFE = 0.1
-export const SERAPH_JUMP_RANGE = 2.4
+const RAY_LIFE = 0.085
 class RayProjectile implements Projectile {
-  mesh: THREE.InstancedMesh
+  mesh = new THREE.Group()
   done = false
   private life = 0
-  private mat: THREE.MeshBasicMaterial
+  private edge: THREE.InstancedMesh
+  private core: THREE.InstancedMesh
   constructor(spec: Extract<ProjectileSpec, { kind: 'ray' }>) {
-    const { world, target } = spec
-    const hits: Enemy[] = target.targetable ? [target] : []
-    // Choose the whole chain before damage can spawn or remove enemies.
-    // Planar distance lets the same arc reach ground troops and flyers.
-    while (hits.length > 0 && hits.length < spec.targets) {
-      const last = hits[hits.length - 1]
-      let next: Enemy | null = null
-      let nearest = SERAPH_JUMP_RANGE
-      for (const e of world.enemies) {
-        if (!e.targetable || hits.includes(e)) continue
-        const d = Math.hypot(e.pos.x - last.pos.x, e.pos.z - last.pos.z)
-        if (d < nearest) { nearest = d; next = e }
-      }
-      if (!next) break
-      hits.push(next)
-    }
-    this.mat = new THREE.MeshBasicMaterial({ color: spec.color, transparent: true, opacity: 0.95, toneMapped: false, depthWrite: false })
-    this.mesh = new THREE.InstancedMesh(RAY_GEO, this.mat, hits.length)
+    const { world, from } = spec
+    const hits = [...new Set(spec.targets)].filter(e => e.targetable)
+    const material = (color: number, opacity: number) => new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity, toneMapped: false, depthWrite: false,
+    })
+    this.edge = new THREE.InstancedMesh(RAY_GEO, material(spec.color, 0.38), hits.length * 3)
+    this.core = new THREE.InstancedMesh(RAY_GEO, material(0xffffff, 0.95), hits.length * 3)
+    this.edge.name = 'ray-edge'; this.core.name = 'ray-core'
+    this.core.renderOrder = 1
+    this.mesh.add(this.edge, this.core)
     const segment = new THREE.Object3D()
-    let from = spec.from
     hits.forEach((e, i) => {
       const to = e.pos.clone().setY(e.pos.y + 0.4)
-      segment.position.copy(from).add(to).multiplyScalar(0.5)
-      segment.lookAt(to)
-      segment.scale.set(spec.width, spec.width, Math.max(0.05, from.distanceTo(to)))
-      segment.updateMatrix()
-      this.mesh.setMatrixAt(i, segment.matrix)
+      const side = new THREE.Vector3(to.z - from.z, 0, from.x - to.x).normalize()
+      const bend = Math.min(0.10, from.distanceTo(to) * 0.025) * (i % 2 ? -1 : 1)
+      const points = [from, from.clone().lerp(to, 0.34).addScaledVector(side, bend),
+        from.clone().lerp(to, 0.68).addScaledVector(side, -bend * 0.65), to]
+      for (let j = 0; j < 3; j++) {
+        const a = points[j], b = points[j + 1]
+        segment.position.copy(a).add(b).multiplyScalar(0.5)
+        segment.lookAt(b)
+        segment.scale.set(spec.width * 1.8, spec.width * 1.8, Math.max(0.001, a.distanceTo(b)))
+        segment.updateMatrix()
+        this.edge.setMatrixAt(i * 3 + j, segment.matrix)
+        segment.scale.x = segment.scale.y = spec.width * 0.6
+        segment.updateMatrix()
+        this.core.setMatrixAt(i * 3 + j, segment.matrix)
+      }
       const dealt = e.takeDamage(spec.damage, spec.damageType, world, { crit: spec.crit, credit: spec.credit, flavor: spec.damageType === 'magic' ? 'magic' : 'fire' })
       if (dealt > 0) {
         if (spec.armorShred) e.shredArmor(spec.armorShred)
-        if (spec.crit) world.particles.magicImpact(to.x, to.y, to.z, spec.color)
-        else world.particles.hitSpark(to.x, to.y, to.z, spec.color)
+        // One small contact spark, even on critical volleys. Large burst
+        // clouds at every endpoint hid both the rays and enemy silhouettes.
+        world.particles.hitSpark(to.x, to.y, to.z, spec.color)
       }
-      from = to
     })
-    this.mesh.instanceMatrix.needsUpdate = true
+    this.edge.instanceMatrix.needsUpdate = this.core.instanceMatrix.needsUpdate = true
   }
   update(dt: number): void {
     this.life += dt
-    this.mat.opacity = 0.95 * Math.max(0, 1 - this.life / RAY_LIFE)
+    const fade = Math.max(0, 1 - this.life / RAY_LIFE)
+    ;(this.edge.material as THREE.MeshBasicMaterial).opacity = 0.38 * fade
+    ;(this.core.material as THREE.MeshBasicMaterial).opacity = 0.95 * Math.min(1, fade * 2)
     if (this.life >= RAY_LIFE) this.done = true
   }
-  dispose(): void { this.mesh.dispose(); this.mat.dispose() }
+  dispose(): void {
+    for (const beam of [this.edge, this.core]) {
+      beam.dispose()
+      ;(beam.material as THREE.Material).dispose()
+    }
+  }
 }
 
 export function createProjectile(spec: ProjectileSpec): Projectile {
@@ -551,6 +609,7 @@ export function createProjectile(spec: ProjectileSpec): Projectile {
     case 'bomb': return new BombProjectile(spec)
     case 'chain': return new ChainLightning(spec)
     case 'warlockBolt': return new WarlockBolt(spec)
+    case 'seraphBloom': return new SeraphBloom(spec)
     case 'meteor': return new Meteor(spec)
     case 'spear': return new SpearProjectile(spec)
     case 'axe': return new AxeProjectile(spec)

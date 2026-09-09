@@ -213,6 +213,7 @@ export class Enemy {
   private healAuraTimer = 0
   private animT = simRandom() * 10   // seeded: the walk bob is in pos.y, which the sim measures
   private flash = 0
+  private nextHitFlashAt = 0
   private dyingT = 0
   private yaw = 0
   private bar: HealthBar
@@ -358,10 +359,13 @@ export class Enemy {
     this.lastHitFlavor = opts.flavor ?? null
     this.lastHitForce = Math.max(0.7, Math.min(2.4, dealt / Math.max(24, this.maxHp * 0.16)))
     if (!opts.silent) {
-      this.flash = 0.16
-      // an elite flashes in its own colour, so the hit does not erase the one
-      // cue that says what it is; everything else flashes white
-      setFlash(this.group, 0.65, this.affix ? this.affix.tint : 0xffffff)
+      // Rapid beams must not keep a target permanently white. Leave a
+      // recovery interval so its silhouette and identifying colors return.
+      if (world.time >= this.nextHitFlashAt) {
+        this.nextHitFlashAt = world.time + 0.18
+        this.flash = 0.06
+        setFlash(this.group, 0.24, this.affix ? this.affix.tint : 0xffffff)
+      }
       // a resisted hit looks different from a clean one: plate turns arrows
       // with a dull metallic spark, a ward swallows magic in its own colour,
       // so the player can see a wrong damage type without opening a panel
