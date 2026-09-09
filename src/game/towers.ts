@@ -639,7 +639,9 @@ export class Tower {
     if (this.oldModel) { this.group.remove(this.oldModel); disposeClonedMaterials(this.oldModel); this.oldModel = null }
   }
 
-  /** live-update soldier max HP when resonance or perks change */
+  get soldierDamageMult(): number { return (1 + this.auraDamage) * (this.perk?.id === 'whetstone' ? 1.25 : 1) }
+
+  /** Live support and HP changes must also reach existing soldiers. */
   refreshSoldierStats(world: World): void {
     if (!this.isBarracks || !this.def.soldier) return
     const base = this.def.soldier
@@ -648,6 +650,8 @@ export class Tower {
       * (this.has('shieldwall') ? 1.18 : 1)
     const newMax = Math.round(base.hp * hpMult)
     for (const s of this.soldiers) {
+      s.supportDamage = this.soldierDamageMult
+      s.supportRate = 1 + this.auraRate
       if (s.maxHp === newMax) continue
       const frac = s.maxHp > 0 ? s.hp / s.maxHp : 1
       s.maxHp = newMax
@@ -671,7 +675,7 @@ export class Tower {
 
   /** valid if within range of tower and close to a lane */
   isValidRally(x: number, z: number, world: World): boolean {
-    if (Math.hypot(x - this.pos.x, z - this.pos.z) > this.def.range) return false
+    if (Math.hypot(x - this.pos.x, z - this.pos.z) > this.range) return false
     return world.lanes.some(l => l.distanceToPath(x, z) < 0.75)
   }
 
@@ -719,15 +723,15 @@ export class Tower {
     const hpMult = world.soldierHpMult()
       * (this.perk?.id === 'vanguard' ? 1.25 : 1)
       * (this.has('shieldwall') ? 1.18 : 1)
-    const dmgMult = this.perk?.id === 'whetstone' ? 1.25 : 1
     const def = {
       ...base,
       hp: Math.round(base.hp * hpMult),
-      damage: [Math.round(base.damage[0] * dmgMult), Math.round(base.damage[1] * dmgMult)] as [number, number],
     }
     for (let i = 0; i < this.squadSize; i++) {
       const s = new Soldier(def, this.doorPos(), this.soldierHome(i))
       s.credit = this   // soldiers fight for their barracks' tally
+      s.supportDamage = this.soldierDamageMult
+      s.supportRate = 1 + this.auraRate
       this.soldiers.push(s)
       world.soldiers.push(s)
       world.dynamic.add(s.group)

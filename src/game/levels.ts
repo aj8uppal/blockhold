@@ -287,92 +287,105 @@ const tidereachWaves: WaveDef[] = [
 
 
 // ---- the three battlefields past Veilscar ----
+/** Fewer routes, with breathing room between columns sharing an entrance.
+ * Keep the authored enemies/rewards/boss order; never silently drop a group
+ * when a map loses a lane. Independent entrances can still attack together.
+ */
+export function routeWaves(waves: WaveDef[], routes: number[]): WaveDef[] {
+  return waves.map(wave => {
+    const ready = new Map<number, number>()
+    return { ...wave, groups: wave.groups.map(group => {
+      const lane = routes[group.lane ?? 0] ?? 0
+      const interval = Math.max(0.4, group.interval)
+      const delay = Math.max(group.delay, ready.get(lane) ?? 0)
+      ready.set(lane, delay + Math.max(0, group.count - 1) * interval + 1.2)
+      return { ...group, lane, delay, interval }
+    }) }
+  })
+}
+
 export const sunderfallLevel: LevelDef = {
   id: 'sunderfall',
   name: 'Sunderfall Terraces',
-  subtitle: 'Four roads, four heights',
+  subtitle: 'One road. Three chances to stop them.',
   theme: 'highland',
   seed: 8821,
-  width: 36, height: 20,
+  width: 30, height: 18,
   lanes: [
-    [[0, 3],  [30, 3],  [30, 10],  [35, 10]],
-    [[0, 16],  [30, 16],  [30, 10],  [35, 10]],
-    [[0, 10],  [30, 10],  [35, 10]],
-    [[18, 0],  [18, 6],  [33, 6],  [33, 10],  [35, 10]],
+    [[0, 4], [21, 4], [21, 10], [8, 10], [8, 14], [29, 14]],
   ],
-  plots: [[28, 8], [32, 12], [34, 12], [28, 12], [25, 8], [15, 1], [32, 14], [20, 1], [26, 14], [22, 8], [19, 8], [17, 7], [15, 5], [15, 8], [25, 12], [23, 14], [22, 12], [20, 14], [19, 12], [17, 14], [16, 12], [14, 14],
-      // added 2026-09-04: the board read as restrictive at the original count
-      [32, 4], [2, 13], [6, 13], [10, 13], [4, 8],
-    ],
-  trapSpots: [[2, 3], [7, 3], [12, 3], [17, 3], [22, 3], [27, 3], [30, 7], [2, 16], [7, 16], [12, 16], [17, 16], [22, 16], [27, 16], [30, 12], [2, 10], [7, 10], [12, 10], [17, 10], [22, 10]],
-  plateaus: [[8, 6, 29, 13, 2], [3, 5, 6, 8, 1.4], [31, 6, 34, 12, 1.4]],
-  landmarks: [[4, 6, 'monolith'], [8, 6, 'arch'], [12, 6, 'spire'], [4, 13, 'greatTree'], [8, 13, 'monolith'], [12, 13, 'arch'], [16, 13, 'spire'], [20, 13, 'greatTree'], [24, 13, 'monolith']],
-  water: [[0, 6, 3, 8], [8, 18, 14, 19]],
-  hills: [[22, 17, 28, 19], [0, 0, 2, 1], [34, 0, 35, 1]],
-  voids: [[0, 19, 1, 19], [35, 19, 35, 19]],
-  waves: sunderfallWaves,
+  // Mesa lookouts cover repeated passes. Low shelves favour blockers and
+  // shots down the road; the cliff prevents shooting straight through it.
+  plots: [[4, 2], [8, 2], [12, 2], [16, 2], [20, 2], [23, 4],
+    [10, 6], [13, 6], [16, 6], [19, 6], [12, 8], [17, 8],
+    [23, 8], [23, 11], [6, 10], [6, 13], [10, 12], [13, 12],
+    [16, 12], [19, 12], [22, 16], [25, 12], [27, 16], [10, 16]],
+  trapSpots: [[3, 4], [10, 4], [18, 4], [21, 7], [17, 10], [11, 10], [8, 12], [14, 14], [23, 14], [27, 14]],
+  plateaus: [[9, 6, 19, 8, 2], [10, 11, 19, 12, 1.4]],
+  landmarks: [[4, 8, 'greatTree'], [14, 2, 'monolith'], [26, 4, 'arch']],
+  water: [[0, 15, 4, 17], [24, 0, 29, 1]],
+  hills: [[0, 0, 3, 1], [25, 6, 28, 9]],
+  voids: [[0, 17, 1, 17]],
+  waves: routeWaves(sunderfallWaves, [0, 0, 0, 0]),
   startGold: 540,
   startLives: 20,
-  intro: 'The cliffs of Sunderfall break into terraces, and the Veil climbs all four at once. Height is the only advantage you have - take it.',
+  intro: 'One road winds around the high mesa before doubling back below it. Lookouts can fire on more than one pass; low towers need a clear angle around the cliff. Build a defense that meets the horde twice.',
 }
 
 export const emberwindLevel: LevelDef = {
   id: 'emberwind',
   hazard: 'emberwind',
   name: 'Emberwind Reach',
-  subtitle: 'The firestorm follows your hero',
+  subtitle: 'Two flanks around a lake of fire',
   theme: 'ashfall',
   seed: 9137,
-  width: 38, height: 21,
+  width: 30, height: 18,
   lanes: [
-    [[0, 3],  [32, 3],  [32, 11],  [37, 11]],
-    [[0, 17],  [32, 17],  [32, 11],  [37, 11]],
-    [[0, 11],  [32, 11],  [37, 11]],
-    [[19, 0],  [19, 7],  [35, 7],  [35, 11],  [37, 11]],
-    [[19, 20],  [19, 15],  [35, 15],  [35, 11],  [37, 11]],
+    [[0, 5], [8, 5], [8, 3], [23, 3], [23, 9], [29, 9]],
+    [[0, 13], [8, 13], [8, 15], [23, 15], [23, 9], [29, 9]],
   ],
-  plots: [[30, 9], [30, 13], [27, 9], [18, 14], [16, 1], [20, 13], [21, 1], [16, 15], [34, 4], [33, 18], [16, 5], [35, 17], [24, 9], [21, 9], [18, 9], [22, 13], [16, 13], [14, 13], [13, 15], [11, 13], [10, 15], [8, 13], [7, 15],
-      // added 2026-09-04: the board read as restrictive at the original count
-      [2, 14],
-    ],
-  trapSpots: [[2, 3], [7, 3], [12, 3], [17, 3], [22, 3], [27, 3], [32, 3], [32, 8], [2, 17], [7, 17], [12, 17], [17, 17], [22, 17], [27, 17], [32, 17], [2, 11], [7, 11], [12, 11], [17, 11], [22, 11], [27, 11], [35, 13]],
-  plateaus: [[13, 5, 18, 8, 1], [24, 5, 29, 8, 1], [6, 13, 11, 16, 1]],
-  landmarks: [[4, 7, 'ruin'], [12, 7, 'spire'], [16, 7, 'monolith'], [4, 14, 'arch'], [8, 14, 'ruin'], [12, 14, 'spire'], [16, 14, 'monolith'], [35, 2, 'arch'], [35, 18, 'ruin']],
-  water: [[6, 5, 11, 8], [24, 13, 29, 16], [2, 19, 6, 20]],
-  hills: [[13, 19, 18, 20], [0, 0, 2, 1], [36, 0, 37, 1]],
-  voids: [[0, 20, 1, 20], [37, 20, 37, 20]],
-  waves: emberwindWaves,
+  plots: [[3, 3], [6, 3], [10, 5], [13, 5], [16, 5], [19, 5], [21, 5],
+    [3, 15], [6, 15], [10, 13], [13, 13], [16, 13], [19, 13], [21, 13],
+    [21, 8], [21, 10], [25, 5], [25, 7], [25, 11], [25, 13], [27, 7], [27, 11]],
+  trapSpots: [[4, 5], [8, 4], [13, 3], [19, 3], [23, 6], [4, 13], [8, 14], [13, 15], [19, 15], [23, 12], [26, 9]],
+  plateaus: [[10, 4, 16, 5, 1], [10, 12, 16, 13, 1], [25, 4, 27, 7, 1]],
+  landmarks: [[4, 9, 'ruin'], [20, 2, 'spire'], [26, 15, 'arch']],
+  water: [[10, 7, 18, 11]],
+  hills: [[0, 0, 5, 1], [0, 16, 5, 17]],
+  voids: [[0, 17, 1, 17]],
+  waves: routeWaves(emberwindWaves, [0, 1, 0, 1, 0]),
   startGold: 640,
   startLives: 20,
-  intro: 'Nothing grows in the Reach, and the Emberwind never stops turning. It follows your champion. Lead it into the horde, and do not stand still.',
+  intro: 'The horde splits around a lake of fire. Cover both flanks, then finish survivors at the eastern pass. Your champion steers the Emberwind: lead it along the road and away from your towers.',
 }
 
 export const tidereachLevel: LevelDef = {
   id: 'tidereach',
   hazard: 'shiftingroads',
   name: 'Tidereach Causeway',
-  subtitle: 'The roads themselves are not yours',
+  subtitle: 'Three crossings. A turning tide.',
   theme: 'tidal',
   seed: 9613,
-  width: 40, height: 22,
+  width: 32, height: 18,
   lanes: [
-    [[0, 3],  [34, 3],  [34, 12],  [39, 12]],
-    [[0, 19],  [34, 19],  [34, 12],  [39, 12]],
-    [[0, 12],  [34, 12],  [39, 12]],
-    [[20, 0],  [20, 7],  [37, 7],  [37, 12],  [39, 12]],
-    [[20, 21],  [20, 16],  [37, 16],  [37, 12],  [39, 12]],
+    [[0, 9], [8, 9], [8, 6], [22, 6], [22, 9], [31, 9]],
+    [[0, 3], [16, 3], [16, 6], [22, 6], [22, 9], [31, 9]],
+    [[0, 15], [16, 15], [16, 12], [26, 12], [26, 9], [31, 9]],
   ],
-  plots: [[32, 10], [32, 14], [30, 9], [19, 15], [17, 1], [17, 17], [22, 1], [36, 18], [36, 4], [35, 20], [27, 9], [21, 14], [17, 5], [14, 17], [23, 14], [24, 9], [21, 9], [19, 10], [19, 8], [17, 10], [17, 14], [14, 14], [22, 5], [24, 5], [26, 5]],
-  trapSpots: [[2, 3], [7, 3], [12, 3], [17, 3], [22, 3], [27, 3], [32, 3], [34, 8], [37, 12], [2, 19], [7, 19], [12, 19], [17, 19], [22, 19], [27, 19], [32, 19], [2, 12], [7, 12], [12, 12], [17, 12], [22, 12], [27, 12]],
-  plateaus: [[14, 5, 19, 9, 1], [26, 5, 31, 9, 1], [6, 14, 11, 18, 1]],
-  landmarks: [[4, 7, 'arch'], [13, 7, 'monolith'], [17, 8, 'ruin'], [4, 15, 'spire'], [8, 15, 'arch'], [12, 15, 'monolith'], [16, 15, 'ruin'], [37, 2, 'spire'], [37, 19, 'arch']],
-  water: [[6, 5, 12, 9], [25, 14, 31, 18], [2, 20, 7, 21]],
-  hills: [[14, 20, 19, 21], [0, 0, 2, 1], [38, 0, 39, 1]],
-  voids: [[0, 21, 1, 21], [39, 21, 39, 21]],
-  waves: tidereachWaves,
+  plots: [[4, 7], [6, 7], [10, 8], [13, 8], [17, 8], [20, 8],
+    [4, 5], [7, 5], [10, 4], [13, 4], [18, 4], [20, 4],
+    [4, 13], [7, 13], [10, 13], [13, 13], [18, 14], [21, 14],
+    [20, 10], [23, 11], [24, 7], [27, 7], [28, 11], [30, 11]],
+  trapSpots: [[4, 9], [8, 7], [13, 6], [20, 6], [4, 3], [12, 3], [16, 5], [4, 15], [12, 15], [16, 13], [22, 12], [28, 9]],
+  plateaus: [[10, 7, 13, 8, 1], [18, 13, 21, 14, 1], [24, 6, 27, 7, 1]],
+  landmarks: [[4, 11, 'ruin'], [23, 3, 'monolith'], [28, 15, 'ruin']],
+  water: [[0, 0, 31, 1], [0, 16, 31, 17], [10, 10, 16, 11], [1, 6, 2, 7]],
+  hills: [[28, 3, 30, 5]],
+  voids: [[0, 17, 1, 17]],
+  waves: routeWaves(tidereachWaves, [0, 1, 2, 1, 2]),
   startGold: 700,
   startLives: 20,
-  intro: 'Five causeways over a drowned coast, and the tide decides which of them exist. Build for the map you have; it will not be the map you keep.',
+  intro: 'Three crossings connect the coastal islands. The central road stays open; the tide alternates between the outer causeways. Shared lookouts stay useful through every tide, while specialised towers can guard an exposed approach.',
 }
 
 

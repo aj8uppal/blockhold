@@ -22,8 +22,9 @@
  *      costs, and the freeplay ladder. All change what a seed produces.
  *   4  faster campaign/freeplay/endless escalation and boss crowd-control recovery.
  *   5  Seraph chains, Beacon reach and height bonuses, difficulty-based freeplay growth.
+ *   6  Distinct late maps, non-stacking healing, soldier auras and wave recovery income.
  */
-export const RULESET_VERSION = 5
+export const RULESET_VERSION = 6
 
 /** identifies a reproducible run */
 export interface RunStamp {

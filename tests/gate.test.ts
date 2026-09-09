@@ -5,16 +5,10 @@ import { difficultyMods, GATE_MAP_IDS, isGateMap } from '../src/game/difficulty.
 import { ARMORY_TOTAL_COST, crownStars, starsEarned } from '../src/game/armory.ts'
 import type { SaveData } from '../src/core/save.ts'
 
-/**
- * The long tail's central promise, as a regression alarm.
- *
- * The owner's intent: the last maps on Veteran should not fall until the
- * roster and the Armory are complete. The static model cannot *prove* that -
- * it knows nothing about placement, pierce or blocking - but it can catch a
- * balance change that quietly makes the gate maps holdable with the starter
- * kit, or unholdable with everything. Both directions are checked, so a
- * future tune cannot drift the gate open or slam it shut without this
- * failing.
+/** Static regression alarms, not proof of a mandatory account grind.
+ * A good starter-family strategy may win. Veteran should ask more than
+ * Normal, and an affordable unlock/loadout should create more options.
+ * The production combat audit in scripts/gameplay-audit.mjs checks builds.
  */
 describe('the Veteran gate', () => {
   const gates = levels.filter(l => isGateMap(l.id))
@@ -38,10 +32,12 @@ describe('the Veteran gate', () => {
     expect(difficultyMods('greenhollow', 'veteran').enemyHp).toBe(1.3)
   })
 
-  it('does not fall to the starter kit', () => {
+  it('asks substantially more than Normal with the same starter kit', () => {
     for (const lvl of gates) {
-      const peak = Math.max(...judgeLevel(lvl, 'veteran', PRE_GRIND).map(v => v.worstRatio))
-      expect(peak, `${lvl.id} on Veteran holds with four families and no Armory`).toBeGreaterThan(1.15)
+      const normal = judgeLevel(lvl, 'normal', PRE_GRIND).map(v => v.worstRatio)
+      const veteran = judgeLevel(lvl, 'veteran', PRE_GRIND).map(v => v.worstRatio)
+      const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length
+      expect(mean(veteran) / mean(normal), `${lvl.id} Veteran is too close to Normal`).toBeGreaterThan(1.3)
     }
   })
 

@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { HazardId } from './types.ts'
 import { randRange, pick, simRandom, simChance } from '../core/utils.ts'
+import { closedRoadsFor, floodedRoadPoints } from './roads.ts'
 import type { Game } from './game.ts'
 
 /**
@@ -379,12 +380,9 @@ class Emberwind implements Hazard {
 /**
  * Tidereach Causeway: the tide decides which roads exist.
  *
- * Every other map hands you a board and lets you solve it once. Here the shape
- * of the problem changes underneath a defense you have already paid for: a
- * causeway floods and the guns watching it have nothing to do, while a road
- * that was safe all battle opens and arrives already under pressure. Selling
- * and rebuilding is the intended answer, which is why Full Salvage is worth
- * owning by the time a player gets here.
+ * Outer crossings alternate while the central crossing stays open. Shared
+ * lookouts can cover both tide states; isolated towers specialise on one
+ * approach. Selling and rebuilding is an option, not a forced tax.
  *
  * Two rules keep it fair rather than merely cruel: the change is announced a
  * wave before it happens, and the roads are never all shut at once.
@@ -396,31 +394,15 @@ class ShiftingRoads implements Hazard {
   private announced = false
   private warned = -1
 
-  /** which roads are shut, as a function of how far in we are */
-  private planFor(wave: number, lanes: number): Set<number> {
-    const out = new Set<number>()
-    if (lanes < 3 || wave < 3) return out
-    // one road at a time early, two once the player has a board to spare
-    const shut = wave >= 14 && lanes >= 5 ? 2 : 1
-    // Road zero carries the gate and is never shut, so the rotation runs over
-    // the others: picking freely and then deleting zero left waves where the
-    // tide did nothing at all, which reads as the mechanic being broken.
-    const rotating = lanes - 1
-    for (let k = 0; k < Math.min(shut, rotating - 1); k++) {
-      out.add(1 + (Math.floor(wave / 4) + k * 2) % rotating)
-    }
-    return out
-  }
-
   update(_dt: number, game: Game): void {
     const wave = game.waves?.waveIndex ?? -1
     if (wave === this.lastWave) return
     this.lastWave = wave
     const lanes = game.lanes.length
-    const next = this.planFor(wave, lanes)
+    const next = closedRoadsFor(wave, lanes)
 
     // tell the player before it happens, not after they have built into it
-    const soon = this.planFor(wave + 1, lanes)
+    const soon = closedRoadsFor(wave + 1, lanes)
     if (wave >= 0 && this.warned !== wave && !sameSet(soon, next)) {
       this.warned = wave
       game.hud.showToast('The tide is turning — the causeways change after this wave.', 4)
@@ -433,7 +415,7 @@ class ShiftingRoads implements Hazard {
 
     if (!this.announced) {
       this.announced = true
-      game.hud.showToast('The tide closes causeways and opens others. Traffic reroutes to whatever is still standing — build so you can move.', 8)
+      game.hud.showToast('The tide closes causeways and opens others. Traffic reroutes to the open crossings — shared lookouts keep firing.', 8)
     } else if (wave > 0) {
       game.sfx('horn', 0.45)
     }
@@ -447,22 +429,20 @@ class ShiftingRoads implements Hazard {
       ;(m.material as THREE.Material).dispose()
     }
     this.flood = []
-    for (const i of this.closed) {
-      const lane = game.lanes[i]
-      if (!lane) continue
-      for (let d = 0; d < lane.length; d += 0.9) {
-        const s = lane.sample(d)
-        const geo = new THREE.PlaneGeometry(1.05, 1.05)
-        geo.rotateX(-Math.PI / 2)
-        const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-          color: 0x2f8fa8, transparent: true, opacity: 0.62, toneMapped: false, depthWrite: false,
-        }))
-        mesh.position.set(s.x, 0.09, s.z)
-        mesh.renderOrder = 2
-        game.dynamic.add(mesh)
-        this.flood.push(mesh)
-      }
+    const geo = new THREE.PlaneGeometry(1.05, 1.05)
+    geo.rotateX(-Math.PI / 2)
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x2f8fa8, transparent: true, opacity: 0.62, toneMapped: false, depthWrite: false,
+    })
+    const points = floodedRoadPoints(game.lanes, this.closed)
+    for (const s of points) {
+      const mesh = new THREE.Mesh(geo, material)
+      mesh.position.set(s.x, 0.09, s.z)
+      mesh.renderOrder = 2
+      game.dynamic.add(mesh)
+      this.flood.push(mesh)
     }
+    if (!points.length) { geo.dispose(); material.dispose() }
   }
 
   dispose(game: Game): void {

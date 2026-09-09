@@ -208,6 +208,8 @@ export class Enemy {
   /** wardbearer protection: shielded while world.time < wardedUntil */
   wardedUntil = -1
   private wardTimer = 0
+  private auraHealUntil = 0
+  private auraHealStrength = 0
   private healAuraTimer = 0
   private animT = simRandom() * 10   // seeded: the walk bob is in pos.y, which the sim measures
   private flash = 0
@@ -314,6 +316,25 @@ export class Enemy {
         m.opacity = opacity
       }
     })
+  }
+
+  /** A crowd of healers extends coverage; it never multiplies healing per foe.
+   * Late columns used to stack thirty 6 HP/s auras on every neighbour.
+   * Apply only the strongest pulse in each 0.6s window, including staggered
+   * healers and a stronger source arriving after a weaker one.
+   */
+  receiveAuraHealing(hps: number, world: World): void {
+    if (!this.alive || hps <= 0) return
+    if (world.time >= this.auraHealUntil) {
+      this.auraHealUntil = world.time + 0.6
+      this.auraHealStrength = 0
+    }
+    const added = Math.max(0, hps - this.auraHealStrength)
+    this.auraHealStrength = Math.max(this.auraHealStrength, hps)
+    if (added > 0 && this.hp < this.maxHp) {
+      this.heal(added * 0.6)
+      world.particles.healSparkle(this.pos.x, this.pos.y + 0.4, this.pos.z)
+    }
   }
 
   /** returns damage actually dealt */
@@ -624,8 +645,7 @@ export class Enemy {
         this.healAuraTimer = 0.6
         for (const e of world.enemies) {
           if (e !== this && e.alive && e.hp < e.maxHp && e.pos.distanceTo(this.pos) < this.def.healAura.radius) {
-            e.heal(this.def.healAura.hps * 0.6)
-            world.particles.healSparkle(e.pos.x, e.pos.y + 0.4, e.pos.z)
+            e.receiveAuraHealing(this.def.healAura.hps, world)
           }
         }
       }
@@ -942,6 +962,9 @@ export class Soldier {
   musterConsumed = false
   /** kills by this soldier are credited here (its barracks, or the hero itself) */
   credit: KillCredit | null = null
+  /** Live support bonuses; kept off the shared soldier definition. */
+  supportDamage = 1
+  supportRate = 1
   private attackTimer = 0
   private strikeT = 0
   private hitCount = 0
@@ -1164,8 +1187,8 @@ export class Soldier {
         this.animFight(dt)
         this.attackTimer -= dt
         if (this.attackTimer <= 0) {
-          this.attackTimer = this.def.attackInterval
-          const dmg = randRange(...this.def.damage)
+          this.attackTimer = this.def.attackInterval / this.supportRate
+          const dmg = randRange(...this.def.damage) * this.supportDamage
           const dealt = this.target.takeDamage(dmg, 'physical', world, { credit: this.credit ?? undefined })
           if (this.def.lifesteal) this.hp = Math.min(this.maxHp, this.hp + dealt * this.def.lifesteal)
           this.strikeT = 1

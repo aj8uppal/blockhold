@@ -557,13 +557,21 @@ export class Terrain {
         const nearRoad = this.paths.roadCells.has(`${c},${r - 1}`) || this.paths.roadCells.has(`${c},${r + 1}`)
           || this.paths.roadCells.has(`${c - 1},${r}`) || this.paths.roadCells.has(`${c + 1},${r}`)
         const roll = rng()
-        const density = nearRoad ? 0.10 : 0.34
+        const lateBiome = theme === 'highland' || theme === 'ashfall' || theme === 'tidal'
+        const density = lateBiome ? (nearRoad ? 0.04 : 0.20) : (nearRoad ? 0.10 : 0.34)
         if (roll > density) continue
         const [x, z] = gridToWorld(c, r, level.width, level.height)
         const y = this.cellTop(c, r)
         const pickRoll = rng()
         let model
-        if (theme === 'ember') {
+        if (theme === 'ashfall') {
+          model = pickRoll < 0.3 ? env.deadTree(rng) : pickRoll < 0.7 ? env.rock(rng)
+            : pickRoll < 0.9 ? env.crystalShard(rng) : env.stump(rng)
+        } else if (theme === 'tidal') {
+          model = pickRoll < 0.5 ? env.rock(rng) : pickRoll < 0.85 ? env.bush(rng) : env.stump(rng)
+        } else if (theme === 'highland') {
+          model = pickRoll < 0.65 ? env.rock(rng) : pickRoll < 0.9 ? env.pineTree(rng) : env.flowers(rng)
+        } else if (theme === 'ember') {
           model = pickRoll < 0.3 ? env.deadTree(rng) : pickRoll < 0.55 ? env.rock(rng)
             : pickRoll < 0.72 ? env.crystalShard(rng) : pickRoll < 0.85 ? env.stump(rng) : env.bush(rng)
         } else if (theme === 'swamp') {
@@ -585,7 +593,8 @@ export class Terrain {
         const s = 0.8 + rng() * 0.4
         mesh.scale.setScalar(s)
         this.group.add(mesh)
-        if ((theme === 'ember' && pickRoll >= 0.55 && pickRoll < 0.72) ||
+        if ((theme === 'ashfall' && pickRoll >= 0.7 && pickRoll < 0.9) ||
+            (theme === 'ember' && pickRoll >= 0.55 && pickRoll < 0.72) ||
             (theme === 'void' && pickRoll < 0.34)) this.crystals.push(mesh)
       }
     }

@@ -8,6 +8,7 @@ import {
 } from './types.ts'
 import { Trap, TrapSpotInfo } from './traps.ts'
 import { Earthwork, EARTHWORK_DEFS, raiseCost, type EarthworkSpot } from './earthworks.ts'
+import { closedRoadsFor, openRoadFor } from './roads.ts'
 import { Hazard, createHazard } from './hazards.ts'
 import { enemyDef } from './enemyDefs.ts'
 import { towerTrees, SELL_REFUND } from './towerDefs.ts'
@@ -498,6 +499,15 @@ export class Game implements World {
     const waveDoneSpawning = this.waves.waveIndex > e.waveTag || this.waves.phase !== 'spawning'
     if (waveDoneSpawning && track.gone >= track.spawned) {
       this.waveTracks.delete(e.waveTag)
+      // Clearing the wave funds a recovery even when one foe got through.
+      // Perfect defense still earns its separate, escalating streak bonus.
+      const waveNo = e.waveTag + 1
+      const clearBonus = 10 + waveNo * 3
+      this.addGold(clearBonus)
+      if (track.leaked) {
+        const end = e.lane.sample(e.lane.length - 0.5)
+        this.floater(end.x, 0.9, end.z, `Wave cleared +${clearBonus}${icon('coin')}`, 'gold')
+      }
       if (!track.leaked) {
         this.defenseStreak++
         this.bestStreak = Math.max(this.bestStreak, this.defenseStreak)
@@ -507,9 +517,9 @@ export class Game implements World {
         // little that players did not notice it. It scales with how deep the
         // battle is now, so late waves pay something a tower could be built
         // from, on top of the streak.
-        const waveNo = e.waveTag + 1
-        const bonus = 10 + waveNo * 3 + Math.min(24, this.defenseStreak * 4)
-        this.addGold(bonus)
+        const streakBonus = Math.min(24, this.defenseStreak * 4)
+        const bonus = clearBonus + streakBonus
+        this.addGold(streakBonus)
         const end = e.lane.sample(e.lane.length - 0.5)
         this.floater(end.x, 0.9, end.z, this.defenseStreak >= 2
           ? `Wave held! ${icon('flame')}×${this.defenseStreak} +${bonus}${icon('coin')}`
@@ -1284,6 +1294,7 @@ export class Game implements World {
     )
     // the preview reads this to warn that named elites walk this board
     this.waves.eliteChance = this.eliteChance()
+    this.waves.resolveLane = (lane, wave) => this.liveLane(lane, wave)
     // the hero starts on the road, two thirds of the way to the gate
     const lane0 = this.lanes[0]
     const hs = lane0.sample(lane0.length * 0.62, 0.7)
@@ -2479,15 +2490,10 @@ export class Game implements World {
    */
   closedLanes = new Set<number>()
 
-  liveLane(lane: number): number {
-    if (!this.closedLanes.has(lane) || !this.lanes.length) return lane
-    let best = lane, bestD = Infinity
-    for (let i = 0; i < this.lanes.length; i++) {
-      if (this.closedLanes.has(i)) continue
-      const d = Math.abs(i - lane)
-      if (d < bestD) { bestD = d; best = i }
-    }
-    return best
+  liveLane(lane: number, wave = this.waves?.waveIndex ?? -1): number {
+    const closed = this.level?.hazard === 'shiftingroads'
+      ? closedRoadsFor(wave, this.lanes.length) : this.closedLanes
+    return openRoadFor(lane, this.lanes.length, closed)
   }
 
   private taughtSightline = false
@@ -2692,13 +2698,15 @@ export class Game implements World {
         if (Math.hypot(b.pos.x - t.pos.x, b.pos.z - t.pos.z) > b.auraReach) continue
         const a = b.def.aura!
         const dmg = a.damage + (b.perk?.id === 'zeal' ? 0.08 : 0)
-        if (dmg > best) {
-          best = dmg
+        const strength = (1 + dmg) * (1 + a.rate)
+        if (strength > best) {
+          best = strength
           t.auraDamage = dmg
           t.auraRange = a.range
           t.auraRate = a.rate
         }
       }
+      t.refreshSoldierStats(this)
     }
   }
 

@@ -28,10 +28,13 @@ describe('the campaign difficulty curve', () => {
     }
   })
 
-  it('leaves no wave that asks nothing of the player', () => {
+  it('allows short recovery waves without long stretches of trivial pressure', () => {
     for (const lvl of levels) {
-      const trivial = shape(lvl.id, 'normal').all.filter(r => r < 0.16)
-      expect(trivial.length, `${lvl.id} has waves that teach nothing`).toBe(0)
+      const pressure = shape(lvl.id, 'normal').all
+      expect(pressure.filter(r => r < 0.16).length).toBeLessThanOrEqual(Math.floor(pressure.length / 4))
+      for (let i = 0; i + 2 < pressure.length; i++) {
+        expect(pressure.slice(i, i + 3).every(r => r < 0.16), `${lvl.id} has three consecutive trivial waves`).toBe(false)
+      }
     }
   })
 

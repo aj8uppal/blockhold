@@ -963,7 +963,8 @@ export class HUD {
       el('div', 'stat-chips', p,
         chip('Squad', `${icon('soldiers')} ${tower.squadSize}× ${s.name}`, 'wide') +
         chip('Health', `${icon('heart')} ${Math.round(s.hp * m.soldierHp)}`) +
-        chip('Damage', `${icon('sword')} ${s.damage[0]}–${s.damage[1]}`) +
+        chip('Damage', `${icon('sword')} ${Math.round(s.damage[0] * tower.soldierDamageMult)}–${Math.round(s.damage[1] * tower.soldierDamageMult)}`) +
+        chip('Rate', `${icon('hourglass')} ${fmtSecs(s.attackInterval / (1 + tower.auraRate))}`) +
         chip('Armor', `${icon('shield')} ${Math.round(s.armor * 100)}%`) +
         chip('Respawn', `${icon('respawn')} ${def.respawnTime}s`))
       // the Warcamp throws: its own attack is the whole reason to build it,

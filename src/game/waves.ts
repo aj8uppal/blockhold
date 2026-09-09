@@ -34,6 +34,8 @@ export class WaveManager {
    * has to be able to warn that elites are on this board at all.
    */
   eliteChance = 0
+  /** Map routing is shared by the gate preview and queued spawns. */
+  resolveLane: (lane: number, wave: number) => number = lane => lane
   private queue: QueuedSpawn[] = []
   private elapsed = 0
 
@@ -78,7 +80,7 @@ export class WaveManager {
     const wave = this.source[index]
     if (!wave) return []
     const lanes = new Set<number>()
-    for (const g of wave.groups) lanes.add(g.lane ?? 0)
+    for (const g of wave.groups) lanes.add(this.resolveLane(g.lane ?? 0, index))
     return [...lanes]
   }
   get isLastWaveStarted(): boolean { return this.waveIndex >= this.totalWaves - 1 }
@@ -168,7 +170,7 @@ export class WaveManager {
     this.queue = []
     for (const grp of wave.groups) {
       for (let i = 0; i < grp.count; i++) {
-        this.queue.push({ time: grp.delay + i * grp.interval, enemy: grp.enemy, lane: grp.lane ?? 0, hpMult: grp.hpMult, affix: grp.affix })
+        this.queue.push({ time: grp.delay + i * grp.interval, enemy: grp.enemy, lane: this.resolveLane(grp.lane ?? 0, index), hpMult: grp.hpMult, affix: grp.affix })
       }
     }
     this.queue.sort((a, b) => a.time - b.time)

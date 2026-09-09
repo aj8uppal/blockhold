@@ -20,7 +20,7 @@ const defs: EnemyDef[] = [
     id: 'acolyte', name: 'Veil Acolyte', hp: 78, speed: 0.68, armor: 0, magicResist: 0.65,
     bounty: 12, livesCost: 1, attackDamage: [5, 9], attackInterval: 1.2,
     healAura: { radius: 1.4, hps: 6 },
-    model: 'acolyte', description: 'Wards off sorcery and mends nearby horrors. Silence it with steel.',
+    model: 'acolyte', description: 'Wards off sorcery and mends nearby horrors. Overlapping healing does not stack. Silence it with steel.',
   },
   {
     id: 'gargoyle', name: 'Gargoyle', hp: 58, speed: 0.95, armor: 0.15, magicResist: 0.15,

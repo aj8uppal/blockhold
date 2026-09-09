@@ -148,3 +148,56 @@ describe('Beacon value and high ground', () => {
     expect(arrow.range).toBeCloseTo(base * 1.15 * 1.1)
   })
 })
+
+describe('Beacon support combinations', () => {
+  it('buffs existing and upgraded soldiers without stacking or changing shared definitions', () => {
+    const { world } = fixture()
+    const barracks = new Tower('barracks', plot(1), world)
+    const beacon = new Tower('beacon', plot(0), world)
+    beacon.upgrade(0, world); beacon.upgrade(0, world)
+    world.towers.push(barracks, beacon)
+    const game = Object.assign(Object.create(Game.prototype), world) as Game
+    const base = towerTrees.barracks.levels[0].soldier!
+    const soldier = barracks.soldiers[0]
+    soldier.hp = soldier.maxHp / 2
+    const health = soldier.hp
+    game.recomputeAuras()
+    expect(soldier.supportDamage).toBeCloseTo(1.22)
+    expect(soldier.supportRate).toBeCloseTo(1.08)
+    expect(soldier.hp).toBe(health) // applying light is not a free heal
+    expect(base.damage).toEqual([2, 5])
+    game.recomputeAuras()
+    expect(soldier.supportDamage).toBeCloseTo(1.22)
+    barracks.upgrade(0, world)
+    expect(barracks.soldiers.every(s => s.supportDamage === 1.22 && s.supportRate === 1.08)).toBe(true)
+    game.towers.splice(game.towers.indexOf(beacon), 1)
+    game.recomputeAuras()
+    expect(barracks.soldiers.every(s => s.supportDamage === 1 && s.supportRate === 1)).toBe(true)
+  })
+
+  it('chooses one aura by damage and speed together, independent of build order', () => {
+    const { world } = fixture()
+    const arrow = new Tower('arrow', plot(1), world)
+    const watch = new Tower('beacon', plot(0), world)
+    const tithe = new Tower('beacon', plot(2), world)
+    for (let i = 0; i < 3; i++) watch.upgrade(0, world)
+    for (let i = 0; i < 4; i++) tithe.upgrade(i === 2 ? 1 : 0, world)
+    const game = Object.assign(Object.create(Game.prototype), world) as Game
+    for (const towers of [[arrow, tithe, watch], [arrow, watch, tithe]]) {
+      game.towers = towers
+      game.recomputeAuras()
+      expect(arrow.auraRate).toBe(0.2) // equal damage, better attack speed
+      expect(arrow.auraDamage).toBe(0.22)
+      expect(arrow.auraRange).toBe(0.08) // no cherry-picking a second aura's range
+    }
+  })
+
+  it('uses the lit rally range when validating a Barracks order', () => {
+    const { world } = fixture()
+    const barracks = new Tower('barracks', plot(0), world)
+    expect(barracks.isValidRally(2.3, 0, world)).toBe(false)
+    barracks.auraRange = 0.1
+    expect(barracks.isValidRally(2.3, 0, world)).toBe(true)
+    expect(barracks.isValidRally(3, 0, world)).toBe(false)
+  })
+})

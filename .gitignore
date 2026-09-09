@@ -10,3 +10,6 @@ art/*.png
 *.db
 *.db-shm
 *.db-wal
+
+# Local visual review sessions; portable reports live in reviews/.
+.lavish/
