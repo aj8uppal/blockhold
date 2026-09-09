@@ -111,12 +111,24 @@ export function buildModel(model: VoxModel, cacheKey: string, opts: {
   return group
 }
 
-/** Set emissive flash on all lit meshes of a model instance (requires cloned materials). */
+const flashBases = new WeakMap<THREE.MeshStandardMaterial, { color: THREE.Color, intensity: number }>()
+
+/** Temporary flashes restore the instance's original appearance when they end. */
 export function setFlash(group: THREE.Group, intensity: number, color = 0xffffff): void {
   group.traverse(o => {
     if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
-      o.material.emissive.set(color)
-      o.material.emissiveIntensity = intensity
+      const m = o.material
+      if (m.userData.shared) return
+      const base = flashBases.get(m)
+      if (intensity > 0) {
+        if (!base) flashBases.set(m, { color: m.emissive.clone(), intensity: m.emissiveIntensity })
+        m.emissive.set(color)
+        m.emissiveIntensity = intensity
+      } else if (base) {
+        m.emissive.copy(base.color)
+        m.emissiveIntensity = base.intensity
+        flashBases.delete(m)
+      }
     }
   })
 }

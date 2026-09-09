@@ -18,7 +18,7 @@ import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
 import { holdModel, holdPieces, holdCacheKey, holdSummary } from './hold.ts'
 import { isNotable, counterFor } from './dossier.ts'
 import { AFFIX_IDS } from './affixes.ts'
-import { difficultyMods } from './difficulty.ts'
+import { difficultyMods, endlessScale, freeplayScale } from './difficulty.ts'
 import { starsFor, starThresholds } from './stars.ts'
 import { battleXp, isUnlocked, levelForXp, unlocksBetween, type UnlockDef } from './progress.ts'
 import { campaignScale } from './balanceModel.ts'
@@ -28,6 +28,7 @@ import { levels, generateEndlessWaves, generateFreeplayChunk, ladderRung } from 
 import { trialLevel, type TrialDef, type TrialKind } from './trials.ts'
 import { stateHash, type CoopCommand } from './coopCommands.ts'
 import type { CoopSession, CoopEvent } from '../core/coop.ts'
+import { CoopClock } from '../core/coopClock.ts'
 import { Terrain, PlotInfo, THEMES } from './terrain.ts'
 import { Particles } from './particles.ts'
 import { Enemy, Soldier } from './units.ts'
@@ -370,7 +371,7 @@ export class Game implements World {
     if (!this.isEndless || !this.waves) return 1
     const w = this.waves.waveIndex
     // compounding rather than linear, so wave 80 is genuinely a wall
-    return (1 + Math.max(0, w - 6) * 0.035) * (1 + Math.max(0, w - 30) * 0.012)
+    return endlessScale(w)
   }
 
   /**
@@ -388,21 +389,10 @@ export class Game implements World {
     return campaignScale(Math.min(n - 1, Math.max(0, this.waves.waveIndex)), n)
   }
 
-  /**
-   * Freeplay's escalation, normalised so the first wave past the authored end
-   * is no harder than the last authored one, and every wave after climbs on
-   * the Long Night's curve from that point:
-   *
-   *   endlessScale(authored + depth) / endlessScale(authored - 1)
-   *
-   * Without the division the handover would be a cliff on long maps, where
-   * the Long Night's curve is already steep by wave 30.
-   */
+  /** Freeplay grows from the campaign's final strength, by depth on this board. */
   private freeplayHpScale(): number {
     if (!this.isFreeplay || !this.waves) return 1
-    const authored = this.waves.authoredWaves
-    const at = (w: number) => (1 + Math.max(0, w - 6) * 0.035) * (1 + Math.max(0, w - 30) * 0.012)
-    return at(this.waves.waveIndex) / at(Math.max(0, authored - 1))
+    return freeplayScale(this.waves.freeplayDepth)
   }
 
   /** the mode a difficulty is resolved for; freeplay keeps the campaign's per-map bite */
@@ -894,7 +884,7 @@ export class Game implements World {
   private coopCmds = new Map<number, { seat: number, cmd: CoopCommand }[]>()
   /** ticks the current turn still allows */
   private coopBudget = 0
-  private coopAccum = 0
+  private coopClock = new CoopClock()
   private coopTurn = 0
   /** a command from the room is being applied (as opposed to issued here) */
   private applying = false
@@ -1019,7 +1009,7 @@ export class Game implements World {
    * Advance the lockstep clock. A turn is taken only once the previous one is
    * fully simulated, its commands go first, and the sim never runs past what
    * the room has cleared; if the room is ahead (a hiccup, a slow frame) the
-   * sim catches up at up to three times speed.
+   * sim catches up gradually with a bounded amount of work per frame.
    */
   private coopAdvance(dtRaw: number, H: number): void {
     // outside a battle the clock still runs; the commands (a 'hold') still
@@ -1027,29 +1017,29 @@ export class Game implements World {
     if (this.phase !== 'playing') {
       while (this.coopMarkers.length) { const m = this.coopMarkers.shift()!; this.coopTurn = m.n; this.applyCoopTurn(m.n) }
       this.coopBudget = 0
+      this.coopClock.reset()
       return
     }
-    let dtSim = dtRaw
-    if (this.hitstopT > 0) {
-      this.hitstopT = Math.max(0, this.hitstopT - dtRaw)
-      dtSim *= this.hitstopScale
-    }
-    const behind = this.coopMarkers.length
-    const rate = behind > 3 ? 3 : behind > 1 ? 1.5 : 1
-    this.coopAccum = Math.min(this.coopAccum + dtSim * this.speed * rate / H, 36)
+    // Local hitstop cannot slow a server-driven clock: it used to build up
+    // catch-up bursts on every client. Keep its timer cosmetic in co-op.
+    this.hitstopT = Math.max(0, this.hitstopT - dtRaw)
+    const available = this.coopBudget + this.coopMarkers.reduce((sum, m) => sum + m.ticks, 0)
+    let remaining = this.coopClock.take(dtRaw, this.speed, available, this.coop!.ticksPerTurn)
     let ran = 0
-    while (this.coopAccum >= 1 && this.phase === 'playing') {
+    while ((remaining > 0 || (this.coopBudget <= 0 && this.coopMarkers[0]?.ticks === 0)) && this.phase === 'playing') {
       if (this.coopBudget <= 0) {
         const m = this.coopMarkers.shift()
         if (!m) break                      // waiting on the room
         this.coopTurn = m.n
-        this.applyCoopTurn(m.n)
+        const paused = this.paused
+        this.paused = m.ticks === 0
+        try { this.applyCoopTurn(m.n) } finally { this.paused = paused }
         this.coopBudget = m.ticks
         if (m.n % 25 === 0) this.sendCoopHash(m.n)
         if (m.ticks === 0) continue        // a paused turn
       }
       this.coopBudget--
-      this.coopAccum--
+      remaining--
       this.simStep(H)
       ran++
     }
@@ -1080,6 +1070,7 @@ export class Game implements World {
     this.coopMarkers = []
     this.coopCmds.clear()
     this.coopBudget = 0
+    this.coopClock.reset()
     this.hud.setCoop(null)
     this.hud.setCoopWaiting(false)
   }
@@ -1180,7 +1171,7 @@ export class Game implements World {
       this.coopMarkers = []
       this.coopCmds.clear()
       this.coopBudget = 0
-      this.coopAccum = 0
+      this.coopClock.reset()
       this.coopTurn = 0
       this.coopHashes.clear()
       this.hud.setCoop({ code: this.coop.code, seats: this.coop.seats, connected: this.coop.connected.length })
@@ -2975,6 +2966,8 @@ export class Game implements World {
         }
       }
       this.updateLanePreview(dtRaw)
+    } else if (this.phase === 'playing' && this.coop) {
+      this.coopAdvance(dtRaw, 1 / 60)
     } else if (this.phase !== 'playing') {
       if (this.coop) this.coopAdvance(dtRaw, 1 / 60)
       // menu/end-screen ambience; backdrop dioramas drift slowly with weather

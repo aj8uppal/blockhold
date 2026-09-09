@@ -24,7 +24,7 @@ describe('the campaign difficulty curve', () => {
   it('does not get easier as a map goes on', () => {
     for (const lvl of levels) {
       const s = shape(lvl.id, 'normal')
-      expect(s.late / s.early, `${lvl.id} decays across its own waves`).toBeGreaterThan(0.6)
+      expect(s.late / s.early, `${lvl.id} decays across its own waves`).toBeGreaterThan(0.75)
     }
   })
 

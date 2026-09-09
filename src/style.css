@@ -62,7 +62,7 @@ button:disabled { cursor: not-allowed; }
 
 .topbar {
   position: absolute; top: 0; left: 0; right: 0;
-  display: flex; justify-content: space-between; align-items: center;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px;
   padding: 10px 14px;
   pointer-events: none;
 }
@@ -70,6 +70,7 @@ button:disabled { cursor: not-allowed; }
   display: flex; gap: 8px; align-items: center;
   pointer-events: none;   /* leaf buttons/stats re-enable; flex gaps stay passive */
 }
+.topbar-group:first-child { flex-wrap: wrap; }
 .topbar-group > * { pointer-events: auto; }
 .stat {
   background: linear-gradient(180deg, rgba(38, 28, 20, 0.92), rgba(26, 18, 12, 0.92));
@@ -110,7 +111,7 @@ button:disabled { cursor: not-allowed; }
 /* ---------- wave call ---------- */
 
 .wave-call-wrap {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  position: relative; grid-column: 1 / -1; justify-self: center;
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   pointer-events: none;
 }
@@ -930,7 +931,6 @@ button:focus-visible {
   .stat { min-width: 62px; padding: 5px 9px; font-size: 13px; border-radius: 9px; }
   .icon-btn { width: 38px; height: 38px; border-radius: 9px; }
   .wave-call { font-size: 13px; padding: 7px 16px; }
-  .wave-call-wrap { top: calc(6px + env(safe-area-inset-top)); }
   .abilities { bottom: calc(10px + env(safe-area-inset-bottom)); left: calc(10px + env(safe-area-inset-left)); gap: 8px; }
   .ability { width: 54px; height: 54px; }
   /* tower/trap panel becomes a bottom sheet, floating clear ABOVE the ability bar */
@@ -1522,9 +1522,11 @@ button:focus-visible {
   display: inline-flex; align-items: center; gap: 7px;
   min-width: 0; padding: 7px 11px;
 }
+.stat.xp .xp-progress { display: flex; flex-direction: column; gap: 3px; }
+.stat.xp .xp-remaining { font-size: 10px; line-height: 1.2; color: #ded0ff; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .stat.xp .xp-level b { color: #c9b2ff; }
 .stat.xp .xp-bar {
-  display: inline-block; width: 64px; height: 6px;
+  display: inline-block; width: 100%; min-width: 80px; height: 6px;
   background: rgba(10, 6, 3, 0.6);
   border: 1px solid rgba(201, 178, 255, 0.35);
   border-radius: 999px; overflow: hidden;
@@ -1541,7 +1543,7 @@ button:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 .stat.xp.gaining .xp-gain { opacity: 1; }
-@media (max-width: 700px) { .stat.xp .xp-bar { width: 44px; } .stat.xp .xp-gain { display: none; } }
+@media (max-width: 700px) { .stat.xp { gap: 5px; padding: 5px 7px; } .stat.xp .xp-bar { min-width: 64px; } .stat.xp .xp-remaining { font-size: 9px; } .stat.xp .xp-gain { display: none; } }
 
 /* raising the ground: offered on the empty-plot menu and under a standing tower */
 .btn.small.raise { border-color: rgba(232, 194, 74, 0.5); color: #e8c95f; }

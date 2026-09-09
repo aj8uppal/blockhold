@@ -296,17 +296,13 @@ export function campaignScale(waveIndex: number, totalWaves: number): number {
   const progress = waveIndex / (totalWaves - 1)
   // longer maps compound more income, so they need proportionally more of a
   // ramp to stay level with themselves
-  const depth = ESCALATION_BASE * (totalWaves / 16)
+  // The 28-wave finale and 30+ wave chapters already have dense late
+  // rosters; concentrate the increase on the maps whose pressure decays.
+  const base = totalWaves >= 30 ? 0.9 : totalWaves >= 28 ? 0.94 : 1.25
+  const depth = base * (totalWaves / 16)
   return 1 + Math.pow(progress, ESCALATION_CURVE) * depth
 }
 
-/**
- * Tuned against the model with the plot cap in place: flattens per-map decay
- * to ~0.93x with no wave falling below the trivial line. The earlier 1.2/1.6
- * was compensating for the uncapped-tower bug, so it over-scaled once that was
- * fixed and pushed four waves past the gate.
- */
-const ESCALATION_BASE = 0.9
 const ESCALATION_CURVE = 2.0
 
 /**

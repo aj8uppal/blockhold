@@ -20,8 +20,9 @@
  *   3  per-map Veteran health and elite chance on the three late maps, the
  *      Armory's six new tracks, the Veilward changing what a boss at the gate
  *      costs, and the freeplay ladder. All change what a seed produces.
+ *   4  faster campaign/freeplay/endless escalation and boss crowd-control recovery.
  */
-export const RULESET_VERSION = 3
+export const RULESET_VERSION = 4
 
 /** identifies a reproducible run */
 export interface RunStamp {

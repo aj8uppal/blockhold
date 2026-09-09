@@ -95,3 +95,20 @@ describe('the new bosses', () => {
     expect(enemyDef('ossuary').raises?.id).toBe('husk')
   })
 })
+
+describe('survival escalation', () => {
+  it('doubles freeplay health within ten waves and keeps growing on a maxed board', async () => {
+    const { freeplayScale } = await import('../src/game/difficulty.ts')
+    expect(freeplayScale(0)).toBe(1)
+    expect(freeplayScale(1)).toBeCloseTo(1.075)
+    expect(freeplayScale(10)).toBeGreaterThan(2)
+    expect(freeplayScale(30) / freeplayScale(20)).toBeGreaterThan(2)
+  })
+
+  it('preserves the endless opening and compounds before wave twenty', async () => {
+    const { endlessScale } = await import('../src/game/difficulty.ts')
+    for (let wave = 0; wave <= 6; wave++) expect(endlessScale(wave)).toBe(1)
+    expect(endlessScale(19)).toBeGreaterThan(2.5)
+    expect(endlessScale(39) / endlessScale(29)).toBeGreaterThan(2)
+  })
+})

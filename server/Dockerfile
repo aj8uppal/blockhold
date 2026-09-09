@@ -6,6 +6,7 @@ WORKDIR /app
 COPY server/package.json ./server/package.json
 COPY server/src ./server/src
 COPY src/core/saveMerge.ts ./src/core/saveMerge.ts
+COPY src/game/ruleset.ts ./src/game/ruleset.ts
 
 ENV NODE_ENV=production
 ENV PORT=8080

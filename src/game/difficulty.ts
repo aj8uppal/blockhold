@@ -56,3 +56,14 @@ export function isGateMap(levelId: string): boolean {
 }
 
 export const GATE_MAP_IDS = Object.keys(LATE_VETERAN)
+
+/** Endless keeps the opening grace, then compounds beyond a finished defense. */
+export function endlessScale(waveIndex: number): number {
+  const depth = Math.max(0, waveIndex - 6)
+  return (1 + depth * 0.035) * Math.pow(1.055, depth)
+}
+
+/** Continue smoothly from the campaign, then double HP about every ten waves. */
+export function freeplayScale(depth: number): number {
+  return Math.pow(1.075, Math.max(0, depth))
+}

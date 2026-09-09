@@ -95,3 +95,18 @@ describe('the unlock ladder', () => {
     expect(seedXpFromProgress({ stars: {}, unlocked: 1, medals: {}, bestEndless: {} })).toBe(0)
   })
 })
+
+describe('hero level progress', () => {
+  it('starts each hero level with an empty bar and fills only that level', async () => {
+    const { Hero } = await import('../src/game/hero.ts')
+    const hero = Object.create(Hero.prototype) as InstanceType<typeof Hero>
+    hero.level = 2
+    hero.xp = 60
+    expect(hero.xpProgress).toEqual({ into: 0, span: 90 })
+    hero.xp = 105
+    expect(hero.xpProgress.into / hero.xpProgress.span).toBe(0.5)
+    hero.level = 10
+    hero.xp = 2100
+    expect(hero.xpProgress).toEqual({ into: 1, span: 1 })
+  })
+})

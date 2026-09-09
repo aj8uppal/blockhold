@@ -303,8 +303,8 @@ export class Screens {
     el('span', 'level-badge', row, `${icon('sparkle')} Level ${level}`)
     const bar = el('span', 'level-bar', row)
     const fill = el('i', '', bar)
-    fill.style.width = `${Math.round(Math.min(1, into / span) * 100)}%`
-    el('span', 'level-xp', row, level >= MAX_LEVEL ? `${save.xp.toLocaleString()} XP` : `${into}/${span} XP`)
+    fill.style.width = `${Math.round(level >= MAX_LEVEL ? 100 : Math.min(1, into / span) * 100)}%`
+    el('span', 'level-xp', row, level >= MAX_LEVEL ? `${save.xp.toLocaleString()} XP` : `${(span - into).toLocaleString()} XP to Level ${level + 1}`)
     if (next) {
       el('span', 'level-next', row, `${icon(next.kind === 'hero' ? 'helmPlume' : 'castle')} ${next.name} at ${next.level}`)
     }
@@ -479,12 +479,13 @@ export class Screens {
     const box = el('div', 'end-xp', card)
     const leveled = stats.levelAfter > stats.levelBefore
     el('span', 'end-xp-gain', box, `+${stats.xpEarned} XP`)
-    const { into, span } = levelProgress(this.save().xp)
+    const { level, into, span } = levelProgress(this.save().xp)
     const bar = el('span', 'level-bar', box)
-    el('i', '', bar).style.width = `${Math.round(Math.min(1, into / span) * 100)}%`
+    el('i', '', bar).style.width = `${Math.round(level >= MAX_LEVEL ? 100 : Math.min(1, into / span) * 100)}%`
     el('span', 'end-xp-level', box, leveled
       ? `${icon('sparkle')} Level ${stats.levelAfter}!`
-      : `Level ${stats.levelAfter} · ${into}/${span}`)
+      : `Level ${stats.levelAfter}`)
+    el('span', 'end-xp-next', box, level >= MAX_LEVEL ? 'Max level' : `${(span - into).toLocaleString()} XP to Level ${level + 1}`)
     // the exact distance to the next thing the account opens
     const next = nextUnlock(stats.levelAfter)
     if (next) {

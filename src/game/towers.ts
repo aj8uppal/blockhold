@@ -377,42 +377,30 @@ export class Tower {
     return (this.def.soldierCount ?? 3) + (this.isBarracks ? this.world.armoryTier('musterroll') : 0)
   }
 
-  /**
-   * Tier presence. Tiers 1-3 were distinguished only by model and a little
-   * scale, so an expensive board did not look expensive. From tier 4 the
-   * stonework catches light, and a capstone wears a slow halo - visible at the
-   * distance the game is actually played at, without adding a draw call.
-   */
+  /** A ground halo marks high tiers without washing out the model's colors. */
   private tierHalo: THREE.Mesh | null = null
 
+  private clearTierHalo(): void {
+    if (!this.tierHalo) return
+    this.group.remove(this.tierHalo)
+    this.tierHalo.geometry.dispose()
+    ;(this.tierHalo.material as THREE.Material).dispose()
+    this.tierHalo = null
+  }
+
   private applyTierPresence(): void {
-    if (!this.model) return
-    const lit = this.level >= 4
-    if (lit) {
-      // tuned now that the material actually takes the value: the old 0.34
-      // was set against clones that ignored it, and washed the authored
-      // colours out to beige once they stopped ignoring it
-      const glow = this.level >= 5 ? 0.16 : 0.07
-      const hue = this.level >= 5 ? 0xffd98f : 0xffc76a
-      this.model.traverse(o => {
-        if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
-          if (o.material.userData.shared) return
-          o.material.emissive.setHex(hue)
-          o.material.emissiveIntensity = glow
-        }
-      })
-    }
-    if (this.level >= 5 && !this.tierHalo) {
-      const geo = new THREE.RingGeometry(0.46, 0.6, 40)
-      geo.rotateX(-Math.PI / 2)
-      const mat = new THREE.MeshBasicMaterial({
-        color: 0xffd98f, transparent: true, opacity: 0.5, toneMapped: false, depthWrite: false,
-      })
-      this.tierHalo = new THREE.Mesh(geo, mat)
-      this.tierHalo.position.y = 0.07
-      this.tierHalo.renderOrder = 3
-      this.group.add(this.tierHalo)
-    }
+    if (this.level < 4 || this.tierHalo) return
+    const capstone = this.level >= 5
+    const geo = new THREE.RingGeometry(0.46, capstone ? 0.6 : 0.53, 40)
+    geo.rotateX(-Math.PI / 2)
+    const mat = new THREE.MeshBasicMaterial({
+      color: capstone ? 0xffd98f : 0xffc76a, transparent: true,
+      opacity: capstone ? 0.5 : 0.3, toneMapped: false, depthWrite: false,
+    })
+    this.tierHalo = new THREE.Mesh(geo, mat)
+    this.tierHalo.position.y = 0.07
+    this.tierHalo.renderOrder = 3
+    this.group.add(this.tierHalo)
   }
 
   /** effective range including perks */
@@ -573,9 +561,9 @@ export class Tower {
       this.revealT = Tower.REVEAL_HOLD
       world.sfx('build', 0.7)
     }
-    if (this.tierHalo) { this.group.remove(this.tierHalo); this.tierHalo = null }
+    this.clearTierHalo()
     this.def = def
-    // Every tower gets its own materials. Tier glow and the ghost wash are
+    // Every tower gets its own materials. Flashes and the ghost wash are
     // per-tower effects, and writing either onto a cached shared material
     // would change every tower built from the same model.
     this.model = buildModel(towerModel(def.model), `tower:${def.model}`, { cloneMaterials: true })
@@ -638,6 +626,7 @@ export class Tower {
         ;(m.material as THREE.Material).dispose()
       }
     }
+    this.clearTierHalo()
     this.crownMesh = null
     this.chargeRing = null
     this.hexRing = null

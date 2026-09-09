@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Store, type DailyScore, type EventIn } from './db.ts'
 import { mergeSaves, sanitizeCloudSave } from '../../src/core/saveMerge.ts'
 import { handleCoop } from './coop.ts'
+import { RULESET_VERSION } from '../../src/game/ruleset.ts'
 
 /**
  * Blockhold cloud saves, telemetry and the daily leaderboard.
@@ -28,7 +29,7 @@ const MAX_BODY = 64 * 1024
  * wave composition, scoring - and submissions from a client still running the
  * old rules are refused with a 409 rather than silently mixed in.
  */
-export const RULESET_VERSION = 2
+export { RULESET_VERSION }
 
 const MAX_EVENTS_PER_REQUEST = 64
 const MAX_EVENT_PAYLOAD = 2048

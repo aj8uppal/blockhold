@@ -1,5 +1,5 @@
-# The sync service image copies exactly three paths: server/package.json,
-# server/src, and src/core/saveMerge.ts. Everything else in the repository is
+# The sync service image copies its package and source plus the shared save
+# merge and ruleset modules. Everything else in the repository is
 # build context that gets uploaded to the Fly builder on every deploy - 152 MB
 # of it, nearly all node_modules - and then never used. Excluding it turns a
 # slow upload into a fast one and keeps the image honest about its inputs.
@@ -12,3 +12,4 @@
 !server/src/
 !server/src/**
 !src/core/saveMerge.ts
+!src/game/ruleset.ts

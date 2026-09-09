@@ -19,7 +19,7 @@ import { traitsOf, counterFor } from '../game/dossier.ts'
 import { HERO_RANK_MAX, heroRankCost } from '../game/hero.ts'
 import type { EnemyDef, TowerAura } from '../game/types.ts'
 import { icon, BOSS_ART } from './icons.ts'
-import { isUnlocked, unlockLevel, levelProgress } from '../game/progress.ts'
+import { isUnlocked, unlockLevel, levelProgress, MAX_LEVEL } from '../game/progress.ts'
 
 function chip(label: string, value: string, cls = ''): string {
   return `<span class="chip${cls ? ' ' + cls : ''}"><span class="chip-label">${label}</span><span class="chip-value">${value}</span></span>`
@@ -136,7 +136,7 @@ export class HUD {
     // from the last few kills. Before this the bar existed only on the menu,
     // so a battle never showed the thing it was earning.
     this.xpEl = el('div', 'stat xp', left,
-      `<span class="xp-level">${icon('sparkle')} <b>1</b></span><span class="xp-bar"><i></i></span><span class="xp-gain"></span>`)
+      `<span class="xp-level">${icon('sparkle')} <b>1</b></span><span class="xp-progress"><span class="xp-bar" role="progressbar" aria-label="Account level progress"><i></i></span><span class="xp-remaining"></span></span><span class="xp-gain"></span>`)
     this.xpEl.title = 'Account experience. Every wave held pays; holding the map pays more.'
     const right = el('div', 'topbar-group', bar)
     this.speedBtn = el('button', 'icon-btn', right, '1×') as HTMLButtonElement
@@ -154,7 +154,7 @@ export class HUD {
   }
 
   private buildWaveButton(): void {
-    const wrap = el('div', 'wave-call-wrap', this.root)
+    const wrap = el('div', 'wave-call-wrap', this.root.querySelector('.topbar') as HTMLElement)
     this.waveBtn = el('button', 'wave-call hidden', wrap) as HTMLButtonElement
     this.waveBtn.onclick = () => this.game.callWave()
     // The roster used to be hover-only, which made it unreachable on touch:
@@ -390,7 +390,17 @@ export class HUD {
       this.lastXp = xp
       const { level, into, span } = levelProgress(xp)
       this.xpEl.querySelector('.xp-level b')!.textContent = `${level}`
-      ;(this.xpEl.querySelector('.xp-bar i') as HTMLElement).style.width = `${Math.round(Math.min(1, into / span) * 100)}%`
+      const maxed = level >= MAX_LEVEL
+      const percent = maxed ? 100 : Math.round(Math.min(1, into / span) * 100)
+      const remaining = maxed ? 'Max level' : `${(span - into).toLocaleString()} XP to Lv ${level + 1}`
+      this.xpEl.querySelector('.xp-remaining')!.textContent = remaining
+      const bar = this.xpEl.querySelector('.xp-bar')!
+      bar.setAttribute('aria-valuemin', '0')
+      bar.setAttribute('aria-valuemax', '100')
+      bar.setAttribute('aria-valuenow', `${percent}`)
+      bar.setAttribute('aria-valuetext', maxed ? remaining : `${into.toLocaleString()} of ${span.toLocaleString()} XP; ${remaining}`)
+      ;(this.xpEl.querySelector('.xp-bar i') as HTMLElement).style.width = `${percent}%`
+      this.xpEl.title = maxed ? 'Maximum account level reached' : `${into.toLocaleString()} / ${span.toLocaleString()} XP · ${remaining}`
       this.xpEl.classList.remove('pulse'); void this.xpEl.offsetWidth; this.xpEl.classList.add('pulse')
     }
     // the gain readout batches a burst of kills into one number and fades
@@ -1183,8 +1193,9 @@ export class HUD {
     if (hpW !== c.hpW) { c.hpW = hpW; els.hpFill.style.width = `${hpW}%` }
     if (hpText !== c.hp) { c.hp = hpText; els.hpNum.textContent = hpText }
     const next = hero.xpToNext
-    const xpW = next === Infinity ? 100 : Math.round(Math.min(100, hero.xp / next * 100))
-    const xpText = next === Infinity ? 'MAX' : `${hero.xp}/${next}`
+    const progress = hero.xpProgress
+    const xpW = next === Infinity ? 100 : Math.round(Math.min(100, progress.into / progress.span * 100))
+    const xpText = next === Infinity ? 'MAX' : `${Math.ceil(next - hero.xp)} XP to Lv ${hero.level + 1}`
     if (xpW !== c.xpW) { c.xpW = xpW; els.xpFill.style.width = `${xpW}%` }
     if (xpText !== c.xp) { c.xp = xpText; els.xpNum.textContent = xpText }
     const t = hero.abilityCooldown

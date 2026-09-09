@@ -170,6 +170,7 @@ export class Enemy {
   state: EnemyState = 'walking'
   blockers: Soldier[] = []
   stunUntil = 0
+  private stunRecoveryUntil = 0
   poisons: { dps: number, until: number, credit?: KillCredit }[] = []
   slowUntil = 0
   slowFactor = 1
@@ -444,12 +445,20 @@ export class Enemy {
   }
 
   applyStun(duration: number, world: World): void {
+    if (!this.alive || duration <= 0) return
+    // A battery of fast towers must not hold a boss motionless forever.
+    if (this.def.boss) {
+      if (world.time < this.stunRecoveryUntil) return
+      duration = Math.min(0.6, duration * 0.5)
+      this.stunRecoveryUntil = world.time + duration + 1.2
+    }
     this.stunUntil = Math.max(this.stunUntil, world.time + duration)
     world.particles.stunStars(this.pos.x, this.pos.y + this.barY, this.pos.z)
   }
 
   /** a weaker slow never overwrites a stronger active one; equal slows extend */
   applySlow(factor: number, duration: number, world: World): void {
+    if (this.def.boss) factor = Math.max(0.65, factor)
     const active = world.time < this.slowUntil
     if (!active || factor < this.slowFactor) {
       this.slowFactor = factor
@@ -585,6 +594,8 @@ export class Enemy {
     if (this.state !== 'walking') return
 
     const stunned = world.time < this.stunUntil
+    // Stun stops travel; a hovering enemy still beats its wings.
+    if (stunned && this.def.flying) this.animWalk(dt, 0)
 
     // poison ticks (true damage); a poison kill credits its strongest source
     if (this.poisons.length) {

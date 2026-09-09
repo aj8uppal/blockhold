@@ -110,6 +110,12 @@ export class Hero extends Soldier {
     return this.level >= XP_LEVELS.length ? Infinity : XP_LEVELS[this.level]
   }
 
+  get xpProgress(): { into: number, span: number } {
+    if (this.xpToNext === Infinity) return { into: 1, span: 1 }
+    const floor = XP_LEVELS[this.level - 1]
+    return { into: this.xp - floor, span: this.xpToNext - floor }
+  }
+
   get respawnFraction(): number {
     return this.dead ? Math.max(0, this.respawnCountdown / RESPAWN_TIME) : 0
   }
