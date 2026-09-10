@@ -149,7 +149,11 @@ button:disabled { cursor: not-allowed; }
 }
 .wave-preview b { color: var(--gold-bright); }
 .wave-details { position: relative; pointer-events: auto; color: var(--parchment); font-size: 12px; }
-.wave-details summary { padding: 10px 12px; cursor: pointer; border: 1px solid #796246; border-radius: 10px; background: #21180f; white-space: nowrap; }
+.wave-details summary { display: flex; align-items: center; justify-content: center; gap: 7px; height: 100%; padding: 10px 12px; cursor: pointer; border: 1px solid #796246; border-radius: 10px; background: #21180f; white-space: nowrap; list-style: none; }
+.wave-details summary::-webkit-details-marker { display: none; }
+.wave-details summary::before { content: ''; width: 6px; height: 6px; flex: 0 0 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s ease; }
+.wave-details[open] summary::before { transform: rotate(45deg); }
+.wave-details { align-self: stretch; }
 .wave-details.boss summary { color: #ffbca9; border-color: #d87b59; }
 .wave-details .wave-preview { position: absolute; top: calc(100% + 6px); right: 0; width: min(360px, 86vw); z-index: 12; }
 .quality-setting { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--parchment); font-size: 14px; }
@@ -280,6 +284,7 @@ button:disabled { cursor: not-allowed; }
 
 .build-menu {
   position: absolute;
+  overflow-y: auto;
   display: grid; grid-template-columns: 1fr 1fr; gap: 7px;
   width: 232px;
   padding: 9px;
@@ -1413,14 +1418,13 @@ button:focus-visible {
 /* ---------- a legibility floor ---------- */
 
 /*
-  Nothing in the interface may be smaller than 12px on a touch screen.
-
   The compact landscape rules had walked several labels down to 8.5-11px, which
   is where a stat chip stops being information and becomes texture. Type that
   small is also unreadable to a large share of players outright, and the
   viewport is locked against pinch-zoom, so they have no way to fix it
-  themselves. These overrides come last so they win on order, and they raise
-  only the offenders rather than resetting the whole compact layout.
+  themselves. These overrides keep the main stat labels readable. The later
+  interaction pass deliberately uses 11px for compact build names and prices,
+  with the same large touch targets and more space inside each button.
 */
 @media (pointer: coarse) {
   .chip-label { font-size: 12px; }
@@ -1675,10 +1679,11 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px
   }
   .build-head { position: sticky; top: -8px; z-index: 2; background: var(--panel-surface); padding: 0; }
   .build-head small { font-size: 11px; max-width: 175px; }
-  .build-option { height: 52px; min-height: 52px; padding: 2px; gap: 0; justify-content: center; line-height: 14px; }
-  .build-option .b-icon { font-size: 16px; line-height: 18px; }
+  .build-option { height: 52px; min-height: 52px; padding: 4px 6px; gap: 0; justify-content: center; line-height: 13px; }
+  .build-option .b-icon { font-size: 14px; line-height: 16px; }
   .build-option.poor { opacity: .7; }
-  .build-option .b-cost, .build-option .b-name { font-size: 12px; }
+  .build-option .b-cost, .build-option .b-name { font-size: 11px; }
+  .build-option .b-name { font-weight: 700; }
   .tower-panel {
     width: min(300px, 43vw); padding: 10px;
     max-height: calc(100dvh - 138px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
@@ -1719,4 +1724,76 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px
 }
 @media (prefers-reduced-motion: reduce) {
   .build-menu, .tower-panel, #rotate-overlay .rotate-icon { animation: none; }
+}
+
+/* Desktop uses the same calm surfaces, with room for a consistent rhythm. */
+@media (pointer: fine) and (min-width: 900px) and (min-height: 561px) {
+  .topbar { padding: 16px 20px; gap: 12px; }
+  .topbar-group { gap: 8px; }
+  .stat { display: flex; align-items: center; justify-content: center; gap: 6px; height: 44px; min-width: 84px; padding: 8px 14px; font-size: 14px; letter-spacing: 0; }
+  .stat.xp { padding: 8px 12px; }
+  .stat.xp .xp-remaining { font-size: 11px; }
+  .icon-btn { width: 44px; height: 44px; }
+  .stat, .icon-btn { background: var(--panel-surface); border-color: #80644299; box-shadow: 0 3px 12px #100a0626; border-radius: 12px; }
+  .wave-call-wrap { gap: 8px; }
+  #hud .wave-call { min-height: 44px; padding: 10px 16px; font-size: 13px; border-width: 1px; border-radius: 12px; animation: none; box-shadow: 0 3px 12px #100a0626; }
+  #hud .wave-call .call-sub { display: inline; margin-left: 10px; font-size: 12px; }
+  .wave-call:hover { transform: none; background: #8a3527; }
+  .wave-details summary { min-height: 44px; padding: 10px 14px; font-size: 12px; border-radius: 12px; }
+  .build-menu { width: 320px; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 12px; gap: 8px; max-height: calc(100dvh - 120px); overflow-y: auto; overscroll-behavior: contain; }
+  .build-head { padding-bottom: 4px; }
+  .build-head b { font-size: 16px; }
+  .build-head small { line-height: 1.5; }
+  .build-head .tp-close { flex-basis: 32px; height: 32px; }
+  .build-option { min-height: 76px; padding: 8px 6px; gap: 2px; justify-content: center; }
+  .build-option .b-icon { font-size: 20px; line-height: 22px; }
+  .build-option .b-name { font-size: 12px; line-height: 16px; font-weight: 700; }
+  .build-option .b-cost { line-height: 16px; }
+  .build-option.poor { opacity: .65; }
+  .build-option:hover { transform: none; }
+  .tower-panel { right: 20px; bottom: 20px; width: clamp(300px, 25vw, 340px); padding: 16px; max-height: calc(100dvh - 140px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #a88c60 var(--panel-surface); }
+  .tp-head { position: sticky; top: -16px; background: var(--panel-surface); padding: 0 0 10px; margin-bottom: 10px; z-index: 2; }
+  .tp-head .tp-close { width: 32px; height: 32px; }
+  .tp-name { font-size: 16px; }
+  .tp-level { font-size: 12px; line-height: 1.5; }
+  .tp-primary { gap: 8px; margin-bottom: 12px; }
+  .tp-primary .btn.upgrade { padding: 12px; }
+  .stat-chips { gap: 0; padding: 6px; margin: 10px 0; border: 1px solid #80644266; border-radius: 12px; background: #ffffff04; }
+  .chip { border: 0; background: transparent; padding: 6px 8px; }
+  .chip-label { font-size: 11px; letter-spacing: 0; text-transform: none; color: #bdac93; }
+  .chip-value { font-size: 14px; }
+  .tp-actions { gap: 8px; }
+  .tp-actions .btn { min-height: 38px; }
+  .tower-panel::after { margin: 10px -16px -16px; padding: 8px 16px; }
+  .abilities { left: 20px; bottom: 20px; gap: 10px; }
+  .ability { box-shadow: 0 4px 14px #100a0633; border-width: 1px; }
+  .pause-card { width: 480px; padding: 28px; gap: 12px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border: 1px solid var(--panel-edge); background: var(--panel-surface); }
+  .pause-card > h2, .pause-card > .quality-setting, .pause-card > .quality-note, .pause-card > .pause-banked { grid-column: 1 / -1; }
+  .pause-card .btn { min-height: 42px; }
+  .pause-card .pause-settings { margin: 0; justify-content: flex-end; align-items: center; }
+  .pause-card:has(.pause-invite.hidden) > .pause-coop { grid-column: 1 / -1; }
+  .help-card { max-height: calc(100dvh - 48px); padding: 24px; gap: 12px; border: 1px solid var(--panel-edge); background: var(--panel-surface); overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #a88c60 var(--panel-surface); }
+  .help-card > * { flex-shrink: 0; }
+  .hero-option, .diff-option { min-width: 0; border-width: 1px; border-color: #806442; padding: 12px 10px; }
+  .hero-option.picked { box-shadow: inset 0 0 0 1px var(--accent); }
+  .hero-option .hero-portrait { width: 64px; height: 64px; }
+  .diff-option .diff-blurb { min-height: 34px; }
+  .difficulty-card > .btn:last-child { position: sticky; bottom: -12px; align-self: stretch; min-height: 36px; background: var(--panel-surface); box-shadow: 0 -8px 12px #261d16dd; z-index: 1; }
+  .menu-screen .menu-hero { width: 560px; padding: 32px 40px; gap: 12px; border-width: 1px; border-color: #a07e46; border-radius: 24px; }
+  .menu-screen .game-title { font-size: 48px; letter-spacing: 6px; }
+  .menu-screen .menu-crest { font-size: 48px; }
+  .menu-screen .btn.big { min-width: 220px; font-size: 17px; }
+  .menu-mode-row { gap: 10px; }
+  .menu-mode-row .mode-btn { min-height: 40px; }
+  .levels-head, .levels-grid { width: min(1280px, calc(100vw - 80px)); }
+  .levels-head { gap: 16px; }
+  .levels-title { font-size: 28px; }
+  .levels-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+  .level-card { width: auto; min-width: 0; padding: 12px; gap: 6px; border-width: 1px; border-color: #806442; border-radius: 16px; box-shadow: 0 6px 18px #100a0633; }
+  .level-card:not(.locked):hover { transform: translateY(-3px); }
+  .level-art { height: 104px; border-radius: 10px; margin-bottom: 4px; }
+  .level-name { font-size: 15px; line-height: 20px; min-height: 40px; display: grid; align-items: center; text-align: center; }
+  .level-sub { font-size: 12px; line-height: 17px; min-height: 34px; text-align: center; }
+  .level-meta { font-size: 11px; }
+  .level-stars { font-size: 17px; margin-top: 0; }
 }

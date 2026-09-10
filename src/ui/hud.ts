@@ -378,9 +378,9 @@ export class HUD {
     quality.value = this.game.engine.qualityPreference
     quality.onchange = () => this.game.engine.setQuality(quality.value as QualityPreference)
     el('small', 'quality-note', card, 'Low reduces detail and shadows. Battery saver also draws at 30 fps. Combat speed stays the same.')
-    this.coopSwitchBtn = el('button', 'btn ghost', card, 'Invite a friend to this battle') as HTMLButtonElement
+    this.coopSwitchBtn = el('button', 'btn ghost pause-coop', card, 'Invite a friend to this battle') as HTMLButtonElement
     this.coopSwitchBtn.onclick = () => this.onCoopSwitch()
-    this.inviteBtn = el('button', 'btn ghost hidden', card, 'Copy invite link') as HTMLButtonElement
+    this.inviteBtn = el('button', 'btn ghost pause-invite hidden', card, 'Copy invite link') as HTMLButtonElement
     this.inviteBtn.onclick = async () => {
       const session = this.game.coop
       if (!session) return
@@ -768,14 +768,17 @@ export class HUD {
   private placeMenu(x: number, y: number): void {
     this.menuOpenedAt = performance.now()
     this.buildMenu.classList.remove('hidden')
-    if (isCoarsePointer()) { this.buildMenu.style.left = ''; this.buildMenu.style.top = ''; return }
+    if (isCoarsePointer()) { this.buildMenu.style.left = ''; this.buildMenu.style.top = ''; this.buildMenu.style.maxHeight = ''; return }
+    const pad = 12
+    const top = (this.root.querySelector('.topbar')?.getBoundingClientRect().bottom ?? 48) + 8
+    this.buildMenu.style.maxHeight = `${Math.max(44, window.innerHeight - top - pad)}px`
     const rect = this.buildMenu.getBoundingClientRect()
     const mw = rect.width || 232, mh = rect.height || 150
-    const pad = 12
     const px = Math.max(pad, Math.min(window.innerWidth - mw - pad, x - mw / 2))
-    const py = Math.max(56, Math.min(window.innerHeight - mh - pad, y - mh - 24))
+    const py = Math.max(top, Math.min(window.innerHeight - mh - pad, y - mh - 24))
     this.buildMenu.style.left = `${px}px`
     this.buildMenu.style.top = `${py}px`
+    this.buildMenu.style.maxHeight = `${Math.max(44, window.innerHeight - py - pad)}px`
   }
 
   private mults(kind: TowerKind): StatMults {
