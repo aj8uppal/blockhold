@@ -25,8 +25,9 @@
  *   6  Distinct late maps, non-stacking healing, soldier auras and wave recovery income.
  *   7  Independent Seraph targeting; naturally elevated plots cannot be raised.
  *   8  Boss hunts, hero paths, Mythic upgrades and complete boss phase scaling.
+ *   9  Endless plot rewards, shared battle transfers and atomic bulk Overcharge.
  */
-export const RULESET_VERSION = 8
+export const RULESET_VERSION = 9
 
 /** identifies a reproducible run */
 export interface RunStamp {

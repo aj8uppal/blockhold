@@ -1,3 +1,6 @@
+import type { CoopSession } from './core/coop.ts'
+import { coopEnabled, inviteCodeFromUrl } from './core/coopLink.ts'
+import { isPortalMode } from './core/platform.ts'
 import { readSession } from './game/session.ts'
 import { huntLevel, huntAccess, huntById } from './game/hunts.ts'
 import { requestDurableStorage, writeSave } from './core/save.ts'
@@ -11,7 +14,6 @@ import { acquisitionSource, isEmbedded } from './core/platform.ts'
 import { dailySeed, dailyNumber, newRunSeed } from './game/ruleset.ts'
 import { dailyLevel } from './game/levels.ts'
 import { trialFor } from './game/trials.ts'
-import { inviteCodeFromUrl } from './core/coop.ts'
 import { challengeIsCurrent, readChallenge } from './game/share.ts'
 import { canRecordTape } from './core/captureSupport.ts'
 import { Game } from './game/game.ts'
@@ -99,6 +101,7 @@ const isTouchDevice = () => window.matchMedia('(pointer: coarse)').matches
 
 /** the chrome every battle start shares: HUD up, screens down, fullscreen on a phone */
 function enterBattle(): void {
+  closeChat?.(); closeChat = null
   hud.reset()
   hud.setChrome(true)
   screens.show('none')
@@ -119,10 +122,38 @@ function enterBattle(): void {
 const invite = inviteCodeFromUrl()
 if (invite) setTimeout(() => screens.show('coop', { coopCode: invite }), 0)
 
-screens.onCoopStart = (session, setup) => {
+let closeChat: (() => void) | null = null
+async function connectBattle(session: CoopSession, setup: import('./core/coop.ts').CoopSetup): Promise<void> {
   enterBattle()
-  game.startLevel(setup.levelId.startsWith('hunt-') ? huntLevel(huntById(setup.levelId.slice(5))!.id) : levelById(setup.levelId), setup.difficulty, setup.hero, 'campaign',
-    { hunt: setup.levelId.startsWith('hunt-') ? huntById(setup.levelId.slice(5))?.id : undefined, seed: setup.seed, coop: { session, loadout: setup.loadout } })
+  closeChat?.(); closeChat = null
+  if (!await game.joinCoopBattle(session, setup)) { session.close(); screens.show('coop'); return }
+  const { mountCoopChat } = await import('./ui/coopChat.ts')
+  if (game.coop === session) closeChat = mountCoopChat(document.body, session)
+}
+screens.onCoopStart = (session, setup) => { void connectBattle(session, setup) }
+hud.onCoopSwitch = () => {
+  if (game.coop) {
+    if (game.continueSolo()) { closeChat?.(); closeChat = null }
+    else hud.showToast('Could not keep a solo copy. The shared battle is still open.', 4)
+    return
+  }
+  const battle = game.exportBattleSession()
+  if (!battle) return
+  if (!coopEnabled()) { hud.showToast('Co-op needs an online connection to the game server.', 4); return }
+  void (async () => {
+    try {
+      const { CoopSession } = await import('./core/coop.ts')
+      const session = await CoopSession.create()
+      const roster = battle.initialSave
+      const setup = { levelId: battle.levelId, difficulty: battle.difficulty, hero: battle.heroId,
+        mode: battle.mode, seed: battle.seed, battle, startPaused: true,
+        loadout: { xp: roster.xp, armory: roster.armory, honors: roster.honors, heroPaths: roster.heroPaths } }
+      if (!await session.send('start', setup)) { session.close(true); throw new Error('Could not open the shared battle. Your solo battle is still saved.') }
+      // The adopting host starts at the journal's exact moment. The server starts paused.
+      session.paused = true
+      await connectBattle(session, setup)
+    } catch (error) { hud.showToast(error instanceof Error ? error.message : 'Could not open co-op', 5) }
+  })()
 }
 
 screens.onPlayHunt = (id, difficulty, hero) => {
@@ -268,6 +299,7 @@ screens.onResume = () => {
   game.startLevel(levelById(cp.levelId), cp.difficulty, cp.heroId, cp.endless ? 'endless' : 'campaign', { resume: cp })
 }
 screens.onMenu = () => {
+  closeChat?.(); closeChat = null
   game.leaveCoop()
   screens.watchesRemaining = 0
   game.resetWatches()
@@ -276,6 +308,7 @@ screens.onMenu = () => {
   hud.setChrome(false)
 }
 hud.onHome = () => {
+  closeChat?.(); closeChat = null
   if (game.phase === 'playing') {
     telemetry.track({ type: 'quit_to_menu', level: game.level?.id ?? '', wave: (game.waves?.waveIndex ?? 0) + 1 })
   }
@@ -376,6 +409,9 @@ canvas.addEventListener('pointerdown', (e) => {
     dragStart = { x: e.clientX, y: e.clientY }
     dragged = false
     if (!dragOrbit) game.engine.panGrab(e.clientX, e.clientY)
+    // A held finger has no hover events. Show the same placement feedback as
+    // a mouse without changing the existing tap-versus-pan decision.
+    if (e.pointerType === 'touch' && game.targetMode === 'expand') game.handleHover(e.clientX, e.clientY)
   } else {
     // entering multi-touch cancels any pending click; reset gesture baselines
     dragged = true
@@ -429,6 +465,7 @@ canvas.addEventListener('pointermove', (e) => {
     if (dragOrbit) game.engine.orbit(dx, dy)
     else if (!game.engine.panTo(e.clientX, e.clientY)) game.engine.pan(-dx, -dy)
   }
+  if (e.pointerType === 'touch' && game.targetMode === 'expand') game.handleHover(e.clientX, e.clientY)
 })
 
 const endPointer = (e: PointerEvent, isClick: boolean) => {
@@ -520,7 +557,8 @@ window.addEventListener('unhandledrejection', (e) => {
 window.addEventListener('pagehide', () => telemetry.flush())
 
 window.addEventListener('keydown', (e) => {
-  if (e.repeat) return
+  if (e.repeat || e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))) return
+  if (e.code === 'KeyV' && !isPortalMode()) { toggleFullscreen(); return }
   keys.add(e.code)
   if (game.phase !== 'playing') return
   if (game.paused) {
@@ -532,10 +570,11 @@ window.addEventListener('keydown', (e) => {
     case 'Space': e.preventDefault(); game.callWave(); break
     case 'KeyF': game.toggleSpeed(); break
     case 'KeyP': game.togglePause(); break
-    case 'KeyH': game.selectHero(true); break
-    case 'Digit1': game.setTargetMode(game.targetMode === 'meteor' ? null : 'meteor'); break
-    case 'Digit2': game.setTargetMode(game.targetMode === 'reinforce' ? null : 'reinforce'); break
-    case 'Digit3': game.castHeroSignature(); break
+    case 'KeyH':
+    case 'Digit1': game.selectHero(true); break
+    case 'Digit3': game.setTargetMode(game.targetMode === 'meteor' ? null : 'meteor'); break
+    case 'Digit4': game.setTargetMode(game.targetMode === 'reinforce' ? null : 'reinforce'); break
+    case 'Digit2': game.castHeroSignature(); break
     case 'KeyC': game.engine.resetView(game.level?.width, game.level?.height); break
     case 'Escape':
       if (game.targetMode) game.setTargetMode(null)
@@ -546,6 +585,9 @@ window.addEventListener('keydown', (e) => {
 })
 window.addEventListener('keyup', (e) => keys.delete(e.code))
 window.addEventListener('blur', () => keys.clear())
+window.addEventListener('focusin', e => {
+  if (e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))) keys.clear()
+})
 
 // ---------------- main loop ----------------
 

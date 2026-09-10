@@ -50,7 +50,7 @@ function coordinate(value: unknown): value is number {
 }
 
 /** Reconstruct accepted commands so unknown fields cannot enter the executor. */
-function command(value: unknown): CoopCommand | null {
+export function parseBattleCommand(value: unknown): CoopCommand | null {
   if (!record(value)) return null
   const { kind, plot, spot, x, z } = value
   switch (kind) {
@@ -80,17 +80,20 @@ function command(value: unknown): CoopCommand | null {
     case 'reinforce':
       return coordinate(x) && coordinate(z) ? { kind, x, z } : null
     case 'wave':
+    case 'overchargeAll':
     case 'heroSig':
     case 'heroRank':
     case 'hold':
       return { kind }
+    case 'expand':
+      return integer(value.c, 4095) && integer(value.r, 4095) ? { kind, c: value.c, r: value.r } : null
     default:
       return null
   }
 }
 
 function validate(value: unknown): BattleSession | null {
-  if (!record(value) || value.ruleset !== RULESET_VERSION) return null
+  if (!record(value) || value.ruleset !== RULESET_VERSION && value.ruleset !== 8) return null
   if (typeof value.levelId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(value.levelId)) return null
   if (value.hunt !== undefined && value.hunt !== 'ossuary' && value.hunt !== 'empress') return null
   if (value.difficulty !== 'casual' && value.difficulty !== 'normal' && value.difficulty !== 'veteran') return null
@@ -105,7 +108,7 @@ function validate(value: unknown): BattleSession | null {
   let previousTick = 0
   for (const entry of value.commands) {
     if (!record(entry) || !integer(entry.tick, value.tick, previousTick)) return null
-    const cmd = command(entry.cmd)
+    const cmd = parseBattleCommand(entry.cmd)
     if (!cmd) return null
     commands.push({ tick: entry.tick, cmd })
     previousTick = entry.tick
@@ -116,7 +119,7 @@ function validate(value: unknown): BattleSession | null {
   const initialSave = parseSave(value.initialSave)
   if (!initialSave) return null
   return {
-    ruleset: RULESET_VERSION,
+    ruleset: value.ruleset as number,
     levelId: value.levelId,
     ...(value.hunt === undefined ? {} : { hunt: value.hunt }),
     difficulty: value.difficulty,
@@ -161,7 +164,7 @@ export function readSession(): BattleSession | null {
   try {
     if (raw.length > MAX_BYTES) { lastReadIssue = { kind: 'invalid' }; return null }
     const value: unknown = JSON.parse(raw)
-    if (record(value) && integer(value.ruleset, Number.MAX_SAFE_INTEGER) && value.ruleset !== RULESET_VERSION) {
+    if (record(value) && integer(value.ruleset, Number.MAX_SAFE_INTEGER) && value.ruleset !== RULESET_VERSION && value.ruleset !== 8) {
       lastReadIssue = { kind: 'incompatible', savedRuleset: value.ruleset, currentRuleset: RULESET_VERSION }
       return null
     }

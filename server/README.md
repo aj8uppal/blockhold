@@ -266,3 +266,35 @@ Two caveats worth writing down rather than rediscovering:
 - **No verified leaderboard.** There is a board, but see above: scores are bounded and stored with their replay, not re-simulated. The claim it makes is deliberately small.
 - **Google setup is required.** Until the OAuth client credentials are configured, the game honestly marks Google sign-in unavailable. Existing saves keep syncing, and file backups plus legacy code recovery remain available. Google-linked accounts are exempt from the legacy 180-day account retention sweep.
 - **No blocking.** Every client call is best-effort. A player with no network, a blocked request or a service that is down gets exactly the game they had before, immediately.
+
+## Co-op recovery and chat
+
+Ruleset 9 clients send `?ruleset=9` on every co-op request. Missing or older
+versions receive 409 with a refresh message, before joining or sending orders.
+Solo ruleset 8 battle saves are validated with their original state hash and
+migrated locally; they are never replayed as mixed-version room commands.
+
+The browser stores its private room seat separately from the shareable invite
+code. Reloading offers **Rejoin your room**. Authenticated fetch-based SSE uses
+an Authorization header and a sequence cursor; reconnecting consumes only
+missed events. Late joining and reload recovery replay the adopted solo journal
+plus ordered room history, with effects and historical account rewards muted.
+Chat is bounded, rate-limited plain text and never enters the battle journal.
+
+From a settled, paused campaign or endless battle, settings can **Invite a
+friend**, then **Copy invite link**. The host's starting loadout determines the
+shared simulation. **Continue solo** writes the current battle locally, leaves
+the seat, and preserves that loadout for recovery; the other player can continue
+in the room. Competitive modes cannot switch. Solo saves still use the local
+versioned battle journal, independently of room availability.
+
+Rooms are in memory: a server restart ends them. Rooms expire after two hours without a room request,
+with ten minutes of empty-room retention. Per-room history is capped at 60,000
+events / 6 MB, with a 32 MB global history cap. Expired or unavailable history
+returns 410 instead of restoring an incomplete battle. These are reconnectable
+sessions, not durable cloud battle saves.
+
+Validation covers authenticated seat recovery, version gates, cursor replay,
+chat limits and two-player journal convergence. A local two-browser run also
+verified solo adoption, late join, offline catch-up, page reload into the same
+seat, chat input isolation and conversion back to solo.

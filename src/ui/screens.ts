@@ -2,7 +2,8 @@ import { readSession, readSessionIssue } from '../game/session.ts'
 import { huntById, type HuntId } from '../game/hunts.ts'
 import { heroPath } from '../game/heroPaths.ts'
 // the field guide and the cards are reading rooms, opened on demand: lazy chunks
-import { coopEnabled, type CoopSession, type CoopSetup } from '../core/coop.ts'
+import type { CoopSession, CoopSetup } from '../core/coop.ts'
+import { coopEnabled } from '../core/coopLink.ts'
 import { levels, levelById } from '../game/levels.ts'
 import { Difficulty, HeroId } from '../game/types.ts'
 import { difficultyMods } from '../game/difficulty.ts'
@@ -968,7 +969,7 @@ export class Screens {
         <div><b>${icon('shield')} Block.</b> Barracks soldiers hold enemies in place while your towers work. Move them with the rally flag.</div>
         <div><b>${icon('helmPlume')} Command your hero.</b> Sir Aldric levels up from nearby kills and slams groups of foes. Select him (or press H) to see his stats and guard ring, then click the ground to move his post.</div>
         <div><b>${icon('swords')} Call waves.</b> Call the next wave early for bonus gold — if you dare.</div>
-        <div><b>${icon('meteor')} Abilities.</b> Meteor Storm (1) devastates an area. Reinforcements (2) plug a leak for a few seconds.</div>
+        <div><b>${icon('meteor')} Abilities.</b> Meteor Storm (3) devastates an area. Reinforcements (4) plug a leak for a few seconds.</div>
         <div><b>${icon('spike')} Trap the road.</b> Rune circles on the road hold traps: spike snares, frost runes, and blast charges that fire on whatever crosses them.</div>
         <div><b>${icon('gem')} Harvest shards.</b> Shardbacks, elites, and bosses drop Veilshards. Spend them to Overcharge a tower's attack speed or Ascend a tier-4 tower with a permanent perk.</div>
         <div><b>${icon('moon')} Respect the Veiltide.</b> Marked waves surge with empowered enemies under a violet sky. Calling one early is a gamble.</div>
@@ -977,7 +978,7 @@ export class Screens {
         <div><b><span class="gold-star">★</span> Spend your stars.</b> Victory stars buy permanent upgrades in the Royal Armory, found on the level-select screen.</div>
         <div><b>${icon('moon')} Survive the Long Night.</b> Beat a map to unlock its Endless mode: ever-escalating waves, a boss every tenth, and a personal record to chase.</div>
         <div><b>${icon('range')} Camera.</b> Drag to pan; right-drag, middle-drag, or Shift+drag to orbit and tilt; scroll to zoom. Touch: pinch to zoom, twist to rotate, two-finger drag to tilt.</div>
-        <div><b>${icon('rune')} Hotkeys.</b> Space = call wave · F = speed · P = pause · H = hero · Q/E rotate · T/G tilt · C = reset view · Esc = cancel/close.</div>
+        <div><b>${icon('rune')} Hotkeys.</b> Space = call wave · F = speed · P = pause · 1 = hero · 2 = hero ability · 3 = meteor · 4 = reinforcements · V = fullscreen · Q/E rotate · T/G tilt · C = reset view · Esc = cancel/close.</div>
       </div>
     `)
     const close = el('button', 'btn primary', card, 'Got it') as HTMLButtonElement

@@ -47,13 +47,15 @@ test('earned hero paths equip and carry into a hunt', async ({ page, consoleErro
     g.save.taughtBasics = true
     ;(window.vg.screens as unknown as Screens).show('hunts')
   })
+  await page.locator('.endgame-paths > summary').click()
   const bulwark = page.locator('.path-option').filter({ hasText: 'Guardian Standard' })
   const vanguard = page.locator('.path-option').filter({ hasText: 'Breachmaker' })
   await expect(bulwark).toBeEnabled()
   await expect(vanguard).toBeDisabled()
   await bulwark.click()
   await expect(bulwark).toContainText('Equipped')
-  await page.locator('section.endgame-card').filter({ hasText: 'The Bone Procession' }).getByRole('button', { name: 'Normal', exact: true }).click()
+  await page.getByLabel('Hunt difficulty').selectOption('normal')
+  await page.getByRole('button', { name: 'Start The Bone Procession', exact: true }).click()
   await page.waitForFunction(() => (window.vg.game as unknown as Game).hunt?.id === 'ossuary')
   expect(await page.evaluate(() => (window.vg.game as unknown as Game).hero!.specialization)).toBe('bulwark')
   await expect(page.locator('.hunt-status')).toContainText('The Bone Procession')
@@ -86,5 +88,25 @@ test('Mythics require earned mastery and only one can stand', async ({ page, con
   })
   expect(result).toMatchObject({ locked: true, tier: 6, second: 5, charged: 0 })
   expect(result.message).toContain('One Mythic')
+  expect(consoleErrors).toEqual([])
+})
+
+
+test('hunt hub leads with one next step and keeps optional upgrades collapsed on landscape phones', async ({ page, consoleErrors }) => {
+  await page.setViewportSize({ width: 844, height: 390 })
+  await bootToMenu(page)
+  await page.evaluate(() => {
+    const g = window.vg.game as unknown as Game
+    g.save.xp = 10000; g.save.honors = []; g.save.lastHero = 'aldric'
+    ;(window.vg.screens as unknown as Screens).show('hunts')
+  })
+  await expect(page.locator('.endgame-next')).toContainText('Next: win The Bone Procession with Sir Aldric')
+  await expect(page.getByLabel('Hunt difficulty')).toHaveValue('casual')
+  await expect(page.locator('.endgame-paths')).not.toHaveAttribute('open', '')
+  await expect(page.locator('.endgame-mastery')).not.toHaveAttribute('open', '')
+  await expect(page.getByRole('button', { name: 'Start The Bone Procession', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Start The Bone Procession', exact: true })).toBeInViewport({ ratio: 1 })
+  expect(await page.locator('.endgame-screen').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+  await page.screenshot({ path: 'tests/smoke/output/hunt-hub-landscape.png' })
   expect(consoleErrors).toEqual([])
 })

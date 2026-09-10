@@ -1,3 +1,4 @@
+import { availableExpansionPlots, placeExpansionPlot, EXPANSION_EVERY } from './expansion.ts'
 import { huntById, huntLevel, huntClearGold, awardHunt, heroHunts, masteryReady, masteryHint, type HuntDef, type HuntId } from './hunts.ts'
 import { HERO_PATHS } from './heroPaths.ts'
 import * as THREE from 'three'
@@ -31,7 +32,7 @@ import { HERO_RANK_MAX, heroRankCost } from './hero.ts'
 import { levels, generateEndlessWaves, generateFreeplayChunk, ladderRung } from './levels.ts'
 import { trialLevel, type TrialDef, type TrialKind } from './trials.ts'
 import { stateHash, type CoopCommand } from './coopCommands.ts'
-import type { CoopSession, CoopEvent } from '../core/coop.ts'
+import type { CoopSession, CoopEvent, CoopSetup } from '../core/coop.ts'
 import { CoopClock } from '../core/coopClock.ts'
 import { Terrain, PlotInfo, THEMES } from './terrain.ts'
 import { Particles } from './particles.ts'
@@ -48,7 +49,7 @@ import { randRange, simChance, setSimSeed, pick } from '../core/utils.ts'
 import { newRunSeed, runStamp, RULESET_VERSION, type RunStamp } from './ruleset.ts'
 import { writeCheckpoint, clearCheckpoint, readCheckpoint, type Checkpoint } from './checkpoint.ts'
 import { ReplayLog } from './replay.ts'
-import { writeSession, clearSession, parseSession, SESSION_MAX_COMMANDS, SESSION_MAX_TICKS, type BattleSession } from './session.ts'
+import { parseBattleCommand, writeSession, clearSession, parseSession, SESSION_MAX_COMMANDS, SESSION_MAX_TICKS, type BattleSession } from './session.ts'
 import { canRecordTape } from '../core/captureSupport.ts'
 import { attachDebris, shatter, updateDebris, clearDebris, type DeathFlavor } from './debris.ts'
 
@@ -59,7 +60,7 @@ import { telemetry } from '../core/telemetry.ts'
 import type { DailyResult } from './share.ts'
 
 export type GamePhase = 'idle' | 'playing' | 'victory' | 'defeat'
-export type TargetMode = 'meteor' | 'reinforce' | 'rally' | 'holdline' | null
+export type TargetMode = 'meteor' | 'reinforce' | 'rally' | 'holdline' | 'expand' | null
 
 export interface AbilityState { cooldown: number, max: number }
 
@@ -95,7 +96,7 @@ export class Game implements World {
       && this.sessionTick <= SESSION_MAX_TICKS && this.journal.commands.length <= SESSION_MAX_COMMANDS
   }
 
-  private sessionStateHash(): number {
+  private sessionStateHash(legacy = false): number {
     const values = [this.sessionTick, this.gold, this.lives, this.shards, this.time, this.killCount,
       this.goldEarned, this.shardsEarned, this.liveXp, this.perfectWaves, this.leaks,
       this.waves?.waveIndex ?? -1, this.waves?.totalWaves ?? 0, this.isFreeplay ? 1 : 0,
@@ -105,6 +106,7 @@ export class Game implements World {
     for (const t of this.towers) values.push(t.plot.index, t.level, t.branch ?? -1, t.damage, t.kills, t.soldiers.length)
     for (const s of this.soldiers) values.push(s.hp, s.maxHp, s.group.position.x, s.group.position.y, s.group.position.z, s.dead ? 1 : 0)
     if (this.hero) values.push(this.hero.level, this.hero.xp, this.hero.signatureRank, this.hero.abilityCooldown, this.hero.respawnCountdown)
+    if (!legacy) values.push(this.completedEndlessWaves, this.terrain?.plots.length ?? 0)
     return stateHash(values)
   }
 
@@ -167,10 +169,10 @@ export class Game implements World {
       }
       if (next !== session.commands.length || this.phase !== 'playing'
         || (this.waves?.waveIndex ?? -1) + 1 !== session.wave
-        || (session.stateHash !== undefined && this.sessionStateHash() !== session.stateHash)) {
+        || (session.stateHash !== undefined && this.sessionStateHash(session.ruleset === 8) !== session.stateHash)) {
         throw new Error('Saved battle did not reproduce its recorded state')
       }
-      this.journal = { ...session, commands: session.commands.map(entry => ({ tick: entry.tick, cmd: { ...entry.cmd } })) }
+      this.journal = { ...session, ruleset: RULESET_VERSION, commands: session.commands.map(entry => ({ tick: entry.tick, cmd: { ...entry.cmd } })) }
       this.sessionSaveT = 0
       this.sessionWriteWarned = false
       succeeded = true
@@ -304,6 +306,7 @@ export class Game implements World {
     else this.selectPlot(plot, 0, 0)
   }
   hero: Hero | null = null
+  completedEndlessWaves = 0
   heroSelected = false
   targetMode: TargetMode = null
   abilities: Record<'meteor' | 'reinforce', AbilityState> = {
@@ -639,6 +642,10 @@ export class Game implements World {
       this.waveTracks.delete(e.waveTag)
       // Clearing the wave funds a recovery even when one foe got through.
       // Perfect defense still earns its separate, escalating streak bonus.
+      if (this.isEndless || this.isFreeplay && e.waveTag >= this.waves.authoredWaves) {
+        this.completedEndlessWaves++
+        if (this.completedEndlessWaves % EXPANSION_EVERY === 0) this.hud.showToast('New plot earned! Tap Plot to build on any clear ground.', 6)
+      }
       const waveNo = e.waveTag + 1
       const clearBonus = 10 + waveNo * 3 + (this.hunt ? huntClearGold(waveNo) : 0)
       this.addGold(clearBonus)
@@ -952,6 +959,7 @@ export class Game implements World {
   }
 
   shatterUnit(group: THREE.Group, opts: { force?: number, flavor?: DeathFlavor, scale?: number, dir?: THREE.Vector3 }): void {
+    if (this.engine.qualityTier >= 2) return
     // deliberately Math.random, not the sim stream: debris is presentation, and
     // a quality tier that drew fewer chunks would otherwise desync the run
     // a player who asked for less movement gets a settle, not a shower
@@ -1062,14 +1070,7 @@ export class Game implements World {
     if (this.applying) return false
     if (this.recovering) return true
     if (!this.coop) {
-      if (this.journal && (this.phase === 'playing' || cmd.kind === 'hold')) {
-        if (this.journal.commands.length >= SESSION_MAX_COMMANDS || this.sessionTick > SESSION_MAX_TICKS) {
-          this.journal = null
-          this.hud.showToast('This battle has reached the resume limit. Your last saved point is still available.', 6)
-        } else {
-          this.journal.commands.push({ tick: this.sessionTick, cmd: { ...cmd } })
-        }
-      }
+      this.recordCommand(cmd)
       return false
     }
     if (this.phase !== 'playing' && cmd.kind !== 'hold') return false
@@ -1077,14 +1078,30 @@ export class Game implements World {
     return true
   }
 
+  private recordCommand(cmd: CoopCommand): void {
+    if (!this.journal || this.phase !== 'playing' && cmd.kind !== 'hold') return
+    if (this.journal.commands.length >= SESSION_MAX_COMMANDS || this.sessionTick > SESSION_MAX_TICKS) {
+      this.journal = null
+      this.hud.showToast('This battle has reached the resume limit. Your last saved point is still available.', 6)
+      return
+    }
+    this.journal.commands.push({ tick: this.sessionTick, cmd: { ...cmd } })
+  }
+
   private onCoopEvent(e: CoopEvent): void {
     switch (e.type) {
+      case 'hello':
+        this.paused = e.paused; this.speed = e.speed === 2 ? 2 : 1
+        this.hud.setPaused(this.paused); this.hud.setSpeed(this.speed)
+        break
       case 'turn':
         this.coopMarkers.push({ n: e.n, ticks: e.ticks })
         break
       case 'cmd': {
+        const cmd = parseBattleCommand(e.cmd)
+        if (!cmd || !Number.isSafeInteger(e.turn) || e.turn < 0) break
         const list = this.coopCmds.get(e.turn) ?? []
-        list.push({ seat: e.seat, cmd: e.cmd as CoopCommand })
+        list.push({ seat: e.seat, cmd })
         this.coopCmds.set(e.turn, list)
         break
       }
@@ -1130,6 +1147,9 @@ export class Game implements World {
   }
 
   private applyCoopCommand(cmd: CoopCommand, seat: number): void {
+    if (this.coop && this.paused && cmd.kind !== 'hold') return
+    if (this.coop && (cmd.kind === 'meteor' || cmd.kind === 'reinforce') && this.abilities[cmd.kind].cooldown > 0) return
+    if (this.coop) this.recordCommand(cmd)
     this.applying = true
     this.applyingSeat = seat
     try {
@@ -1143,6 +1163,8 @@ export class Game implements World {
         case 'ascend': if (t) this.ascendTower(t, cmd.perk); break
         case 'mythic': if (t) this.activateMythic(t); break
         case 'overcharge': if (t) this.overchargeTower(t); break
+        case 'overchargeAll': this.overchargeAll(); break
+        case 'expand': this.expandPlot(cmd.c, cmd.r); break
         case 'policy': if (t) this.cycleTargetPolicy(t); break
         case 'trackline': if (t) this.clearHoldLine(t); break
         case 'holdline': if (t) this.performTarget('holdline', cmd.x, cmd.z, t); break
@@ -1180,16 +1202,27 @@ export class Game implements World {
     // outside a battle the clock still runs; the commands (a 'hold') still
     // matter, the ticks do not
     if (this.phase !== 'playing') {
-      while (this.coopMarkers.length) { const m = this.coopMarkers.shift()!; this.coopTurn = m.n; this.applyCoopTurn(m.n) }
-      this.coopBudget = 0
-      this.coopClock.reset()
-      return
+      while (this.coopMarkers.length && (this.phase as GamePhase) !== 'playing') {
+        const m = this.coopMarkers.shift()!
+        this.coopTurn = m.n
+        const paused = this.paused
+        this.paused = m.ticks === 0
+        try { this.applyCoopTurn(m.n) } finally { this.paused = paused }
+        // Hold the Line can start freeplay here. Its own turn and all later
+        // turns still owe their authorized simulation ticks.
+        if ((this.phase as GamePhase) === 'playing') this.coopBudget = m.ticks
+      }
+      if ((this.phase as GamePhase) !== 'playing') {
+        this.coopBudget = 0
+        this.coopClock.reset()
+        return
+      }
     }
     // Local hitstop cannot slow a server-driven clock: it used to build up
     // catch-up bursts on every client. Keep its timer cosmetic in co-op.
     this.hitstopT = Math.max(0, this.hitstopT - dtRaw)
     const available = this.coopBudget + this.coopMarkers.reduce((sum, m) => sum + m.ticks, 0)
-    let remaining = this.coopClock.take(dtRaw, this.speed, available, this.coop!.ticksPerTurn)
+    let remaining = this.coopClock.take(dtRaw, this.speed, available, this.coop!.ticksPerTurn, this.paused)
     let ran = 0
     while ((remaining > 0 || (this.coopBudget <= 0 && this.coopMarkers[0]?.ticks === 0)) && this.phase === 'playing') {
       if (this.coopBudget <= 0) {
@@ -1222,6 +1255,99 @@ export class Game implements World {
     seen.set(this.coop.seat, h)
     this.coopHashes.set(turn, seen)
     void this.coop.send('hash', { turn, h })
+  }
+
+  /** A local copy of every applied command also makes a shared board portable. */
+  exportBattleSession(): BattleSession | null {
+    if (!this.journal || this.phase !== 'playing' || this.recovering) return null
+    return parseSession({ ...this.journal, tick: this.sessionTick, savedAt: Date.now(),
+      wave: (this.waves?.waveIndex ?? -1) + 1, stateHash: this.sessionStateHash() })
+  }
+
+  get canSwitchCoop(): boolean {
+    return !!this.journal && this.phase === 'playing' && !this.recovering
+      && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial
+      && (!this.coop || this.coopBudget === 0 && this.coopMarkers.every(marker => marker.ticks === 0))
+  }
+
+  continueSolo(): boolean {
+    const session = this.exportBattleSession()
+    if (!this.coop || !session || !writeSession(session)) return false
+    this.frozenLoadout = JSON.parse(JSON.stringify(this.roster)) as SaveData
+    this.coop.forget()
+    this.leaveCoop()
+    this.paused = true
+    this.hud.setPaused(true)
+    this.hud.showToast('This defense is now solo. Your allies can continue their shared battle.', 5)
+    return true
+  }
+
+  /** Restore the adopted solo journal, then replay the room's ordered history. */
+  async joinCoopBattle(session: CoopSession, setup: CoopSetup): Promise<boolean> {
+    if (this.recovering) return false
+    if (this.coop) this.leaveCoop()
+    const pending: CoopEvent[] = []
+    const unbuffer = session.on(event => pending.push(event))
+    const hunt = setup.levelId.startsWith('hunt-') ? huntById(setup.levelId.slice(5)) : undefined
+    const level = hunt ? huntLevel(hunt.id) : levels.find(l => l.id === setup.levelId)
+    if (!level) { unbuffer(); return false }
+    if (setup.battle) {
+      if (setup.battle.levelId !== setup.levelId || !(await this.resumeSession(setup.battle))) { unbuffer(); return false }
+      this.coop = session
+      this.coopLoadout = JSON.parse(JSON.stringify(this.roster)) as SaveData
+      this.coopMarkers = []; this.coopCmds.clear(); this.coopBudget = 0; this.coopTurn = 0
+      this.coopClock.reset(); this.coopHashes.clear()
+    } else {
+      this.startLevel(level, setup.difficulty, setup.hero, setup.mode ?? 'campaign',
+        { seed: setup.seed, hunt: hunt?.id, coop: { session, loadout: setup.loadout } })
+      this.coopUnsub?.(); this.coopUnsub = null
+    }
+    session.connect()
+    const liveHud = this.hud
+    this.recovering = true
+    this.recoverySave = JSON.parse(JSON.stringify(this.save)) as SaveData
+    this.hud = new Proxy(liveHud, { get(target, key) {
+      const value = Reflect.get(target, key)
+      return typeof value === 'function' ? () => undefined : value
+    } })
+    audio.setMuted(true); audio.setMusicMuted(true)
+    let ok = false
+    try {
+      const events = [...session.replayEvents]
+      let next = 0
+      while (next < events.length || pending.length) {
+        events.push(...pending.splice(0))
+        const batch = performance.now()
+        do {
+          const event = events[next++]
+          if (event.type === 'turn') {
+            this.coopTurn = event.n
+            this.paused = event.ticks === 0
+            this.applyCoopTurn(event.n)
+            for (let tick = 0; tick < event.ticks && this.phase === 'playing'; tick++) this.simStep(1 / 60)
+          } else if (event.type === 'cmd' || event.type === 'speed' || event.type === 'pause') this.onCoopEvent(event)
+        } while (next < events.length && performance.now() - batch < 12)
+        if (next < events.length || pending.length) {
+          liveHud.showToast(`Rejoining battle… ${Math.floor(next / Math.max(1, events.length) * 100)}%`, 2)
+          await new Promise<void>(resolve => setTimeout(resolve, 0))
+        }
+      }
+      ok = true
+    } catch {
+      this.leaveCoop()
+    } finally {
+      unbuffer()
+      this.hud = liveHud; this.recoverySave = null; this.recovering = false
+      this.pendingFx = []; this.hitstopT = 0; this.simAccumulator = 0
+      audio.setMuted(this.save.sfxMuted); audio.setMusicMuted(this.save.musicMuted)
+    }
+    if (!ok) { this.hud.showToast('Could not restore the shared battle. Try rejoining from Co-op.', 5); return false }
+    this.coopUnsub = session.on(event => this.onCoopEvent(event))
+    this.paused = session.paused; this.speed = session.speed === 2 ? 2 : 1
+    this.hud.setCoop({ code: session.code, seats: session.seats, connected: session.connected.length })
+    this.hud.setPaused(this.paused); this.hud.setSpeed(this.speed); this.hud.refresh(this)
+    this.hud.showToast(`Co-op ${session.code} · invite a friend or resume when ready`, 5)
+    return true
   }
 
   /** leave the room: the session closes, and the next battle is a solo one */
@@ -1329,6 +1455,7 @@ export class Game implements World {
     this.disposeLevel()
     if (!this.recovering) { clearSession(); if (!opts.resume) clearCheckpoint() }
     this.sessionTick = 0
+    this.completedEndlessWaves = 0
     this.sessionSaveT = 0
     this.sessionWriteWarned = false
     this.legacyCheckpointRun = !!opts.resume
@@ -1494,11 +1621,11 @@ export class Game implements World {
     if (resume) this.applyCheckpoint(resume)
     else if (this.trial) this.hud.showToast(this.trial.rules, 7)
     else if (level.intro) this.hud.showToast(level.intro, 5)
-    if (!resume && !this.coop && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial) {
+    if (!resume && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial) {
       this.journal = {
         ruleset: RULESET_VERSION, levelId: level.id, difficulty, heroId, mode,
         ...(this.hunt ? { hunt: this.hunt.id } : {}), seed: this.runSeed, tick: 0,
-        commands: [], initialSave: JSON.parse(JSON.stringify(this.frozenLoadout)) as SaveData,
+        commands: [], initialSave: JSON.parse(JSON.stringify(this.roster)) as SaveData,
         savedAt: Date.now(), wave: 0,
       }
       if (!this.recovering) this.saveSession()
@@ -2168,22 +2295,18 @@ export class Game implements World {
    *
    * The hero button used to drag the camera to wherever the hero was standing,
    * which is backwards: the usual reason to select the hero is to bring them
-   * to what you are already looking at. The camera stays put, and a double tap
-   * on the button goes to them if that is genuinely what you wanted.
+   * to what you are already looking at. A second press releases selection
+   * so a touch player can return to building immediately.
    */
   selectHero(fromButton = false): void {
     if (!this.hero || this.hero.dead) { if (this.hero?.dead) this.sfx('error'); return }
     const wasSelected = this.heroSelected
     this.clearSelection()
+    if (fromButton && wasSelected) { this.sfx('click'); return }
     this.heroSelected = true
     this.heroRing.visible = true
     this.hud.openHeroPanel(this.hero)
-    // second press of the button: now go and look at them
-    if (fromButton && wasSelected) {
-      this.engine.cancelCinematic()
-      this.engine.focusOn(this.hero.group.position.x, this.hero.group.position.z)
-      this.hud.showToast('Camera moved to your hero', 1.6)
-    } else if (fromButton) {
+    if (fromButton) {
       this.hud.showToast('Tap the ground to send your hero there', 2.2)
     }
     this.sfx('click')
@@ -2199,7 +2322,7 @@ export class Game implements World {
   handleClick(sx: number, sy: number): void {
     if (this.phase !== 'playing' || this.paused) return
     if (this.targetMode) {
-      const g = this.groundPoint(sx, sy)
+      const g = this.aimPoint(sx, sy)
       if (g) this.confirmTarget(g)
       return
     }
@@ -2250,9 +2373,12 @@ export class Game implements World {
   handleHover(sx: number, sy: number): string {
     if (this.phase !== 'playing') return 'default'
     if (this.targetMode) {
-      const g = this.groundPoint(sx, sy)
+      const g = this.aimPoint(sx, sy)
       if (g) {
-        this.targetRing.position.set(g.x, 0.03, g.z)
+        if (this.targetMode === 'expand' && this.terrain && this.level) {
+          const [c, r] = this.expansionCell(g)
+          this.targetRing.position.set(c - this.level.width / 2 + .5, this.terrain.cellTop(c, r) + .04, r - this.level.height / 2 + .5)
+        } else this.targetRing.position.set(g.x, 0.03, g.z)
         this.targetRing.visible = true
         const valid = this.targetValid(g)
         ;(this.targetRing.material as THREE.MeshBasicMaterial).color.set(valid ? 0x7fff9f : 0xff5a5a)
@@ -2282,7 +2408,35 @@ export class Game implements World {
     return 'default'
   }
 
+  get expansionCredits(): number {
+    return this.terrain && (this.isEndless || this.isFreeplay) && !this.hunt && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial
+      ? availableExpansionPlots(this.completedEndlessWaves, this.terrain) : 0
+  }
+
+  expandPlot(c: number, r: number): void {
+    if (this.paused || this.phase !== 'playing' || !this.terrain || this.expansionCredits <= 0) return
+    const reason = this.terrain.expansionBlockReason(c, r)
+    if (reason) { if (this.localAction) this.hud.showToast(reason, 2); this.sfx('error'); return }
+    if (this.route({ kind: 'expand', c, r })) return
+    const plot = placeExpansionPlot(this.terrain, this.completedEndlessWaves, c, r)
+    if (!plot) return
+    this.particles.buildDust(plot.pos.x, plot.pos.y, plot.pos.z)
+    this.sfx('build')
+    if (this.localAction) this.hud.showToast('Foundation placed. Tap it to build a tower.', 3)
+  }
+
+  private expansionCell(g: THREE.Vector3): [number, number] {
+    return [Math.floor(g.x + this.level!.width / 2), Math.floor(g.z + this.level!.height / 2)]
+  }
+
+  private aimPoint(sx: number, sy: number): THREE.Vector3 | null {
+    if (this.targetMode !== 'expand' || !this.terrain) return this.groundPoint(sx, sy)
+    this.rayFromScreen(sx, sy)
+    return this.raycaster.intersectObjects(this.terrain.group.children, true)[0]?.point ?? this.groundPoint(sx, sy)
+  }
+
   private targetValid(g: THREE.Vector3): boolean {
+    if (this.targetMode === 'expand') return !!this.terrain && this.expansionCredits > 0 && this.terrain.canAddExpansionPlot(...this.expansionCell(g))
     if (this.targetMode === 'reinforce') {
       return this.lanes.some(l => l.distanceToPath(g.x, g.z) < 1.0)
     }
@@ -2300,6 +2454,11 @@ export class Game implements World {
   private confirmTarget(g: THREE.Vector3): void {
     const mode = this.targetMode
     if (!mode) return
+    if (mode === 'expand') {
+      const [c, r] = this.expansionCell(g)
+      if (!this.targetValid(g)) { this.hud.showToast(this.terrain?.expansionBlockReason(c, r) ?? 'Choose clear ground.', 2); this.sfx('error'); return }
+      this.expandPlot(c, r); this.setTargetMode(null); return
+    }
     if (!this.targetValid(g)) { this.sfx('error'); return }
     const tower = this.selectedTower
     const routed = mode === 'meteor' ? this.route({ kind: 'meteor', x: g.x, z: g.z })
@@ -2389,6 +2548,8 @@ export class Game implements World {
 
   setTargetMode(mode: TargetMode): void {
     if (this.paused && mode !== null) return
+    if (mode === 'expand' && this.expansionCredits <= 0) return
+    this.targetRing.scale.setScalar(mode === 'expand' ? 0.42 : 1)
     if (mode === 'holdline' && !this.selectedTower?.canHoldLine) { this.sfx('error'); return }
     if (mode === 'meteor' && this.abilities.meteor.cooldown > 0) { this.sfx('error'); return }
     if (mode === 'reinforce' && this.abilities.reinforce.cooldown > 0) { this.sfx('error'); return }
@@ -2996,6 +3157,21 @@ export class Game implements World {
     if (this.localAction) this.selectTower(tower)
   }
 
+  get overchargeAllCost(): number {
+    return this.towers.filter(t => !t.isGhost && t.canOvercharge({ time: this.time, shards: Infinity })
+      && !t.isOvercharged(this)).length * OVERCHARGE_SHARD_COST
+  }
+
+  overchargeAll(): void {
+    if (this.paused || this.phase !== 'playing') return
+    if (this.route({ kind: 'overchargeAll' })) return
+    const cost = this.overchargeAllCost
+    if (!cost || this.shards < cost) { this.sfx('error'); return }
+    const towers = this.towers.filter(t => !t.isGhost && t.canOvercharge(this) && !t.isOvercharged(this))
+    this.shards -= cost
+    for (const tower of towers) tower.overcharge(this)
+  }
+
   /** the targeting rule, cycled; the new rule when it changed at once, null when it went to the room */
   cycleTargetPolicy(tower: Tower): TargetPolicy | null {
     if (this.route({ kind: 'policy', plot: tower.plot.index })) return null
@@ -3052,7 +3228,16 @@ export class Game implements World {
   togglePause(): void {
     if (this.recovering) return
     // in co-op the pause is the room's, so both boards stop on the same turn
-    if (this.coop && this.phase === 'playing') { void this.coop.send('pause', !this.paused); return }
+    if (this.coop && this.phase === 'playing') {
+      const session = this.coop
+      void session.send('pause', !this.paused).then(sent => {
+        if (!sent && this.coop === session) {
+          this.paused = true; this.hud.setPaused(true)
+          this.hud.showToast('Room unreachable. You can rejoin later or continue this board solo.', 5)
+        }
+      })
+      return
+    }
     this.paused = !this.paused
     this.hud.setPaused(this.paused)
   }
@@ -3128,6 +3313,7 @@ export class Game implements World {
 
   update(dtRaw: number): void {
     if (this.recovering) return
+    this.particles.normal.density = this.particles.add.density = this.engine.qualityTier >= 2 ? 0.3 : 1
     if (this.canSaveSession) {
       this.sessionSaveT += dtRaw
       if (this.sessionSaveT >= 5) { this.sessionSaveT = 0; this.saveSession() }
@@ -3214,7 +3400,7 @@ export class Game implements World {
     }
 
     this.hud?.refresh(this)
-    this.engine.render()
+    this.engine.render(false)
   }
 
   private simStep(dt: number): void {

@@ -83,10 +83,10 @@ describe('deterministic session journal', () => {
   })
 
   it('keeps incompatible journal bytes and reports the saved/current rulesets', () => {
-    const raw = JSON.stringify(sample({ ruleset: RULESET_VERSION - 1 }))
+    const raw = JSON.stringify(sample({ ruleset: 7 }))
     store[KEY] = raw
     expect(readSession()).toBeNull()
-    expect(readSessionIssue()).toEqual({ kind: 'incompatible', savedRuleset: RULESET_VERSION - 1, currentRuleset: RULESET_VERSION })
+    expect(readSessionIssue()).toEqual({ kind: 'incompatible', savedRuleset: 7, currentRuleset: RULESET_VERSION })
     expect(store[KEY]).toBe(raw)
     expect(clearSession()).toBe(true)
     expect(readSessionIssue()).toBeNull()

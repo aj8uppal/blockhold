@@ -40,4 +40,22 @@ describe('co-op render pacing', () => {
     for (let i = 0; i < 144; i++) total += clock.take(1 / 144, 1, 24, 12)
     expect(total).toBeCloseTo(60, 0)
   })
+
+  it('drains a paused room below the startup reserve without inventing simulation ticks', () => {
+    for (const speed of [1, 2]) {
+      const clock = new CoopClock()
+      let available = 7
+      expect(clock.take(1 / 60, speed, available, 12)).toBe(0)
+      let total = 0
+      for (let frame = 0; frame < 20; frame++) {
+        const consumed = clock.take(1 / 60, speed, available, 12, true)
+        available -= consumed
+        total += consumed
+      }
+      expect(total).toBe(7)
+      expect(available).toBe(0)
+      // Resuming an empty connection requires its normal delivery reserve again.
+      expect(clock.take(1 / 60, speed, 12, 12)).toBe(0)
+    }
+  })
 })

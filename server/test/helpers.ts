@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Server } from 'node:http'
 import { Store } from '../src/db.ts'
-import { createApp, resetRateLimiter, type AppConfig } from '../src/app.ts'
+import { createApp, resetRateLimiter, RULESET_VERSION, type AppConfig } from '../src/app.ts'
 
 /**
  * Stand the real service up on an ephemeral port against a throwaway database.
@@ -40,6 +40,7 @@ export async function harness(cfg: Partial<AppConfig> = {}): Promise<Harness> {
     store,
     base,
     async call(method, path, opts = {}) {
+      if (path.startsWith('/v1/coop/') && !path.includes('ruleset=')) path += `${path.includes('?') ? '&' : '?'}ruleset=${RULESET_VERSION}`
       const headers: Record<string, string> = {}
       if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
       if (opts.token) headers.Authorization = `Bearer ${opts.token}`

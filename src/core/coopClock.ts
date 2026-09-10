@@ -5,10 +5,10 @@ export class CoopClock {
 
   reset(): void { this.primed = false; this.fraction = 0 }
 
-  take(dt: number, speed: number, available: number, ticksPerTurn: number): number {
+  take(dt: number, speed: number, available: number, ticksPerTurn: number, drain = false): number {
     // One turn in reserve absorbs startup work and small variations in delivery.
     if (!this.primed) {
-      if (available < ticksPerTurn * speed * 2) return 0
+      if (available < ticksPerTurn * speed * 2 && !(drain && available > 0)) return 0
       this.primed = true
     }
     if (available <= 0) {

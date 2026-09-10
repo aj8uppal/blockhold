@@ -1,3 +1,4 @@
+import { QUALITY_OPTIONS, type QualityPreference } from '../core/quality.ts'
 import { fmtDamage } from './screens.ts'
 import type { Game, TargetMode } from '../game/game.ts'
 import type { Hero } from '../game/hero.ts'
@@ -43,6 +44,10 @@ export class HUD {
   root: HTMLElement
   onHome: () => void = () => {}
   onFullscreen: () => void = () => {}
+  onCoopSwitch: () => void = () => {}
+  private coopSwitchBtn!: HTMLButtonElement
+  private inviteBtn!: HTMLButtonElement
+  private overchargeAllBtn!: HTMLButtonElement
 
   private goldEl!: HTMLElement
   private shardsEl!: HTMLElement
@@ -54,6 +59,8 @@ export class HUD {
   private musicBtn!: HTMLButtonElement
   private waveBtn!: HTMLButtonElement
   private wavePreviewEl!: HTMLElement
+  private waveDetails!: HTMLDetailsElement
+  private expansionBtn!: HTMLButtonElement
   private lastWavePreviewHtml = ''
   private beatEl!: HTMLElement
   private lastBeat = -1
@@ -143,6 +150,12 @@ export class HUD {
     this.speedBtn.title = 'Game speed (F)'
     this.speedBtn.setAttribute('aria-label', 'Game speed')
     this.speedBtn.onclick = () => this.game.toggleSpeed()
+    const doc = document as Document & { webkitFullscreenEnabled?: boolean }
+    if ((doc.fullscreenEnabled || doc.webkitFullscreenEnabled) && !isPortalMode()) {
+      const fs = el('button', 'icon-btn', right, icon('fullscreen', 'plain')) as HTMLButtonElement
+      fs.setAttribute('aria-label', 'Toggle fullscreen'); fs.title = 'Fullscreen (V)'
+      fs.onclick = () => this.onFullscreen()
+    }
     this.pauseBtn = el('button', 'icon-btn', right, icon('pause', 'plain')) as HTMLButtonElement
     this.pauseBtn.title = 'Pause (P)'
     this.pauseBtn.setAttribute('aria-label', 'Pause')
@@ -160,7 +173,10 @@ export class HUD {
     // The roster used to be hover-only, which made it unreachable on touch:
     // a tap on this button calls the wave, so there is no hover to gate on.
     // It is now always on screen while a wave is pending, for every pointer.
-    this.wavePreviewEl = el('div', 'wave-preview hidden', wrap)
+    this.waveDetails = el('details', 'wave-details hidden', wrap)
+    const summary = el('summary', '', this.waveDetails, 'Incoming')
+    summary.setAttribute('aria-label', 'Wave details')
+    this.wavePreviewEl = el('div', 'wave-preview hidden', this.waveDetails)
   }
 
   /** roster + decisive counters for the pending wave; empty string when none */
@@ -228,9 +244,9 @@ export class HUD {
     this.heroBtn = el('button', 'ability hero-btn', bar) as HTMLButtonElement
     this.heroBtn.innerHTML =
       `<span class="ability-icon"><img class="hero-face" src="art/hero-aldric.webp" alt=""></span><span class="cd-sweep"></span>` +
-      '<span class="hero-level">1</span><span class="hero-hp"><span class="hero-hp-fill"></span></span>' +
+      '<span class="hotkey">1</span><span class="hero-level">1</span><span class="hero-hp"><span class="hero-hp-fill"></span></span>' +
       '<span class="hero-bark" aria-live="polite"></span>'
-    this.heroBtn.title = 'Sir Aldric — select the hero, click the ground to move him. Hotkey H.'
+    this.heroBtn.title = 'Select or deselect your hero (1). Tap the ground to move.'
     this.heroBtn.setAttribute('aria-label', 'Select your hero')
     this.heroBtn.onclick = () => this.game.selectHero(true)
     const mk = (key: 'meteor' | 'reinforce', ico: string, name: string, hotkey: string, desc: string) => {
@@ -252,12 +268,17 @@ export class HUD {
       }
       this.abilityBtns[key] = btn
     }
-    mk('meteor', 'meteor', 'Meteor Storm', '1', 'Rain three meteors on a target area (true damage + stun). Hotkey 1.')
-    mk('reinforce', 'shield', 'Reinforcements', '2', 'Summon two militia anywhere on the road for 14s. Hotkey 2.')
+    mk('meteor', 'meteor', 'Meteor Storm', '3', 'Rain three meteors on a target area (true damage + stun). Hotkey 3.')
+    mk('reinforce', 'shield', 'Reinforcements', '4', 'Summon two militia anywhere on the road for 14s. Hotkey 4.')
     // the hero's signature used to fire itself; it is the player's to spend now
     this.signatureBtn = el('button', 'ability', bar) as HTMLButtonElement
     this.signatureBtn.innerHTML =
-      `<span class="ability-icon">${icon('quake')}</span><span class="cd-sweep"></span><span class="hotkey">3</span>`
+      `<span class="ability-icon">${icon('quake')}</span><span class="cd-sweep"></span><span class="hotkey">2</span>`
+    bar.insertBefore(this.signatureBtn, this.abilityBtns.meteor)
+    this.overchargeAllBtn = el('button', 'ability overcharge-all hidden', bar) as HTMLButtonElement
+    this.overchargeAllBtn.onclick = () => this.game.overchargeAll()
+    this.expansionBtn = el('button', 'ability expansion-button hidden', bar) as HTMLButtonElement
+    this.expansionBtn.onclick = () => this.game.setTargetMode(this.game.targetMode === 'expand' ? null : 'expand')
     this.signatureBtn.setAttribute('aria-label', 'Hero signature ability')
     // the signature lands on the hero, so there is nowhere to aim and nothing
     // to confirm: one tap casts it
@@ -340,12 +361,23 @@ export class HUD {
       this.musicBtn.innerHTML = icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')
       this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
     }
-    const doc = document as Document & { webkitFullscreenEnabled?: boolean }
-    if ((doc.fullscreenEnabled || doc.webkitFullscreenEnabled) && !isPortalMode()) {
-      const fs = el('button', 'icon-btn', settings, icon('fullscreen', 'plain')) as HTMLButtonElement
-      fs.title = 'Fullscreen'
-      fs.setAttribute('aria-label', 'Toggle fullscreen')
-      fs.onclick = () => this.onFullscreen()
+    const qualityLabel = el('label', 'quality-setting', card, 'Visual quality ')
+    const quality = el('select', '', qualityLabel) as HTMLSelectElement
+    quality.setAttribute('aria-label', 'Visual quality')
+    for (const [value, name] of Object.entries(QUALITY_OPTIONS)) {
+      const option = document.createElement('option'); option.value = value; option.textContent = name; quality.append(option)
+    }
+    quality.value = this.game.engine.qualityPreference
+    quality.onchange = () => this.game.engine.setQuality(quality.value as QualityPreference)
+    el('small', 'quality-note', card, 'Low reduces detail and shadows. Battery saver also draws at 30 fps. Combat speed stays the same.')
+    this.coopSwitchBtn = el('button', 'btn ghost', card, 'Invite a friend to this battle') as HTMLButtonElement
+    this.coopSwitchBtn.onclick = () => this.onCoopSwitch()
+    this.inviteBtn = el('button', 'btn ghost hidden', card, 'Copy invite link') as HTMLButtonElement
+    this.inviteBtn.onclick = async () => {
+      const session = this.game.coop
+      if (!session) return
+      try { await navigator.clipboard.writeText(session.shareUrl()); this.showToast('Invite link copied', 2) }
+      catch { this.showToast(`Invite your friend with room code ${session.code}`, 6) }
     }
 
     this.quitBtn = el('button', 'btn', card, 'Abandon mission') as HTMLButtonElement
@@ -386,6 +418,8 @@ export class HUD {
   }
 
   refresh(game: Game): void {
+    this.coopSwitchBtn.disabled = !game.canSwitchCoop
+    this.coopSwitchBtn.title = game.coop && !game.canSwitchCoop ? 'Waiting for the shared board to finish pending orders.' : ''
     this.refreshHunt(game)
     const now = performance.now()
     const dt = Math.min(0.1, (now - this.lastRefreshAt) / 1000)
@@ -465,8 +499,8 @@ export class HUD {
         const shard = w.nextWaveIsSurge() && w.countdown >= 8 ? ` +1${icon('gem')}` : ''
         const surgeWarn = (w.nextWaveIsSurge() ? ` · ${icon('moon')} Veiltide!` : '') + (onField > 0 ? ` · ${onField} still on the field` : '')
         btnText = w.waveIndex < 0
-          ? `${icon('swords')} Begin the assault <span class="call-sub">${secs}s · +${bonus}${icon('coin')}${shard} if called now${surgeWarn}</span>`
-          : `${icon('swords')} Call wave ${w.waveIndex + 2} <span class="call-sub">${secs}s · +${bonus}${icon('coin')}${shard} early bonus${surgeWarn}</span>`
+          ? `${icon('swords')} Begin assault <span class="call-sub">${secs}s · +${bonus}${icon('coin')}${shard}<span class="call-explanation"> if called now${surgeWarn}</span></span>`
+          : `${icon('swords')} Call wave ${w.waveIndex + 2} <span class="call-sub">${secs}s · +${bonus}${icon('coin')}${shard}<span class="call-explanation"> early bonus${surgeWarn}</span></span>`
       }
       if (btnText !== this.lastWaveBtnText) {
         this.lastWaveBtnText = btnText
@@ -476,6 +510,7 @@ export class HUD {
         } else {
           this.waveBtn.classList.add('hidden')
           this.wavePreviewEl.classList.add('hidden')
+          this.waveDetails.classList.add('hidden'); this.waveDetails.open = false
           this.lastWavePreviewHtml = ''
         }
       }
@@ -485,6 +520,10 @@ export class HUD {
         if (html !== this.lastWavePreviewHtml) {
           this.lastWavePreviewHtml = html
           this.wavePreviewEl.innerHTML = html
+          const incoming = w.nextWavePreview() ?? []
+          this.waveDetails.querySelector('summary')!.textContent = incoming.length === 1 ? `${incoming[0].count}× ${incoming[0].name}` : `${incoming.reduce((sum, unit) => sum + unit.count, 0)} incoming`
+          this.waveDetails.classList.toggle('boss', incoming.some(unit => unit.boss))
+          this.waveDetails.classList.toggle('hidden', !html)
           this.wavePreviewEl.classList.toggle('hidden', !html)
         }
       }
@@ -506,7 +545,7 @@ export class HUD {
         this.lastHeroId = hero.heroDef.id
         const heroIco = this.heroBtn.querySelector('.ability-icon') as HTMLElement
         if (heroIco) heroIco.innerHTML = `<img class="hero-face" src="art/hero-${hero.heroDef.id}.webp" alt="">`
-        this.heroBtn.title = `${hero.heroDef.name} ${hero.heroDef.title} — select, then click the ground to move. ${hero.abilityName}: ${hero.abilityBlurb} Hotkey H.`
+        this.heroBtn.title = `${hero.heroDef.name} ${hero.heroDef.title} — select, then click the ground to move. ${hero.abilityName}: ${hero.abilityBlurb} Hotkey 1; press again to deselect.`
       }
       const sweep = this.heroBtn.querySelector('.cd-sweep') as HTMLElement
       // dead: respawn countdown · alive: signature-ability recharge
@@ -521,6 +560,26 @@ export class HUD {
       this.heroBtn.classList.toggle('ready', !hero.dead && hero.abilityCooldown <= 0)
       this.heroBtn.classList.toggle('downed', hero.dead)
       this.heroBtn.classList.toggle('active', game.heroSelected)
+      this.heroBtn.setAttribute('aria-pressed', String(game.heroSelected))
+    }
+    const credits = game.expansionCredits
+    this.expansionBtn.classList.toggle('hidden', credits <= 0)
+    this.expansionBtn.classList.toggle('active', game.targetMode === 'expand')
+    this.expansionBtn.disabled = game.paused
+    const expansionText = `Place plot · ${credits} available`
+    if (this.expansionBtn.getAttribute('aria-label') !== expansionText) {
+      this.expansionBtn.setAttribute('aria-label', expansionText)
+      this.expansionBtn.innerHTML = `${icon('castle')}<span>Plot · ${credits}</span>`
+      this.expansionBtn.title = 'Place a new foundation on clear ground. Earn one every 15 endless waves cleared.'
+    }
+    const chargeCost = game.overchargeAllCost
+    this.overchargeAllBtn.classList.toggle('hidden', game.towers.every(t => t.isBarracks || t.isBeacon || t.isGhost))
+    this.overchargeAllBtn.disabled = !chargeCost || game.shards < chargeCost || game.paused
+    const chargeText = `Overcharge all · ${chargeCost} shards`
+    if (this.overchargeAllBtn.getAttribute('aria-label') !== chargeText) {
+      this.overchargeAllBtn.setAttribute('aria-label', chargeText)
+      this.overchargeAllBtn.innerHTML = `${icon('lightning')}<span>All · ${chargeCost}${icon('gem')}</span>`
+      this.overchargeAllBtn.title = `Overcharge every ready attacking tower. Costs ${chargeCost} shards. Towers already charged or cooling down are skipped.`
     }
     // ability cooldowns
     for (const key of ['meteor', 'reinforce'] as const) {
@@ -540,7 +599,7 @@ export class HUD {
         const ico = HUD.SIGNATURE_ICON[h.heroDef.ability.kind] ?? 'sparkle'
         const slot = this.signatureBtn.querySelector('.ability-icon') as HTMLElement
         if (slot) slot.innerHTML = icon(ico)
-        this.signatureBtn.title = `${h.abilityName} — ${h.abilityBlurb} Hotkey 3.`
+        this.signatureBtn.title = `${h.abilityName} — ${h.abilityBlurb} Hotkey 2.`
       }
       const sweep = this.signatureBtn.querySelector('.cd-sweep') as HTMLElement
       sweep.style.setProperty('--p', `${h.abilityFraction * 100}%`)
@@ -1387,16 +1446,23 @@ export class HUD {
   setTargetMode(mode: TargetMode): void {
     if (mode === 'meteor') this.modeHint.innerHTML = `${icon('meteor')} Click to call the Meteor Storm — Esc to cancel`
     else if (mode === 'reinforce') this.modeHint.innerHTML = `${icon('shield')} Click on the road to deploy reinforcements — Esc to cancel`
+    else if (mode === 'expand') this.modeHint.textContent = 'Tap clear ground to place a plot. Tap Plot again to cancel.'
     else if (mode === 'rally') this.modeHint.innerHTML = `${icon('flag')} Click near the road to move the rally point — Esc to cancel`
     this.modeHint.classList.toggle('hidden', mode === null)
   }
 
   setPaused(paused: boolean): void {
+    this.inviteBtn.classList.toggle('hidden', !this.game.coop)
+    this.coopSwitchBtn.textContent = this.game.coop ? 'Continue this battle solo' : 'Invite a friend to this battle'
+    this.coopSwitchBtn.disabled = !this.game.canSwitchCoop
     this.pauseBtn.innerHTML = icon(paused ? 'play' : 'pause', 'plain')
     this.pauseOverlay.classList.toggle('hidden', !paused)
     if (paused && this.game.canSaveSession) {
       this.quitBtn.textContent = 'Save & exit'
       this.bankedEl.textContent = 'Saves this moment on this device, including the current wave. Continue from the main menu after reloading.'
+    } else if (paused && this.game.coop) {
+      this.quitBtn.textContent = 'Leave room'
+      this.bankedEl.textContent = 'Rejoin this room from Co-op on this device while it remains available. Allies can keep playing.'
     } else if (paused) {
       // leaving is not losing when the board is banked; the card says so
       const wave = this.game.bankedWave()
@@ -1502,6 +1568,7 @@ export class HUD {
     this.huntStatus?.classList.add('hidden')
     this.pauseOverlay.classList.add('hidden')
     this.waveBtn.classList.add('hidden')
+    this.waveDetails.classList.add('hidden'); this.waveDetails.open = false; this.lastWavePreviewHtml = ''
     this.lastGold = this.lastLives = this.lastXp = -1
     this.lastWaveText = this.lastWaveBtnText = ''
   }

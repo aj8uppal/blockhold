@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { prefersReducedMotion } from './platform.ts'
 import { clamp, lerp } from './utils.ts'
 import { ThemeColors } from '../game/terrain.ts'
+import { readQuality, writeQuality, qualityTierFor, type QualityPreference } from './quality.ts'
 
 const panRaycaster = new THREE.Raycaster()
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
@@ -41,6 +42,8 @@ export class Engine {
 
   /** 0 = desktop full, 1 = mobile (smaller shadows, capped DPR), 2 = potato (no shadows) */
   qualityTier = 0
+  qualityPreference: QualityPreference = readQuality()
+  private lastDrawAt = -Infinity
   private frameTimes: number[] = []
   private lastFrameAt = performance.now()
 
@@ -56,7 +59,7 @@ export class Engine {
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 220)
     this.setupLights()
     // touch devices start one tier down; the watchdog can drop further
-    this.qualityTier = window.matchMedia?.('(pointer: coarse)').matches ? 1 : 0
+    this.qualityTier = qualityTierFor(this.qualityPreference, !!window.matchMedia?.('(pointer: coarse)').matches)
     this.applyQuality()
     this.resize()
     window.addEventListener('resize', () => this.resize())
@@ -65,7 +68,7 @@ export class Engine {
   }
 
   private applyQuality(): void {
-    const dprCap = [2, 1.75, 1.25][this.qualityTier]
+    const dprCap = this.qualityPreference === 'battery' ? 0.85 : [2, 1.5, 1][this.qualityTier]
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, dprCap))
     const shadowSize = [2048, 1024, 0][this.qualityTier]
     this.sun.shadow.map?.dispose()
@@ -81,6 +84,14 @@ export class Engine {
     this.resize()
   }
 
+  setQuality(preference: QualityPreference): void {
+    this.qualityPreference = preference
+    writeQuality(preference)
+    this.qualityTier = qualityTierFor(preference, !!window.matchMedia?.('(pointer: coarse)').matches)
+    this.frameTimes = []; this.slowWindows = 0
+    this.applyQuality()
+  }
+
   private slowWindows = 0
 
   /** frame-time watchdog: degrade only on sustained, tier-appropriate slowness.
@@ -90,7 +101,7 @@ export class Engine {
     const now = performance.now()
     const dt = now - this.lastFrameAt
     this.lastFrameAt = now
-    if (dt > 100 || this.qualityTier >= 2) { this.frameTimes.length = 0; return }
+    if (this.qualityPreference !== 'auto' || dt > 100 || this.qualityTier >= 2) { this.frameTimes.length = 0; return }
     this.frameTimes.push(dt)
     if (this.frameTimes.length >= 180) {
       const avg = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length
@@ -526,8 +537,11 @@ export class Engine {
     if (this.sky) this.sky.position.copy(this.camera.position)
   }
 
-  render(): void {
+  render(force = true): void {
     this.watchQuality()
+    const now = performance.now()
+    if (!force && this.qualityPreference === 'battery' && now - this.lastDrawAt < 1000 / 30 - 1) return
+    this.lastDrawAt = now
     this.renderer.render(this.scene, this.camera)
   }
 }

@@ -1,0 +1,106 @@
+/** Two isolated browser seats against a running frontend with VITE_SYNC_URL.
+ * BLOCKHOLD_CHECK_URL=http://127.0.0.1:5173/ node scripts/coop-reconnect-check.mjs
+ * Creates one temporary co-op room, uses no signed-in accounts, and writes
+ * diagnostic screenshots only to /tmp. The frontend must match server ruleset.
+ */
+import { chromium } from '@playwright/test'
+const baseUrl = (process.env.BLOCKHOLD_CHECK_URL ?? 'http://127.0.0.1:5173/').replace(/\/?$/, '/')
+import assert from 'node:assert/strict'
+const browser = await chromium.launch({ headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
+const contexts = [await browser.newContext(), await browser.newContext()]
+for (const context of contexts) await context.addInitScript(() => {
+  if (!localStorage.getItem('blockhold.save.v1')) localStorage.setItem('blockhold.save.v1', JSON.stringify({ xp: 6000, taughtBasics: true, unlocked: 4, sfxMuted: true, musicMuted: true }))
+  localStorage.setItem('blockhold.quality', 'low')
+})
+const host = await contexts[0].newPage(), guest = await contexts[1].newPage()
+const errors = []
+for (const page of [host, guest]) page.on('pageerror', error => errors.push(error.message))
+const state = page => page.evaluate(() => {
+  const g = window.vg.game
+  return { hash: g.sessionStateHash(), tick: g.sessionTick, gold: g.gold, wave: g.waves?.waveIndex, paused: g.paused, towers: g.towers.length, time: g.time, seat: g.coop?.seat, code: g.coop?.code, recovered: !g.recovering, phase: g.phase }
+})
+try {
+  await host.goto(baseUrl)
+  await host.waitForFunction(() => !!window.vg?.game)
+  await host.evaluate(() => window.vg.screens.onPlayLevel('greenhollow', 'normal', 'aldric', 'campaign'))
+  await host.waitForFunction(() => window.vg.game.phase === 'playing')
+  await host.evaluate(() => {
+    const game = window.vg.game
+    game.buildTower('arrow', game.terrain.plots.find(plot => !plot.occupied))
+    game.callWave()
+  })
+  await host.waitForFunction(() => window.vg.game.sessionTick >= 100)
+  await host.evaluate(() => window.vg.game.togglePause())
+  const before = await state(host)
+  await host.getByRole('button', { name: 'Invite a friend to this battle' }).click()
+  await host.waitForFunction(() => !!window.vg.game.coop && !window.vg.game.recovering, { timeout: 30000 })
+  const adopted = await state(host)
+  console.log('Solo adopted', before, adopted)
+  assert.equal(adopted.hash, before.hash)
+  assert.equal(adopted.paused, true)
+  await guest.goto(`${baseUrl}?coop=${adopted.code}`)
+  await guest.waitForFunction(() => !!window.vg?.game?.coop && !window.vg.game.recovering, { timeout: 30000 })
+  await guest.waitForTimeout(500)
+  console.log('Guest joined', await state(guest))
+  assert.equal((await state(guest)).hash, adopted.hash)
+  await host.evaluate(() => window.vg.game.togglePause())
+  await host.waitForFunction(tick => window.vg.game.sessionTick > tick + 60, adopted.tick)
+  await guest.evaluate(() => {
+    const game = window.vg.game
+    game.buildTower('arrow', game.terrain.plots.find(plot => !plot.occupied))
+    void game.coop.send('cmd', { kind: 'heroMove', x: 3, z: 3 })
+  })
+  await host.waitForTimeout(400)
+  await host.evaluate(() => window.vg.game.togglePause())
+  await guest.waitForFunction(() => window.vg.game.paused)
+  await Promise.all([host, guest].map(page => page.waitForFunction(() => { const g = window.vg.game; return g.paused && g.coopBudget === 0 && !g.coopMarkers.some(marker => marker.ticks > 0) })))
+  let played = await state(host)
+  const ally = await state(guest)
+  console.log('After shared commands', played, ally)
+  assert.equal(played.hash, ally.hash)
+  assert.ok(played.towers >= 2)
+  await contexts[1].setOffline(true)
+  await host.evaluate(() => window.vg.game.togglePause())
+  await host.waitForFunction(tick => window.vg.game.sessionTick > tick + 60, played.tick)
+  await host.evaluate(() => { const game = window.vg.game; game.buildTower('arrow', game.terrain.plots.find(plot => !plot.occupied)) })
+  await host.waitForTimeout(500)
+  await contexts[1].setOffline(false)
+  await guest.waitForFunction(() => !window.vg.game.paused)
+  await host.waitForTimeout(1000)
+  await host.evaluate(() => window.vg.game.togglePause())
+  await guest.waitForFunction(() => window.vg.game.paused)
+  await Promise.all([host, guest].map(page => page.waitForFunction(() => { const g = window.vg.game; return g.paused && g.coopBudget === 0 && !g.coopMarkers.some(marker => marker.ticks > 0) })))
+  played = await state(host)
+  const caughtUp = await state(guest)
+  console.log('Transient reconnect', played, caughtUp)
+  assert.equal(played.hash, caughtUp.hash)
+  assert.equal(played.towers, 3)
+  const savedSeat = ally.seat
+  await guest.reload()
+  await guest.getByRole('button', { name: 'Co-op', exact: true }).click()
+  await guest.getByRole('button', { name: 'Rejoin your room' }).click()
+  await guest.waitForFunction(() => !!window.vg.game.coop && !window.vg.game.recovering, { timeout: 30000 })
+  await guest.waitForTimeout(500)
+  const rejoined = await state(guest)
+  console.log('Reload rejoined', rejoined)
+  assert.equal(rejoined.seat, savedSeat)
+  assert.equal(rejoined.hash, played.hash)
+  await host.locator('.coop-chat summary').click()
+  await host.getByLabel('Chat message').fill('P means hold this road')
+  await host.getByLabel('Chat message').press('Enter')
+  await guest.getByText('Room chat · 1 new', { exact: true }).waitFor()
+  await guest.locator('.coop-chat summary').click()
+  assert.ok((await guest.getByRole('log').textContent()).includes('P means hold this road'))
+  assert.equal((await state(host)).paused, true)
+  await guest.getByRole('button', { name: 'Continue this battle solo' }).click()
+  await guest.waitForFunction(() => !window.vg.game.coop)
+  assert.equal((await state(guest)).hash, played.hash)
+  assert.equal(await guest.evaluate(() => localStorage.getItem('blockhold.coop.seat.v1')), null)
+  await host.evaluate(() => window.vg.game.togglePause())
+  await host.waitForFunction(tick => window.vg.game.sessionTick > tick + 30, played.tick)
+  assert.equal((await state(guest)).tick, played.tick)
+  assert.deepEqual(errors, [])
+  await host.screenshot({ path: '/tmp/blockhold-coop-integration-host.png' })
+  await guest.screenshot({ path: '/tmp/blockhold-coop-integration-solo.png' })
+  console.log('PASS: solo→shared, late join, same board, replayed build, reload same seat, chat, shared→solo and ally continues.')
+} catch (error) { console.log('ERROR DETAILS', errors, await state(host), (await host.locator('body').innerText()).slice(-2000)); await host.screenshot({path:'/tmp/coop-failure.png'}); throw error } finally { await browser.close() }

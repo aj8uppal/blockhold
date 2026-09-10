@@ -97,6 +97,8 @@ export interface PlotInfo {
   /** lifted onto a bank by the player; the tower on it stands on high ground */
   raised: boolean
   bank?: THREE.Group
+  /** Earned during endless play; authored foundations never spend expansion credits. */
+  expanded?: boolean
 }
 
 const inRects = (c: number, r: number, rects: Rect[]) =>
@@ -117,6 +119,8 @@ export class Terrain {
   private worldW: number
   private time = 0
   private owned: (THREE.BufferGeometry | THREE.Material)[] = []
+  /** Static obstacle footprints are recorded before clouds/animation move. */
+  private expansionObstacles: THREE.Box2[] = []
 
   constructor(readonly level: LevelDef, readonly paths: PathsInfo) {
     this.theme = THEMES[level.theme]
@@ -135,7 +139,8 @@ export class Terrain {
     if (c < 0 || r < 0 || c >= level.width || r >= level.height) return 'void'
     if (inRects(c, r, level.voids)) return 'void'
     if (this.paths.roadCells.has(`${c},${r}`)) return 'road'
-    if (level.plots.some(([pc, pr]) => pc === c && pr === r)) return 'plot'
+    if (level.plots.some(([pc, pr]) => pc === c && pr === r)
+      || this.plots.some(p => p.expanded && p.cell[0] === c && p.cell[1] === r)) return 'plot'
     if (inRects(c, r, level.water)) return 'water'
     if (inRects(c, r, level.hills)) return 'hill'
     return 'grass'
@@ -153,12 +158,13 @@ export class Terrain {
         continue
       }
       const [x, z] = gridToWorld(c, r, level.width, level.height)
-      const m = buildModel(env.landmark(kind, rng, level.theme), `landmark:${kind}:${level.theme}`, {
+      const m = buildModel(env.landmark(kind, rng, level.theme), `landmark:${level.id}:${level.seed}:${c},${r}:${kind}:${level.theme}`, {
         castShadow: true, receiveShadow: true,
       })
       m.position.set(x, this.cellTop(c, r), z)
       m.rotation.y = Math.round(rng() * 3) * (Math.PI / 2)
       this.group.add(m)
+      this.recordExpansionObstacle(m)
     }
   }
 
@@ -188,6 +194,10 @@ export class Terrain {
   }
 
   cellTop(c: number, r: number): number {
+    // Appended plots retain their natural hill/plateau height. A marker changes
+    // the cell kind to plot, but must not flatten the ground beneath itself.
+    const expanded = this.plots.find(p => p.expanded && p.cell[0] === c && p.cell[1] === r)
+    if (expanded) return expanded.pos.y - 0.1
     // a foundation the player raised counts as ground: sight and footing
     // are measured from the top of the bank, not the meadow under it
     const raised = this.plots.find(p => p.raised && p.cell[0] === c && p.cell[1] === r) ? RAISE_HEIGHT : 0
@@ -507,6 +517,74 @@ export class Terrain {
     }
   }
 
+  /** Record real geometry, including overhangs into neighboring cells. No RNG is consumed. */
+  private recordExpansionObstacle(mesh: THREE.Object3D, rotates = false): void {
+    mesh.updateWorldMatrix(true, true)
+    const bounds = new THREE.Box3().setFromObject(mesh)
+    if (bounds.isEmpty()) return
+    if (rotates) {
+      const center = mesh.getWorldPosition(new THREE.Vector3())
+      const radius = Math.hypot(Math.max(Math.abs(bounds.min.x - center.x), Math.abs(bounds.max.x - center.x)),
+        Math.max(Math.abs(bounds.min.z - center.z), Math.abs(bounds.max.z - center.z)))
+      bounds.min.x = center.x - radius; bounds.max.x = center.x + radius
+      bounds.min.z = center.z - radius; bounds.max.z = center.z + radius
+    }
+    this.expansionObstacles.push(new THREE.Box2(
+      new THREE.Vector2(bounds.min.x, bounds.min.z),
+      new THREE.Vector2(bounds.max.x, bounds.max.z),
+    ))
+  }
+
+  /** The one-cell slab and the placement preview use this same validity rule. */
+  expansionBlockReason(c: number, r: number): string | null {
+    if (!Number.isInteger(c) || !Number.isInteger(r) || c < 0 || r < 0 || c >= this.level.width || r >= this.level.height) return 'Choose a cell inside the battlefield.'
+    // Reject water independently of road/plot precedence (a bridge is still a road).
+    if (inRects(c, r, this.level.voids)) return 'There is no ground here.'
+    if (this.paths.roadCells.has(`${c},${r}`)) return 'Keep the road clear.'
+    if (inRects(c, r, this.level.water)) return 'Foundations need solid ground.'
+    if (this.plots.some(p => p.cell[0] === c && p.cell[1] === r)) return 'A foundation already occupies this cell.'
+    const [x, z] = gridToWorld(c, r, this.level.width, this.level.height)
+    // The authored plot slab is exactly one tile wide. Touching an obstacle's
+    // boundary is allowed; overlapping its footprint is not.
+    const half = 0.5 - 1e-6
+    if (this.expansionObstacles.some(b => x + half > b.min.x && x - half < b.max.x
+      && z + half > b.min.y && z - half < b.max.y)) return 'An obstacle occupies this foundation.'
+    return null
+  }
+
+  canAddExpansionPlot(c: number, r: number): boolean { return this.expansionBlockReason(c, r) === null }
+
+  /** Called after the earned-credit gate. Append order is the journal's stable index. */
+  addExpansionPlot(c: number, r: number): PlotInfo | null {
+    if (!this.canAddExpansionPlot(c, r)) return null
+    const [x, z] = gridToWorld(c, r, this.level.width, this.level.height)
+    const top = this.cellTop(c, r)
+    const mesh = buildModel(plotVox(), 'plot', { castShadow: false, receiveShadow: true, cloneMaterials: true })
+    mesh.position.set(x, top, z)
+    const plot: PlotInfo = {
+      index: this.plots.length, cell: [c, r], pos: new THREE.Vector3(x, top + 0.1, z),
+      occupied: false, mesh, raised: false, expanded: true,
+    }
+    this.group.add(mesh)
+    mesh.traverse(o => {
+      if (o instanceof THREE.Mesh) {
+        for (const material of Array.isArray(o.material) ? o.material : [o.material]) {
+          if (!material.userData.shared) this.owned.push(material)
+        }
+      }
+    })
+    this.plots.push(plot)
+    if (this.plotsPulsing) {
+      mesh.traverse(o => {
+        if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial && !o.material.userData.shared) {
+          o.material.emissive.setHex(0xffd24a)
+          o.material.emissiveIntensity = 0.5
+        }
+      })
+    }
+    return plot
+  }
+
   private buildPlots(): void {
     const { level } = this
     level.plots.forEach(([c, r], i) => {
@@ -587,15 +665,16 @@ export class Terrain {
             : pickRoll < 0.94 ? env.flowers(rng) : env.stump(rng)
         }
         if (theme === 'winter') snowify(model)
-        const mesh = buildModel(model, `deco:${level.id}:${c},${r}`)
+        const mesh = buildModel(model, `deco:${level.id}:${level.seed}:${c},${r}`)
         mesh.position.set(x + (rng() - 0.5) * 0.35, y, z + (rng() - 0.5) * 0.35)
         mesh.rotation.y = rng() * Math.PI * 2
         const s = 0.8 + rng() * 0.4
         mesh.scale.setScalar(s)
         this.group.add(mesh)
-        if ((theme === 'ashfall' && pickRoll >= 0.7 && pickRoll < 0.9) ||
-            (theme === 'ember' && pickRoll >= 0.55 && pickRoll < 0.72) ||
-            (theme === 'void' && pickRoll < 0.34)) this.crystals.push(mesh)
+        const rotates = (theme === 'ashfall' && pickRoll >= 0.7 && pickRoll < 0.9) ||
+          (theme === 'ember' && pickRoll >= 0.55 && pickRoll < 0.72) || (theme === 'void' && pickRoll < 0.34)
+        this.recordExpansionObstacle(mesh, rotates)
+        if (rotates) this.crystals.push(mesh)
       }
     }
     // lamps along the road
@@ -613,6 +692,7 @@ export class Terrain {
       const [rx, rz] = gridToWorld(c, r, level.width, level.height)
       lamp.position.set(x + (rx - x) * 0.45, 0, z + (rz - z) * 0.45)
       this.group.add(lamp)
+      this.recordExpansionObstacle(lamp)
     }
   }
 
@@ -627,6 +707,7 @@ export class Terrain {
       portal.scale.setScalar(1.35)
       this.group.add(portal)
       this.spawnMarkers.push(portal)
+      this.recordExpansionObstacle(portal)
     })
     // castle at the shared end of lane 0, pulled slightly onto the island
     const lane0 = paths.lanes[0]
@@ -638,6 +719,7 @@ export class Terrain {
     castle.rotation.y = Math.atan2(before.x - end.x, before.z - end.z)
     this.group.add(castle)
     this.castle = castle
+    this.recordExpansionObstacle(castle)
     const flag = castle.children.find(c => c.name === 'flag')
     if (flag) this.flags.push(flag)
   }

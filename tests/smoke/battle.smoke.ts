@@ -19,7 +19,7 @@ test('pressing Play reaches a running battle with enemies and a moving wave coun
   // rendered CI browser draws a few frames a second: the countdown alone used
   // to outlast this test's whole budget. Calling early is also what a player
   // who knows the game does, so the path is worth driving.
-  const call = page.getByRole('button', { name: /Begin the assault|Call wave/ })
+  const call = page.getByRole('button', { name: /Begin (?:the )?assault|Call wave/ })
   await expect(call).toBeVisible({ timeout: 20_000 })
   await call.click()
   await page.waitForFunction(

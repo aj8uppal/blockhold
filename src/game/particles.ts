@@ -44,6 +44,7 @@ export interface EmitOpts {
 }
 
 class ParticlePool {
+  density = 1
   geometry: THREE.BufferGeometry
   points: THREE.Points
   private max: number
@@ -85,7 +86,7 @@ class ParticlePool {
   emit(o: EmitOpts): void {
     const colors = Array.isArray(o.color) ? o.color : [o.color]
     const c = new THREE.Color()
-    for (let n = 0; n < o.count; n++) {
+    for (let n = 0; n < Math.ceil(o.count * this.density); n++) {
       const i = this.cursor
       this.cursor = (this.cursor + 1) % this.max
       const spread = o.spread ?? 0.05

@@ -113,7 +113,7 @@ button:disabled { cursor: not-allowed; }
 
 .wave-call-wrap {
   position: relative; grid-column: 1 / -1; justify-self: center;
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  display: flex; flex-direction: row; align-items: center; gap: 6px;
   pointer-events: none;
 }
 .wave-call {
@@ -148,6 +148,27 @@ button:disabled { cursor: not-allowed; }
   align-items: center; justify-content: center;
 }
 .wave-preview b { color: var(--gold-bright); }
+.wave-details { position: relative; pointer-events: auto; color: var(--parchment); font-size: 12px; }
+.wave-details summary { padding: 10px 12px; cursor: pointer; border: 1px solid #796246; border-radius: 10px; background: #21180f; white-space: nowrap; }
+.wave-details.boss summary { color: #ffbca9; border-color: #d87b59; }
+.wave-details .wave-preview { position: absolute; top: calc(100% + 6px); right: 0; width: min(360px, 86vw); z-index: 12; }
+.quality-setting { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--parchment); font-size: 14px; }
+.quality-setting select { padding: 7px; color: var(--parchment); background: #33241a; border: 1px solid #796246; border-radius: 6px; }
+.quality-note { color: #cfbea3; font-size: 12px; line-height: 1.4; }
+.ability.overcharge-all, .ability.expansion-button { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 3px; font-size: 12px; color: #c6eaff; }
+.ability.overcharge-all > .icon, .ability.expansion-button > .icon { font-size: 23px; }
+.ability.overcharge-all:disabled, .ability.expansion-button:disabled { opacity: .5; }
+.hero-btn .hotkey { left: 5px; right: auto; }
+@media (max-height: 500px), (max-width: 700px) {
+  #hud .wave-call { padding: 7px 10px; min-height: 36px; font-size: 12px; animation: none; box-shadow: 0 2px 8px #0004; }
+  #hud .wave-call-wrap { gap: 5px; }
+  #hud .wave-call .call-sub { display: inline; font-size: 11px; margin-left: 5px; }
+  #hud .call-explanation { display: none; }
+  #hud .wave-details summary { padding: 9px 8px; font-size: 11px; }
+  #hud .wave-details .wave-preview { font-size: 11px; }
+  #hud .toast { max-width: min(430px, 78vw); padding: 9px 12px; font-size: 12px; line-height: 1.35; }
+  .pause-card { max-height: 90dvh; overflow-y: auto; }
+}
 .wp-label {
   font-size: 10px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase;
   color: var(--gold-bright); opacity: 0.85;
@@ -414,6 +435,7 @@ button:disabled { cursor: not-allowed; }
 @media (max-height: 560px) {
   #hud:has(.coach-mark:not(.hidden)) .toast { bottom: 138px; }
 }
+#hud:has(.mode-hint:not(.hidden)) .toast { bottom: calc(142px + env(safe-area-inset-bottom)); }
 .toast {
   position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%);
   max-width: 520px;
@@ -1553,21 +1575,58 @@ button:focus-visible {
 /* the shared tooltip renders inline inside the tower panel rather than floating */
 .tp-actions .build-tooltip { position: static; margin-top: 6px; max-width: none; }
 
-/* Endgame uses the Hold's existing parchment/wood palette and responsive cards. */
-#screens .endgame-screen { padding: 28px; overflow-y: auto; align-items: stretch; max-width: 1160px; margin: auto; color: var(--parchment); background: #251d17; border-inline: 1px solid #796246; box-shadow: 0 0 70px rgba(0,0,0,.5); }
-.endgame-screen > .btn { align-self: flex-start; }
-.endgame-screen h2 { color: var(--gold-bright); }
-.endgame-heading { text-align: center; }
-.endgame-heading h1 { color: var(--gold-bright); }
-.endgame-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
-.endgame-card { min-width: 0; padding: 20px; border: 1px solid #796246; border-radius: 10px; background: var(--wood-dark); color: var(--parchment); text-align: left; }
-.endgame-card h2, .endgame-card h3 { color: var(--gold-bright); margin-top: 0; }
-.endgame-card p { line-height: 1.5; }
+/* The hunt hub leads with one next action; optional loadout detail stays closed. */
+#screens .endgame-screen { padding: 22px 28px; overflow-y: auto; align-items: stretch; justify-content: flex-start; gap: 0; max-width: 1000px; margin: auto; color: var(--parchment); background: #251d17; border-inline: 1px solid #796246; box-shadow: 0 0 70px rgba(0,0,0,.5); }
+.endgame-top .endgame-back { width: auto; flex: 0 0 auto; }
+.endgame-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--accent); }
+.endgame-heading { text-align: left; margin: 14px 0; }
+.endgame-heading h1 { color: var(--gold-bright); margin: 0 0 6px; font-size: clamp(25px, 4vw, 36px); }
+.endgame-heading p { margin: 0; line-height: 1.4; }
+.endgame-next { display: grid; gap: 5px; padding: 12px 16px; border-left: 3px solid var(--gold); background: rgba(232,201,95,.07); font-size: 14px; }
+.endgame-next b { color: var(--gold-bright); }
+.endgame-next span { line-height: 1.4; }
+.endgame-loadout { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 16px 0 0; }
+.endgame-loadout label { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.endgame-loadout select { min-height: 40px; max-width: 100%; padding: 7px 12px; font: inherit; color: var(--parchment); background: var(--wood-dark); border: 1px solid #796246; border-radius: 6px; }
+.endgame-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 16px 0; }
+.endgame-card { min-width: 0; padding: 16px; border: 1px solid #796246; border-radius: 10px; background: var(--wood-dark); color: var(--parchment); text-align: left; }
+.endgame-card h2, .endgame-card h3 { color: var(--gold-bright); margin: 0 0 8px; }
+.endgame-card h2 { font-size: 22px; }
+.endgame-card p { line-height: 1.45; margin: 8px 0; }
 .endgame-card small, .endgame-kicker { color: var(--accent); }
+.endgame-kicker { font-size: 12px; margin-bottom: 8px; }
 .endgame-card:disabled { opacity: .65; cursor: default; }
-.endgame-card.picked { border: 2px solid var(--gold); }
-.endgame-difficulties { display: flex; flex-wrap: wrap; gap: 8px; }
-.endgame-mastery .endgame-card { margin: 12px 0; }
+.endgame-card.picked, .hunt-card.recommended { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+.hunt-card { display: flex; flex-direction: column; }
+.hunt-reward { font-size: 13px; margin: 6px 0 14px; color: var(--gold-bright); }
+.hunt-start { width: 100%; min-height: 44px; margin-top: auto; }
+.hunt-advice { margin-top: 10px; font-size: 13px; }
+.hunt-advice summary { cursor: pointer; color: var(--accent); padding: 5px 0; }
+.endgame-disclosure { border-top: 1px solid #796246; }
+.endgame-disclosure > summary { cursor: pointer; padding: 16px 0; font-weight: 700; color: var(--gold-bright); }
+.endgame-disclosure > summary span { font-size: 12px; font-weight: 400; color: var(--parchment); margin-left: 8px; }
+.endgame-detail-body { padding-bottom: 16px; font-size: 14px; line-height: 1.5; }
+.endgame-detail-body > p { margin: 0 0 12px; }
+.endgame-mastery .endgame-card { margin: 12px 0 0; }
+@media (max-width: 540px) { .endgame-grid { grid-template-columns: minmax(0, 1fr); } #screens .endgame-screen { padding: 14px; } .endgame-top > span { display: none; } .endgame-loadout { gap: 10px; } .endgame-loadout label { flex: 1 1 100%; justify-content: space-between; } .endgame-disclosure > summary span { display: block; margin: 5px 0 0 16px; } }
+@media (orientation: landscape) and (max-height: 540px) {
+  #screens .endgame-screen { padding: 12px 20px; }
+  .endgame-top { position: absolute; right: 20px; top: 12px; }
+  .endgame-top > span { display: none; }
+  .endgame-heading { margin: 0 0 8px; }
+  .endgame-heading h1 { font-size: 24px; padding-right: 150px; }
+  .endgame-heading p { font-size: 13px; }
+  .endgame-next { padding: 8px 12px; font-size: 13px; }
+  .endgame-next span { display: none; }
+  .endgame-card { padding: 12px; }
+  .endgame-card h2 { font-size: 18px; margin-bottom: 5px; }
+  .endgame-card p { font-size: 13px; margin: 4px 0; }
+  .endgame-kicker { font-size: 11px; margin-bottom: 5px; }
+  .hunt-reward { font-size: 12px; margin: 4px 0 10px; }
+  .endgame-loadout { margin-top: 10px; }
+  .endgame-hunts { margin: 10px 0; gap: 12px; }
+}
+
 .hunt-status { position: absolute; top: 108px; left: 50%; transform: translateX(-50%); width: min(500px, 90vw); pointer-events: none; text-align: center; color: var(--parchment); background: rgba(40,29,22,.9); border: 1px solid #796246; border-radius: 8px; padding: 8px 12px; font-size: 13px; }
 .hunt-status progress { display:block; width:100%; height:8px; accent-color:var(--gold); margin-top:6px; }
-@media(max-width:700px) { .endgame-grid { grid-template-columns: minmax(0,1fr); } #screens .endgame-screen { padding:16px; } .hunt-status { top:90px; font-size:11px; } }
+@media(max-width:700px) { .hunt-status { top:90px; font-size:11px; } }

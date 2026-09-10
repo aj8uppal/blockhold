@@ -136,7 +136,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(text)
 }
 
-function readBody(req: IncomingMessage): Promise<unknown> {
+function readBody(req: IncomingMessage, maxBytes = MAX_BODY): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let size = 0
     let over = false
@@ -144,7 +144,7 @@ function readBody(req: IncomingMessage): Promise<unknown> {
     req.on('data', (c: Buffer) => {
       if (over) return
       size += c.length
-      if (size > MAX_BODY) {
+      if (size > maxBytes) {
         // drain rather than destroy: the caller deserves a status code, not a
         // dropped socket it has to guess about
         over = true
@@ -266,7 +266,7 @@ export function createApp(store: Store, cfg: AppConfig): Server {
     // The rooms keep their own per-seat budget.
     if (url.pathname.startsWith('/v1/coop/')) {
       try {
-        if (await handleCoop(req, res, url, () => readBody(req))) return
+        if (await handleCoop(req, res, url, () => readBody(req, 4_200_000))) return
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'error'
         if (msg === 'bad json') { send(res, 400, { error: msg }); return }

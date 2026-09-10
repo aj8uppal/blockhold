@@ -40,7 +40,7 @@ let coopSetup: CoopSetup | null = null
 export function leaveCoopLobby(): void {
   coopUnsub?.()
   coopUnsub = null
-  coopSession?.close()
+  coopSession?.close(true)
   coopSession = null
   coopSetup = null
 }
@@ -61,12 +61,23 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
     el('div', 'coop-sub', card, 'One battle, one board, two or more wardens. Shared gold, shared lives, and everything either of you builds counts.')
     const open = el('button', 'btn primary big', card, `${icon('castle')} Open a room`) as HTMLButtonElement
     const err = el('div', 'coop-error', card, '')
+    if (CoopSession.savedRoom()) {
+      const rejoin = el('button', 'btn', card, 'Rejoin your room')
+      rejoin.onclick = async () => {
+        rejoin.disabled = true
+        try {
+          coopSession = await CoopSession.resume()
+          attachCoop(api)
+          if (coopSession) api.show('coop')
+        } catch (e) { err.textContent = e instanceof Error ? e.message : 'Could not rejoin'; rejoin.disabled = false }
+      }
+    }
     open.onclick = async () => {
       open.disabled = true
       try {
         coopSession = await CoopSession.create()
         attachCoop(api)
-        api.show('coop')
+        if (coopSession) api.show('coop')
       } catch (e) {
         err.textContent = e instanceof Error ? e.message : 'Could not open a room'
         open.disabled = false
@@ -88,7 +99,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
       try {
         coopSession = await CoopSession.join(code)
         attachCoop(api)
-        api.show('coop')
+        if (coopSession) api.show('coop')
       } catch (e) {
         err.textContent = e instanceof Error ? e.message : 'Could not join'
         join.disabled = false
@@ -153,7 +164,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
       b.onclick = () => { setup.difficulty = key; diffRow.querySelectorAll('.mode-option').forEach(x => x.classList.toggle('picked', x === b)); sendSetup() }
     }
     const start = el('button', 'btn primary big', card, `${icon('swords')} Start the battle`) as HTMLButtonElement
-    const paintStart = () => { start.disabled = session.seats < 2 || session.connected.length < session.seats }
+    const paintStart = () => { start.disabled = session.connected.length < 1 }
     paintStart()
     start.onclick = () => {
       setup.seed = newRunSeed()
@@ -169,7 +180,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
       const st = session.setup
       if (!st) { plan.textContent = 'The host is choosing…'; return }
       const lvl = levels.find(l => l.id === st.levelId) ?? HUNTS.find(h => `hunt-${h.id}` === st.levelId)
-      plan.innerHTML = `${icon('swords')} <b>${lvl?.name ?? st.levelId}</b> · ${difficultyMods(st.levelId, st.difficulty).name} · ${HERO_DEFS[st.hero]?.name ?? st.hero}`
+      plan.textContent = `${lvl?.name ?? st.levelId} · ${difficultyMods(st.levelId, st.difficulty).name} · ${HERO_DEFS[st.hero]?.name ?? st.hero}`
     }
     paintPlan()
     el('div', 'coop-sub dim', card, 'Waiting for the host to start…')
@@ -192,18 +203,22 @@ function attachCoop(api: LobbyApi): void {
   if (!session) return
   coopUnsub?.()
   coopUnsub = session.on(e => {
-    if (e.type === 'start') {
+    if (e.type === 'start' || (e.type === 'hello' && e.started && e.setup)) {
       // the game takes the room from here; the lobby lets go without closing it
       coopUnsub?.()
       coopUnsub = null
       coopSession = null
       coopSetup = null
-      api.onCoopStart(session, e.setup)
+      api.onCoopStart(session, e.setup!)
       return
     }
     if (!api.isCurrent()) return
     if (e.type === 'presence' || e.type === 'hello' || e.type === 'setup') coopPaint()
     if (e.type === 'end') { leaveCoopLobby(); api.show('coop') }
   })
+  if (session.started && session.setup) {
+    coopUnsub?.(); coopUnsub = null; coopSession = null; coopSetup = null
+    api.onCoopStart(session, session.setup)
+  }
   session.connect()
 }

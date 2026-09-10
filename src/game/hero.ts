@@ -465,7 +465,7 @@ export class Hero extends Soldier {
           world.fireProjectile({ kind: 'arrow', from, target: best, damage: randRange(...this.def.damage), crit: false, credit: this, world })
           world.sfx('arrow', 0.7)
         }
-        this.drawBowAnim()
+        this.rangedCastAnim()
       }
     } else {
       this.idleAnim(dt)
@@ -486,10 +486,17 @@ export class Hero extends Soldier {
     this.bobY = Math.abs(Math.sin(this.walkT * 9.5)) * 0.03
   }
 
-  private drawBowAnim(): void {
+  private rangedCastAnim(): void {
     const armL = this.heroPart('armL'), armR = this.heroPart('armR')
-    if (armL) armL.rotation.x = -1.3
-    if (armR) armR.rotation.x = -1.1
+    if (this.heroDef.projectile === 'bolt') {
+      // The staff tip sits above the shoulder pivot: positive pitch brings
+      // it toward the model's +Z facing direction. A bow pose sends it back.
+      if (armL) armL.rotation.x = -0.45
+      if (armR) armR.rotation.x = 0.8
+    } else {
+      if (armL) armL.rotation.x = -1.3
+      if (armR) armR.rotation.x = -1.1
+    }
   }
 
   private idleAnim(dt: number): void {

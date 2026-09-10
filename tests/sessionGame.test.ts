@@ -9,6 +9,9 @@ import type { CoopCommand } from '../src/game/coopCommands.ts'
 import type { HUD } from '../src/ui/hud.ts'
 import { towerTrees } from '../src/game/towerDefs.ts'
 import type { TowerKind } from '../src/game/types.ts'
+import { OVERCHARGE_SHARD_COST } from '../src/game/types.ts'
+import type { CoopEvent, CoopSession, CoopSetup } from '../src/core/coop.ts'
+import { RULESET_VERSION } from '../src/game/ruleset.ts'
 
 vi.mock('../src/core/audio.ts', async importOriginal => ({
   ...await importOriginal<typeof import('../src/core/audio.ts')>(),
@@ -40,7 +43,7 @@ type Internals = {
   route(cmd: CoopCommand): boolean
   applyCoopCommand(cmd: CoopCommand, seat: number): void
   sessionTick: number
-  sessionStateHash(): number
+  sessionStateHash(legacy?: boolean): number
   recovering: boolean
 }
 function makeGame(): Game {
@@ -75,7 +78,40 @@ function snapshot(game: Game) {
   }
 }
 
+function room(events: CoopEvent[] = [], paused = false) {
+  const listeners = new Set<(event: CoopEvent) => void>()
+  const fake = {
+    code: 'TEST2', seat: 1, seats: 2, connected: [0, 1], speed: 1, paused, ticksPerTurn: 12,
+    replayEvents: events,
+    on: (listener: (event: CoopEvent) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    connect: vi.fn(), close: vi.fn(() => listeners.clear()), forget: vi.fn(), send: vi.fn(async () => true),
+  }
+  return { session: fake as unknown as CoopSession, fake, emit: (event: CoopEvent) => { for (const listener of listeners) listener(event) } }
+}
+function setupFor(battle: BattleSession): CoopSetup {
+  return { levelId: battle.levelId, difficulty: battle.difficulty, hero: battle.heroId, mode: battle.mode,
+    seed: battle.seed, battle, loadout: { xp: battle.initialSave.xp, armory: battle.initialSave.armory,
+      honors: battle.initialSave.honors, heroPaths: battle.initialSave.heroPaths } }
+}
+
 describe('actual Game session recovery', () => {
+  it('verifies a ruleset-eight battle against its original hash and upgrades the next saved journal', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 871 })
+    game.buildTower('arrow', game.terrain!.plots[0]); game.callWave(); ticks(game, 480)
+    const original = game.exportBattleSession()!
+    const old: BattleSession = { ...original, ruleset: 8, stateHash: (game as unknown as Internals).sessionStateHash(true) }
+    expect(old.stateHash).not.toBe(original.stateHash)
+    const before = snapshot(game), account = JSON.stringify(game.save)
+    expect(await game.resumeSession(old)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    expect(JSON.stringify(game.save)).toBe(account)
+    expect(game.saveSession()).toBe(true)
+    expect(readSession()?.ruleset).toBe(RULESET_VERSION)
+    expect(readSession()?.stateHash).toBe(original.stateHash)
+    game.disposeLevel()
+  })
+
   it('reconstructs enemy health, projectiles, hero investment and final-tick orders without changing account progress', async () => {
     const game = makeGame()
     game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 4321 })
@@ -327,6 +363,385 @@ describe('actual Game session recovery', () => {
     expect(() => game.startLevel(levels[0], 'normal', game.save.lastHero as 'aldric')).not.toThrow()
     expect(game.hero?.heroDef.id).toBe('aldric')
     expect(readSession()?.heroId).toBe('aldric')
+    game.disposeLevel()
+  })
+
+  it('adopts a solo journal, replays shared hero/build orders, and continues solo with the same future and frozen host loadout', async () => {
+    const host = makeGame()
+    host.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 4455 })
+    host.buildTower('arrow', host.terrain!.plots[0]); host.callWave(); ticks(host, 600)
+    const adopted = host.exportBattleSession()!
+    const post = host.lanes[0].sample(host.lanes[0].length * 0.4)
+    const move: CoopCommand = { kind: 'heroMove', x: post.x, z: post.z }
+    const charge: CoopCommand = { kind: 'overchargeAll' }
+    issue(host, move); ticks(host, 12)
+    issue(host, charge); ticks(host, 12)
+    const shared = snapshot(host)
+    ticks(host, 120)
+    const future = snapshot(host)
+    host.disposeLevel()
+
+    const guest = makeGame()
+    guest.save.xp = 0; guest.save.armory = {}; guest.save.honors = []; guest.save.heroPaths = {}
+    const account = JSON.stringify(guest.save)
+    const connected = room([
+      { type: 'cmd', seat: 0, turn: 1, cmd: move }, { type: 'turn', n: 1, ticks: 12 },
+      { type: 'cmd', seat: 1, turn: 2, cmd: charge }, { type: 'turn', n: 2, ticks: 12 },
+    ])
+    const setup = setupFor(adopted)
+    // A menu/cloud change after the adopted battle began cannot rewrite it.
+    setup.loadout = { xp: 99999, armory: { coffers: 4 }, honors: [], heroPaths: { aldric: 'vanguard' } }
+    expect(await guest.joinCoopBattle(connected.session, setup)).toBe(true)
+    expect(snapshot(guest)).toEqual(shared)
+    expect(guest.hero!.specialization).toBe('bulwark')
+    expect(guest.roster.armory).toEqual(adopted.initialSave.armory)
+    expect(JSON.stringify(guest.save)).toBe(account)
+    expect(guest.canSaveSession).toBe(false)
+    expect(guest.continueSolo()).toBe(true)
+    expect(connected.fake.forget).toHaveBeenCalledTimes(1)
+    expect(connected.fake.close).toHaveBeenCalledTimes(1)
+    expect(guest.coop).toBeNull()
+    expect(guest.canSaveSession).toBe(true)
+    expect(snapshot(guest)).toEqual(shared)
+    expect(JSON.stringify(guest.save)).toBe(account)
+    const soloJournal = readSession()!
+    expect(soloJournal.commands.filter(e => e.cmd.kind === 'heroMove')).toHaveLength(1)
+    expect(soloJournal.commands.filter(e => e.cmd.kind === 'overchargeAll')).toHaveLength(1)
+    guest.paused = false; ticks(guest, 120)
+    expect(snapshot(guest)).toEqual(future)
+    expect(await guest.resumeSession(soloJournal)).toBe(true)
+    expect(snapshot(guest)).toEqual(shared)
+    guest.paused = false; ticks(guest, 120)
+    expect(snapshot(guest)).toEqual(future)
+    expect(JSON.stringify(guest.save)).toBe(account)
+    guest.disposeLevel()
+  })
+
+  it('does not turn a command ignored during a paused co-op turn into a live command on solo recovery', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 4455 })
+    game.buildTower('arrow', game.terrain!.plots[0])
+    const adopted = game.exportBattleSession()!
+    const connected = room([
+      { type: 'cmd', seat: 0, turn: 1, cmd: { kind: 'overchargeAll' } },
+      { type: 'pause', seat: 0, on: true }, { type: 'turn', n: 1, ticks: 0 },
+    ], true)
+    expect(await game.joinCoopBattle(connected.session, setupFor(adopted))).toBe(true)
+    expect(game.shards).toBe(8)
+    expect(game.towers[0].isOvercharged(game)).toBe(false)
+    const before = snapshot(game)
+    expect(game.continueSolo()).toBe(true)
+    expect(await game.resumeSession(readSession()!)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    game.disposeLevel()
+  })
+
+  it('replays a fresh room from the host loadout and then consumes live room turns exactly once', async () => {
+    const reference = makeGame()
+    const loadout = JSON.parse(JSON.stringify(reference.save))
+    reference.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 2233 })
+    const plot = reference.terrain!.plots[0].index
+    reference.buildTower('arrow', reference.terrain!.plots[0]); reference.callWave(); ticks(reference, 12)
+    const post = reference.lanes[0].sample(reference.lanes[0].length * 0.45)
+    const move: CoopCommand = { kind: 'heroMove', x: post.x, z: post.z }
+    issue(reference, move); ticks(reference, 12)
+    const caughtUp = snapshot(reference)
+    reference.cycleTargetPolicy(reference.towers[0]); ticks(reference, 24)
+    const live = snapshot(reference)
+    reference.disposeLevel()
+
+    const guest = makeGame()
+    guest.save.xp = 0; guest.save.armory = {}; guest.save.heroPaths = {}; guest.save.honors = []
+    const connected = room([
+      { type: 'cmd', seat: 0, turn: 1, cmd: { kind: 'build', plot, tower: 'arrow' } },
+      { type: 'cmd', seat: 1, turn: 1, cmd: { kind: 'wave' } }, { type: 'turn', n: 1, ticks: 12 },
+      { type: 'cmd', seat: 0, turn: 2, cmd: move }, { type: 'turn', n: 2, ticks: 12 },
+    ])
+    expect(await guest.joinCoopBattle(connected.session, { levelId: levels[0].id, difficulty: 'normal', hero: 'aldric', seed: 2233, loadout })).toBe(true)
+    expect(snapshot(guest)).toEqual(caughtUp)
+    expect(guest.save.xp).toBe(0)
+    expect(guest.save.honors).toEqual([])
+    expect(guest.exportBattleSession()?.initialSave.armory).toEqual(loadout.armory)
+    connected.emit({ type: 'cmd', seat: 0, turn: 3, cmd: { kind: 'policy', plot } })
+    connected.emit({ type: 'turn', n: 3, ticks: 12 })
+    connected.emit({ type: 'turn', n: 4, ticks: 12 })
+    const clock = guest as unknown as { coopAdvance(dt: number, h: number): void }
+    for (let frame = 0; frame < 24; frame++) clock.coopAdvance(1 / 60, 1 / 60)
+    expect(snapshot(guest)).toEqual(live)
+    expect(guest.exportBattleSession()?.commands.filter(e => e.cmd.kind === 'policy')).toHaveLength(1)
+    expect(guest.continueSolo()).toBe(true)
+    expect(await guest.resumeSession(readSession()!)).toBe(true)
+    expect(snapshot(guest)).toEqual(live)
+    guest.disposeLevel()
+  })
+
+  it('drains an authorized turn after pause before allowing a portable solo snapshot', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 2233 })
+    const base = game.exportBattleSession()!
+    game.buildTower('arrow', game.terrain!.plots[0]); ticks(game, 12)
+    const expected = snapshot(game)
+    const connected = room()
+    expect(await game.joinCoopBattle(connected.session, setupFor(base))).toBe(true)
+    connected.emit({ type: 'cmd', seat: 0, turn: 1, cmd: { kind: 'build', plot: 0, tower: 'arrow' } })
+    connected.emit({ type: 'turn', n: 1, ticks: 12 })
+    connected.emit({ type: 'pause', seat: 0, on: true })
+    expect(game.canSwitchCoop).toBe(false)
+    const clock = game as unknown as { coopAdvance(dt: number, h: number): void }
+    for (let frame = 0; frame < 12; frame++) clock.coopAdvance(1 / 60, 1 / 60)
+    expect(game.paused).toBe(true)
+    expect(game.canSwitchCoop).toBe(true)
+    expect(snapshot(game)).toEqual(expected)
+    expect(game.continueSolo()).toBe(true)
+    expect(await game.resumeSession(readSession()!)).toBe(true)
+    expect(snapshot(game)).toEqual(expected)
+    game.disposeLevel()
+  })
+
+  it('opens local pause settings when a room pause request fails, while successful requests wait for the room', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 551 })
+    const connected = room()
+    expect(await game.joinCoopBattle(connected.session, setupFor(game.exportBattleSession()!))).toBe(true)
+    const setPaused = vi.fn(), showToast = vi.fn()
+    game.hud = new Proxy(game.hud, { get: (target, key) => key === 'setPaused' ? setPaused
+      : key === 'showToast' ? showToast : Reflect.get(target, key) })
+    game.togglePause()
+    await Promise.resolve()
+    expect(connected.fake.send).toHaveBeenLastCalledWith('pause', true)
+    expect(game.paused).toBe(false)
+    expect(setPaused).not.toHaveBeenCalled()
+    connected.fake.send.mockResolvedValueOnce(false)
+    game.togglePause()
+    await Promise.resolve()
+    expect(game.paused).toBe(true)
+    expect(setPaused).toHaveBeenLastCalledWith(true)
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Room unreachable'), 5)
+    expect(game.coop).toBe(connected.session)
+    expect(game.canSwitchCoop).toBe(true)
+    game.disposeLevel()
+  })
+
+  it('ignores an old failed pause request after leaving that room', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 551 })
+    const connected = room()
+    expect(await game.joinCoopBattle(connected.session, setupFor(game.exportBattleSession()!))).toBe(true)
+    let complete!: (sent: boolean) => void
+    connected.fake.send.mockImplementationOnce(() => new Promise<boolean>(resolve => { complete = resolve }))
+    game.togglePause()
+    game.leaveCoop()
+    game.paused = false
+    complete(false)
+    await Promise.resolve()
+    expect(game.paused).toBe(false)
+    expect(game.coop).toBeNull()
+    game.disposeLevel()
+  })
+
+  it('restores authoritative pause and speed from a reconnect hello after a local network-failure pause', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 551 })
+    const connected = room()
+    const setup = setupFor(game.exportBattleSession()!)
+    expect(await game.joinCoopBattle(connected.session, setup)).toBe(true)
+    const setPaused = vi.fn(), setSpeed = vi.fn()
+    game.hud = new Proxy(game.hud, { get: (target, key) => key === 'setPaused' ? setPaused
+      : key === 'setSpeed' ? setSpeed : Reflect.get(target, key) })
+    connected.fake.send.mockResolvedValueOnce(false)
+    game.togglePause(); await Promise.resolve()
+    expect(game.paused).toBe(true)
+    const hello: CoopEvent = { type: 'hello', seat: 1, setup, started: true, turn: 5,
+      speed: 2, paused: false, seats: 2, connected: [0, 1] }
+    connected.emit(hello)
+    expect(game.paused).toBe(false)
+    expect(game.speed).toBe(2)
+    expect(setPaused).toHaveBeenLastCalledWith(false)
+    expect(setSpeed).toHaveBeenLastCalledWith(2)
+    connected.emit({ ...hello, paused: true, speed: 1 })
+    expect(game.paused).toBe(true)
+    expect(game.speed).toBe(1)
+    expect(setPaused).toHaveBeenLastCalledWith(true)
+    expect(setSpeed).toHaveBeenLastCalledWith(1)
+    game.disposeLevel()
+  })
+
+  it('applies identical ordered commands on fast and backlogged peers despite newer pause and hello events', async () => {
+    const run = async (backlogged: boolean, reconnectHello: boolean) => {
+      const game = makeGame()
+      game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 718 })
+      const setup = setupFor(game.exportBattleSession()!)
+      const connected = room()
+      expect(await game.joinCoopBattle(connected.session, setup)).toBe(true)
+      const clock = game as unknown as { coopAdvance(dt: number, h: number): void }
+      const advance = (frames: number) => { for (let frame = 0; frame < frames; frame++) clock.coopAdvance(1 / 60, 1 / 60) }
+      const events: CoopEvent[] = [
+        { type: 'cmd', seat: 0, turn: 1, cmd: { kind: 'build', tower: 'arrow', plot: 0 } },
+        { type: 'cmd', seat: 1, turn: 1, cmd: { kind: 'wave' } },
+        { type: 'turn', n: 1, ticks: 12 },
+        { type: 'cmd', seat: 0, turn: 2, cmd: { kind: 'policy', plot: 0 } },
+        { type: 'turn', n: 2, ticks: 12 },
+      ]
+      if (reconnectHello) connected.emit({ type: 'hello', seat: 1, setup, started: true, turn: 5,
+        paused: true, speed: 1, seats: 2, connected: [0, 1] })
+      for (const event of events) connected.emit(event)
+      advance(backlogged ? 5 : 24) // the slow peer still owes seven ticks of turn one
+      connected.emit({ type: 'pause', seat: 0, on: true })
+      connected.emit({ type: 'cmd', seat: 1, turn: 3, cmd: { kind: 'upgrade', plot: 0, opt: 0 } })
+      connected.emit({ type: 'turn', n: 3, ticks: 0 })
+      if (!backlogged) advance(1)
+      connected.emit({ type: 'pause', seat: 0, on: false })
+      connected.emit({ type: 'cmd', seat: 1, turn: 4, cmd: { kind: 'overchargeAll' } })
+      connected.emit({ type: 'turn', n: 4, ticks: 12 })
+      connected.emit({ type: 'pause', seat: 0, on: true })
+      connected.emit({ type: 'turn', n: 5, ticks: 0 })
+      advance(backlogged ? 31 : 12)
+      expect(game.towers[0].level).toBe(1)
+      expect(game.towers[0].targetPolicy).toBe('last')
+      expect(game.towers[0].isOvercharged(game)).toBe(true)
+      expect(game.paused).toBe(true)
+      expect(game.canSwitchCoop).toBe(true)
+      const result = { state: snapshot(game), commands: game.exportBattleSession()!.commands }
+      expect(result.commands.some(e => e.cmd.kind === 'upgrade')).toBe(false)
+      game.disposeLevel()
+      return result
+    }
+    const fast = await run(false, false)
+    expect(await run(true, false)).toEqual(fast)
+    expect(await run(true, true)).toEqual(fast)
+  })
+
+  it('preserves room-authorized ticks when a queued Hold the Line command leaves the victory screen', async () => {
+    const run = async (backlogged: boolean) => {
+      const game = makeGame()
+      game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 551 })
+      const connected = room()
+      expect(await game.joinCoopBattle(connected.session, setupFor(game.exportBattleSession()!))).toBe(true)
+      // Focus on the phase transition; the campaign-victory test above covers
+      // reaching this state through actual combat and recovering its journal.
+      game.phase = 'victory'
+      const clock = game as unknown as { coopAdvance(dt: number, h: number): void }
+      connected.emit({ type: 'cmd', seat: 0, turn: 1, cmd: { kind: 'hold' } })
+      connected.emit({ type: 'turn', n: 1, ticks: 12 })
+      if (!backlogged) clock.coopAdvance(1 / 60, 1 / 60)
+      connected.emit({ type: 'turn', n: 2, ticks: 12 })
+      connected.emit({ type: 'pause', seat: 0, on: true })
+      for (let frame = 0; frame < 24; frame++) clock.coopAdvance(1 / 60, 1 / 60)
+      expect(game.isFreeplay).toBe(true)
+      expect(game.time).toBeCloseTo(24 / 60)
+      const state = snapshot(game)
+      game.disposeLevel()
+      return state
+    }
+    expect(await run(true)).toEqual(await run(false))
+  })
+
+  it('applies simultaneous allied spells once and preserves that cooldown decision in the solo journal', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 551 })
+    const base = game.exportBattleSession()!
+    const at = game.lanes[0].sample(game.lanes[0].length / 2)
+    const spells: CoopCommand[] = [{ kind: 'meteor', x: at.x, z: at.z }, { kind: 'reinforce', x: at.x, z: at.z }]
+    for (const spell of spells) issue(game, spell)
+    ticks(game, 12)
+    const expected = snapshot(game)
+    const connected = room([
+      ...spells.flatMap(cmd => [{ type: 'cmd' as const, seat: 0, turn: 1, cmd }, { type: 'cmd' as const, seat: 1, turn: 1, cmd }]),
+      { type: 'turn', n: 1, ticks: 12 },
+    ])
+    expect(await game.joinCoopBattle(connected.session, setupFor(base))).toBe(true)
+    expect(snapshot(game)).toEqual(expected)
+    const journal = game.exportBattleSession()!
+    expect(journal.commands.filter(e => e.cmd.kind === 'meteor')).toHaveLength(1)
+    expect(journal.commands.filter(e => e.cmd.kind === 'reinforce')).toHaveLength(1)
+    expect(game.continueSolo()).toBe(true)
+    expect(await game.resumeSession(readSession()!)).toBe(true)
+    expect(snapshot(game)).toEqual(expected)
+    game.disposeLevel()
+  })
+
+  it('counts resolved endless waves once and journals one spend on a real new foundation', () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'endless', { seed: 991 })
+    // Exercise actual wave accounting without a long balance simulation: each
+    // fixture wave is fully spawned and has one remaining live enemy.
+    for (let wave = 0; wave < 15; wave++) {
+      game.spawnEnemyAt('husk', 0, 0, { waveTag: wave })
+      const enemy = game.enemies.at(-1)!
+      expect(game.completedEndlessWaves).toBe(wave)
+      expect(game.expansionCredits).toBe(0)
+      enemy.takeDamage(enemy.hp + 1, 'true', game)
+      enemy.takeDamage(1, 'true', game)
+      expect(game.completedEndlessWaves).toBe(wave + 1)
+    }
+    expect(game.expansionCredits).toBe(1)
+    const terrain = game.terrain!
+    const cells = Array.from({ length: levels[0].height }, (_, r) =>
+      Array.from({ length: levels[0].width }, (_, c) => [c, r] as const)).flat()
+    const cell = cells.find(([c, r]) => terrain.canAddExpansionPlot(c, r))!
+    const before = terrain.plots.length
+    game.expandPlot(-1, -1)
+    expect(game.expansionCredits).toBe(1)
+    game.expandPlot(...cell)
+    expect(terrain.plots).toHaveLength(before + 1)
+    expect(terrain.plots.at(-1)).toMatchObject({ index: before, expanded: true, cell: [...cell] })
+    expect(game.expansionCredits).toBe(0)
+    game.expandPlot(...cell)
+    expect(terrain.plots).toHaveLength(before + 1)
+    expect(game.exportBattleSession()?.commands.filter(e => e.cmd.kind === 'expand' && e.cmd.c === cell[0] && e.cmd.r === cell[1])).toHaveLength(1)
+    game.buildTower('arrow', terrain.plots.at(-1)!)
+    expect(game.towers.at(-1)?.plot.index).toBe(before)
+    game.disposeLevel()
+  })
+
+  it('never funds expansion from campaign or hunt clears, including campaign waves resolved during freeplay', () => {
+    const game = makeGame()
+    for (const hunt of [false, true]) {
+      game.startLevel(hunt ? huntLevel('ossuary') : levels[0], 'normal', 'aldric', 'campaign', { seed: 991, hunt: hunt ? 'ossuary' : undefined })
+      game.spawnEnemyAt('husk', 0, 0, { waveTag: 0 })
+      game.enemies.at(-1)!.takeDamage(100000, 'true', game)
+      expect(game.completedEndlessWaves).toBe(0)
+      // A late-resolving authored wave is still not an endless clear.
+      game.isFreeplay = true
+      game.spawnEnemyAt('husk', 0, 0, { waveTag: 1 })
+      game.enemies.at(-1)!.takeDamage(100000, 'true', game)
+      expect(game.completedEndlessWaves).toBe(0)
+      expect(game.expansionCredits).toBe(0)
+      game.completedEndlessWaves = 15
+      game.isFreeplay = false
+      expect(game.expansionCredits).toBe(0)
+      game.disposeLevel()
+    }
+  })
+
+  it('charges the whole eligible battery atomically and skips support, cooldown and already-charged towers', () => {
+    const game = makeGame()
+    game.startLevel(huntLevel('ossuary'), 'normal', 'aldric', 'campaign', { seed: 1, hunt: 'ossuary' })
+    for (const kind of ['arrow', 'mage', 'cannon', 'ballista', 'barracks', 'beacon'] as const) game.buildTower(kind, game.terrain!.plots[game.towers.length])
+    const [charged, cooling, freshA, freshB, barracks, beacon] = game.towers
+    // Crownfire can leave an active overcharge with no paid cooldown.
+    charged.kindle(game)
+    game.overchargeTower(cooling)
+    ticks(game, 13 * 60)
+    charged.kindle(game)
+    expect(cooling.isOvercharged(game)).toBe(false)
+    expect(cooling.canOvercharge(game)).toBe(false)
+    expect(game.overchargeAllCost).toBe(OVERCHARGE_SHARD_COST * 2)
+    game.shards = game.overchargeAllCost - 1
+    const poor = game.shards
+    game.overchargeAll()
+    expect(game.shards).toBe(poor)
+    expect(freshA.isOvercharged(game)).toBe(false)
+    expect(freshB.isOvercharged(game)).toBe(false)
+    game.shards = game.overchargeAllCost
+    game.overchargeAll()
+    expect(game.shards).toBe(0)
+    expect(freshA.isOvercharged(game)).toBe(true)
+    expect(freshB.isOvercharged(game)).toBe(true)
+    expect(barracks.isOvercharged(game)).toBe(false)
+    expect(beacon.isOvercharged(game)).toBe(false)
+    expect(cooling.isOvercharged(game)).toBe(false)
+    expect(game.overchargeAllCost).toBe(0)
     game.disposeLevel()
   })
 })
