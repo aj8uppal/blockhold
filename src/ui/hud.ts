@@ -107,16 +107,23 @@ export class HUD {
   constructor(private game: Game) {
     this.root = document.getElementById('hud')!
     // Safari (iPad) exits HTML5 fullscreen when anything keeps keyboard focus
-    // ("typing isn't allowed in full screen") — starve that heuristic: no HUD
-    // control needs focus, so drop it the instant a tap grants it
+    // ("typing isn't allowed in full screen"). Release button focus; selects
+    // still need it so the visual quality picker remains usable
     this.root.addEventListener('focusin', (e) => {
-      if (document.fullscreenElement && e.target instanceof HTMLElement) e.target.blur()
+      if (document.fullscreenElement && e.target instanceof HTMLButtonElement) e.target.blur()
     })
     this.buildTopBar()
     this.buildWaveButton()
     this.buildAbilities()
     this.buildMenu = el('div', 'build-menu hidden', this.root)
+    // A fresh press on an existing control is intentional, even immediately
+    // after the panel opens. Compatibility clicks still face the time guard.
+    this.root.addEventListener('pointerdown', event => {
+      if (event.target instanceof Element && event.target.closest('.build-menu button, .tower-panel button')) this.menuOpenedAt = 0
+    }, { capture: true })
     this.towerPanel = el('div', 'tower-panel hidden', this.root)
+    new ResizeObserver(() => this.syncInspectorOverflow()).observe(this.towerPanel)
+    this.towerPanel.addEventListener('scroll', () => this.syncInspectorOverflow(), { passive: true })
     this.enemyTip = el('div', 'enemy-tip hidden', this.root)
     this.vignette = el('div', 'damage-vignette', this.root)
     this.bannerEl = el('div', 'banner hidden', this.root)
@@ -251,7 +258,7 @@ export class HUD {
     this.heroBtn.onclick = () => this.game.selectHero(true)
     const mk = (key: 'meteor' | 'reinforce', ico: string, name: string, hotkey: string, desc: string) => {
       const btn = el('button', 'ability', bar) as HTMLButtonElement
-      btn.innerHTML = `<span class="ability-icon">${icon(ico)}</span><span class="cd-sweep"></span><span class="hotkey">${hotkey}</span>`
+      btn.innerHTML = `<span class="ability-icon">${icon(ico)}</span><span class="cd-sweep"></span><span class="hotkey">${hotkey}</span><span class="ability-caption">${key === 'meteor' ? 'Meteor' : 'Guard'}</span>`
       btn.title = `${name} — ${desc}`
       btn.setAttribute('aria-label', name)
       // title tooltips do not exist on touch, so the abilities were unlabelled
@@ -264,7 +271,7 @@ export class HUD {
         if (this.heldFor === `ability:${key}`) { this.heldFor = null; return }
         const on = this.game.targetMode === key
         this.game.setTargetMode(on ? null : key)
-        if (on) this.hideAbilityTip(); else this.showAbilityTip(name, desc)
+        this.hideAbilityTip()
       }
       this.abilityBtns[key] = btn
     }
@@ -273,7 +280,7 @@ export class HUD {
     // the hero's signature used to fire itself; it is the player's to spend now
     this.signatureBtn = el('button', 'ability', bar) as HTMLButtonElement
     this.signatureBtn.innerHTML =
-      `<span class="ability-icon">${icon('quake')}</span><span class="cd-sweep"></span><span class="hotkey">2</span>`
+      `<span class="ability-icon">${icon('quake')}</span><span class="cd-sweep"></span><span class="hotkey">2</span><span class="ability-caption">Ability</span>`
     bar.insertBefore(this.signatureBtn, this.abilityBtns.meteor)
     this.overchargeAllBtn = el('button', 'ability overcharge-all hidden', bar) as HTMLButtonElement
     this.overchargeAllBtn.onclick = () => this.game.overchargeAll()
@@ -339,6 +346,7 @@ export class HUD {
    */
   private buildPauseOverlay(): void {
     this.pauseOverlay = el('div', 'pause-overlay hidden', this.root)
+    this.pauseOverlay.onclick = event => { if (event.target === this.pauseOverlay) this.game.togglePause() }
     const card = el('div', 'pause-card', this.pauseOverlay)
     el('h2', '', card, 'Paused')
     const resume = el('button', 'btn primary', card, 'Resume') as HTMLButtonElement
@@ -380,16 +388,28 @@ export class HUD {
       catch { this.showToast(`Invite your friend with room code ${session.code}`, 6) }
     }
 
-    this.quitBtn = el('button', 'btn', card, 'Abandon mission') as HTMLButtonElement
+    this.quitBtn = el('button', 'btn pause-exit', card, 'Abandon mission') as HTMLButtonElement
     this.quitBtn.onclick = () => {
+      if (!this.game.canSaveSession && !this.game.coop && this.game.bankedWave() === null && !this.exitArmed) {
+        this.exitArmed = true
+        this.quitBtn.textContent = 'Abandon without saving?'
+        this.quitBtn.classList.add('confirming')
+        const exit = document.getElementById('rotate-exit')
+        if (exit) exit.textContent = this.quitBtn.textContent
+        return
+      }
       if (this.game.canSaveSession && !this.game.saveSession()) {
         this.showToast('Could not save this battle. Keep the game open and try again.', 5)
+        const note = document.getElementById('rotate-note')
+        if (note) note.textContent = 'Could not save. Keep the game open and try again.'
         return
       }
       this.onHome()
     }
+    resume.after(this.quitBtn)
     this.bankedEl = el('div', 'pause-banked', card)
   }
+  private exitArmed = false
   private quitBtn!: HTMLButtonElement
   private bankedEl!: HTMLElement
 
@@ -687,9 +707,21 @@ export class HUD {
 
   // ---------------- build menu ----------------
 
+  private resetBuildMenu(): void {
+    this.buildMenu.innerHTML = ''
+    const head = el('div', 'build-head', this.buildMenu)
+    const label = el('div', '', head)
+    el('b', '', label, 'Build')
+    el('small', '', label, isCoarsePointer() ? 'Tap to build · hold to inspect' : 'Choose a foundation upgrade')
+    const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    close.setAttribute('aria-label', 'Close build menu')
+    close.onclick = () => this.game.clearSelection()
+    this.buildMenu.scrollTop = 0
+  }
+
   openBuildMenu(plot: PlotInfo, x: number, y: number): void {
     this.armedBuild = null
-    this.buildMenu.innerHTML = ''
+    this.resetBuildMenu()
     const kinds: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks', 'ballista', 'beacon', 'seraph']
     for (const kind of kinds) {
       const def = towerTrees[kind].levels[0]
@@ -736,6 +768,7 @@ export class HUD {
   private placeMenu(x: number, y: number): void {
     this.menuOpenedAt = performance.now()
     this.buildMenu.classList.remove('hidden')
+    if (isCoarsePointer()) { this.buildMenu.style.left = ''; this.buildMenu.style.top = ''; return }
     const rect = this.buildMenu.getBoundingClientRect()
     const mw = rect.width || 232, mh = rect.height || 150
     const pad = 12
@@ -812,6 +845,7 @@ export class HUD {
     }
     btn.addEventListener('pointerdown', () => {
       cancel()
+      this.heldFor = null
       this.holdTimer = window.setTimeout(() => {
         this.holdTimer = null
         this.heldFor = key
@@ -824,7 +858,9 @@ export class HUD {
       btn.classList.remove('armed')
       // the preview stays up for a moment after the finger leaves, so a hold
       // that ends is still readable
-      if (this.heldFor === key) window.setTimeout(() => release?.(), 900)
+      if (this.heldFor === key) window.setTimeout(() => {
+        if (btn.isConnected && !btn.closest('.hidden')) release?.()
+      }, 900)
     }
     btn.addEventListener('pointerup', up)
     btn.addEventListener('pointercancel', up)
@@ -886,7 +922,7 @@ export class HUD {
   /** one option: this ground can take exactly one kind of work */
   openEarthworkMenu(spot: EarthworkSpot, x: number, y: number): void {
     this.armedBuild = null
-    this.buildMenu.innerHTML = ''
+    this.resetBuildMenu()
     const def = EARTHWORK_DEFS[spot.kind]
     const btn = el('button', 'build-option trap-option', this.buildMenu) as HTMLButtonElement
     btn.dataset.cost = `${def.cost}`
@@ -967,7 +1003,7 @@ export class HUD {
 
   openTrapMenu(spot: TrapSpotInfo, x: number, y: number): void {
     this.armedBuild = null
-    this.buildMenu.innerHTML = ''
+    this.resetBuildMenu()
     for (const kind of ['spike', 'frost', 'blast'] as TrapKind[]) {
       const def = TRAP_DEFS[kind]
       const btn = el('button', 'build-option trap-option', this.buildMenu) as HTMLButtonElement
@@ -1020,6 +1056,7 @@ export class HUD {
   // ---------------- tower panel ----------------
 
   openTowerPanel(tower: Tower): void {
+    if (this.currentTower !== tower) this.towerPanel.scrollTop = 0
     this.currentTower = tower
     this.currentTrap = null
     this.currentHero = null
@@ -1118,6 +1155,8 @@ export class HUD {
     if (tower.perk) extras.push(`${icon(tower.perk.icon)} ${tower.perk.name} — ${tower.perk.description}`)
     if (extras.length) el('div', 'tp-traits', p, extras.join('<br>'))
 
+    const primary = el('div', 'tp-primary', p)
+    head.after(primary)
     const actions = el('div', 'tp-actions', p)
     const capped = !!this.game.trial && tower.level >= this.game.trial.maxTier
     if (capped) el('div', 'tp-traits', actions, `${icon('lock')} ${this.game.trial!.name}: tier ${this.game.trial!.maxTier} is the ceiling`)
@@ -1128,7 +1167,7 @@ export class HUD {
       el('div', 'tp-choice', actions, `${icon('sparkle')} Tier 4 is a choice: one of two specializations, permanent. Nothing else is needed - only the gold.`)
     }
     if (!capped) tower.upgradeOptions.forEach((opt, i) => {
-      const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, actions) as HTMLButtonElement
+      const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, primary) as HTMLButtonElement
       const mythicLock = this.game.mythicLock(tower)
       if (!mythicLock) btn.dataset.cost = `${opt.cost}`
       btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span><span class="u-desc">${opt.description}</span>` +
@@ -1172,7 +1211,7 @@ export class HUD {
       oc.title = `+60% attack speed for ${OVERCHARGE_DURATION}s`
       oc.id = 'oc-btn'
       this.lastOcHtml = ''
-      this.confirmOnTouch(oc, 'Spend a shard? Tap again', () => this.game.overchargeTower(tower))
+      this.confirmOnTouch(oc, `Spend ${OVERCHARGE_SHARD_COST} shards? Tap again`, () => this.game.overchargeTower(tower))
       oc.disabled = !tower.canOvercharge(this.game)
     }
     if (tower.def.signature === 'legionStandard') {
@@ -1240,6 +1279,7 @@ export class HUD {
   openHeroPanel(hero: Hero): void {
     this.currentTower = null
     this.currentTrap = null
+    this.towerPanel.scrollTop = 0
     this.currentHero = hero
     this.heroPanelLevel = hero.level
     this.menuOpenedAt = performance.now()
@@ -1282,8 +1322,8 @@ export class HUD {
       up.classList.toggle('poor', this.game.shards < cost)
     }
     el('div', 'tp-lineage', p, hero.ranged
-      ? 'Holds her ground where she stands. Click the ground to reposition her.'
-      : 'Fights whatever enters the ring around his post. Click the ground to move the post.')
+      ? 'Holds her ground where she stands. Select her, then tap the ground to move.'
+      : 'Guards the ring around his post. Select him, then tap the ground to move.')
     this.heroPanelEls = {
       hpFill: p.querySelector('.sb-fill.hp') as HTMLElement,
       hpNum: p.querySelector('.hp-num') as HTMLElement,
@@ -1443,15 +1483,61 @@ export class HUD {
     this.toastTimer = seconds
   }
 
+  showTargetError(text: string): void {
+    const label = this.modeHint.querySelector('.mode-message')
+    if (!label) { this.showToast(text, 2); return }
+    const original = label.getAttribute('data-prompt') ?? label.textContent ?? ''
+    label.setAttribute('data-prompt', original)
+    label.textContent = text
+    this.modeHint.classList.add('invalid')
+    window.setTimeout(() => {
+      if (label.isConnected && label.textContent === text) {
+        label.textContent = original
+        this.modeHint.classList.remove('invalid')
+      }
+    }, 1800)
+  }
+
+  private syncInspectorOverflow(): void {
+    const p = this.towerPanel
+    p.classList.toggle('scrollable', p.scrollHeight > p.clientHeight + 4)
+    p.classList.toggle('at-bottom', p.scrollTop + p.clientHeight >= p.scrollHeight - 4)
+  }
+
+  get hasSelection(): boolean {
+    return !this.buildMenu.classList.contains('hidden') || !this.towerPanel.classList.contains('hidden') || !this.enemyTip.classList.contains('hidden')
+  }
+
+  dismissWaveDetails(): boolean {
+    const open = this.waveDetails.open
+    this.waveDetails.open = false
+    return open
+  }
+
   setTargetMode(mode: TargetMode): void {
-    if (mode === 'meteor') this.modeHint.innerHTML = `${icon('meteor')} Click to call the Meteor Storm — Esc to cancel`
-    else if (mode === 'reinforce') this.modeHint.innerHTML = `${icon('shield')} Click on the road to deploy reinforcements — Esc to cancel`
-    else if (mode === 'expand') this.modeHint.textContent = 'Tap clear ground to place a plot. Tap Plot again to cancel.'
-    else if (mode === 'rally') this.modeHint.innerHTML = `${icon('flag')} Click near the road to move the rally point — Esc to cancel`
+    this.dismissWaveDetails()
+    this.modeHint.replaceChildren()
+    this.modeHint.classList.remove('invalid')
     this.modeHint.classList.toggle('hidden', mode === null)
+    if (!mode) return
+    this.toastEl.classList.add('hidden'); this.toastTimer = 0
+    const verb = isCoarsePointer() ? 'Tap' : 'Click'
+    const messages: Record<NonNullable<TargetMode>, string> = {
+      meteor: `${verb} to strike with Meteor Storm`,
+      reinforce: `${verb} the road to send reinforcements`,
+      expand: `${verb} clear ground to place a plot`,
+      rally: `${verb} near the road to set the rally point`,
+      holdline: `${verb} to aim the firing line`,
+    }
+    this.hideAbilityTip()
+    el('span', 'mode-message', this.modeHint, messages[mode])
+    const cancel = el('button', 'mode-cancel', this.modeHint, 'Cancel') as HTMLButtonElement
+    cancel.setAttribute('aria-label', 'Cancel targeting')
+    cancel.onclick = () => this.game.setTargetMode(null)
   }
 
   setPaused(paused: boolean): void {
+    this.exitArmed = false; this.quitBtn.classList.remove('confirming')
     this.inviteBtn.classList.toggle('hidden', !this.game.coop)
     this.coopSwitchBtn.textContent = this.game.coop ? 'Continue this battle solo' : 'Invite a friend to this battle'
     this.coopSwitchBtn.disabled = !this.game.canSwitchCoop
@@ -1473,6 +1559,9 @@ export class HUD {
         ? (this.game.isFreeplay || (this.game.waves?.waveIndex ?? -1) >= 0 ? 'The board banks itself each time the field is clear.' : '')
         : `Banked at ${where} — Resume from the menu picks it up there.`
     }
+    const exit = document.getElementById('rotate-exit'), note = document.getElementById('rotate-note')
+    if (exit) exit.textContent = this.quitBtn.textContent
+    if (note) note.textContent = this.bankedEl.textContent || 'This run has no saved checkpoint.'
   }
 
   setSpeed(speed: number): void {

@@ -411,7 +411,7 @@ canvas.addEventListener('pointerdown', (e) => {
     if (!dragOrbit) game.engine.panGrab(e.clientX, e.clientY)
     // A held finger has no hover events. Show the same placement feedback as
     // a mouse without changing the existing tap-versus-pan decision.
-    if (e.pointerType === 'touch' && game.targetMode === 'expand') game.handleHover(e.clientX, e.clientY)
+    if (e.pointerType === 'touch' && game.targetMode) game.handleHover(e.clientX, e.clientY)
   } else {
     // entering multi-touch cancels any pending click; reset gesture baselines
     dragged = true
@@ -457,7 +457,7 @@ canvas.addEventListener('pointermove', (e) => {
     lastCentroid = { x: cx, y: cy }
     return
   }
-  if (Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 6) dragged = true
+  if (Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > (e.pointerType === 'touch' ? 12 : 6)) dragged = true
   if (dragged) {
     // orbit/tilt: right-drag, middle-drag, or shift+drag (latched); otherwise pan.
     // Panning pins the grabbed ground point under the pointer; if the pointer
@@ -465,7 +465,7 @@ canvas.addEventListener('pointermove', (e) => {
     if (dragOrbit) game.engine.orbit(dx, dy)
     else if (!game.engine.panTo(e.clientX, e.clientY)) game.engine.pan(-dx, -dy)
   }
-  if (e.pointerType === 'touch' && game.targetMode === 'expand') game.handleHover(e.clientX, e.clientY)
+  if (e.pointerType === 'touch' && game.targetMode) game.handleHover(e.clientX, e.clientY)
 })
 
 const endPointer = (e: PointerEvent, isClick: boolean) => {
@@ -492,7 +492,7 @@ const endPointer = (e: PointerEvent, isClick: boolean) => {
   pinchAngle = null
   lastCentroid = null
   if (!isClick || wasDrag) return
-  if (btn === 0) game.handleClick(e.clientX, e.clientY)
+  if (btn === 0) game.handleClick(e.clientX, e.clientY, e.pointerType === 'touch')
   else if (btn === 2 && game.targetMode) game.setTargetMode(null)
 }
 
@@ -578,7 +578,7 @@ window.addEventListener('keydown', (e) => {
     case 'KeyC': game.engine.resetView(game.level?.width, game.level?.height); break
     case 'Escape':
       if (game.targetMode) game.setTargetMode(null)
-      else if (game.selectedTower || game.selectedPlot || game.heroSelected) game.clearSelection()
+      else if (hud.hasSelection || game.selectedTower || game.selectedPlot || game.heroSelected) game.clearSelection()
       else game.togglePause()
       break
   }
@@ -591,10 +591,22 @@ window.addEventListener('focusin', e => {
 
 // ---------------- main loop ----------------
 
+const portraitPlay = window.matchMedia('(orientation: portrait) and (pointer: coarse) and (max-width: 940px)')
+let portraitPauseRequested = false
+document.getElementById('rotate-exit')?.addEventListener('click', () => {
+  document.querySelector<HTMLButtonElement>('.pause-exit')?.click()
+})
 let lastT = performance.now()
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - lastT) / 1000)
   lastT = now
+  // The landscape prompt must never hide a running battle from its player.
+  if (!portraitPlay.matches || game.phase !== 'playing') portraitPauseRequested = false
+  else if (!game.paused && !game.isRecovering && !portraitPauseRequested) {
+    portraitPauseRequested = true
+    if (game.canSaveSession) game.saveSession()
+    game.togglePause()
+  }
   // keyboard pan (disabled while paused: pause is a hard input boundary)
   if (game.phase === 'playing' && !game.paused) {
     const px = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0)

@@ -73,4 +73,7 @@ test('press-and-hold on a build option inspects instead of building, and a tap b
     timeout: 10_000,
   }).toBe(1)
   expect(await page.evaluate(() => window.vg.game.gold)).toBeLessThan(goldBefore)
+  // A pending hold-tooltip timeout must not erase the newly selected tower ring.
+  await page.waitForTimeout(1000)
+  expect(await page.evaluate(() => (window.vg.game as unknown as { rangeRing: { visible: boolean } }).rangeRing.visible)).toBe(true)
 })

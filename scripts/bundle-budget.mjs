@@ -40,7 +40,8 @@ const assets = join(root, 'dist', 'assets')
 // about 13 KiB gzip total; account and endgame screens are loaded on demand.
 // Rejoin/transfer journals, endless plots and mobile controls add ~6 KiB.
 // Room transport and chat now load on demand; initial app growth is ~2 KiB.
-const APP_CHUNK_LIMIT = 153 * 1024
+// Touch selection, target cancellation and safe rotation add ~1 KiB gzip.
+const APP_CHUNK_LIMIT = 154 * 1024
 const TOTAL_JS_LIMIT = 290 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`

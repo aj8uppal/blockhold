@@ -90,6 +90,8 @@ export class Game implements World {
     if (!this.recovering) telemetry.track(event)
   }
 
+  get isRecovering(): boolean { return this.recovering }
+
   get canSaveSession(): boolean {
     return !this.recovering && !!this.journal && !this.coop && this.phase === 'playing'
       && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial
@@ -2301,6 +2303,7 @@ export class Game implements World {
   selectHero(fromButton = false): void {
     if (!this.hero || this.hero.dead) { if (this.hero?.dead) this.sfx('error'); return }
     const wasSelected = this.heroSelected
+    this.setTargetMode(null)
     this.clearSelection()
     if (fromButton && wasSelected) { this.sfx('click'); return }
     this.heroSelected = true
@@ -2319,18 +2322,19 @@ export class Game implements World {
    * does this; on a phone there was no way out of a tower panel except
    * finding the small ✕, which is why dismissing felt awkward on touch.
    */
-  handleClick(sx: number, sy: number): void {
+  handleClick(sx: number, sy: number, touch = false): void {
     if (this.phase !== 'playing' || this.paused) return
+    if (this.hud.dismissWaveDetails()) return
     if (this.targetMode) {
       const g = this.aimPoint(sx, sy)
       if (g) this.confirmTarget(g)
       return
     }
-    if (this.pickHero(sx, sy)) { this.selectHero(); return }
+    if (this.pickHero(sx, sy)) { this.selectHero(true); return }
     const tower = this.pickTower(sx, sy)
-    if (tower) { this.selectTower(tower); return }
+    if (tower) { if (tower === this.selectedTower) this.clearSelection(); else this.selectTower(tower); return }
     const plot = this.pickPlot(sx, sy)
-    if (plot) { this.selectPlot(plot, sx, sy); return }
+    if (plot) { if (plot === this.selectedPlot) this.clearSelection(); else this.selectPlot(plot, sx, sy); return }
     const trapSpot = this.pickTrapSpot(sx, sy)
     if (trapSpot) { this.selectTrapSpot(trapSpot, sx, sy); return }
     const earthSpot = this.pickEarthworkSpot(sx, sy)
@@ -2357,6 +2361,21 @@ export class Game implements World {
         this.hud.showEnemyTip(enemy, sx, sy)           // tap-to-inspect (touch has no hover)
       }
       return
+    }
+    if (touch && !this.heroSelected && this.terrain) {
+      let closest: PlotInfo | null = null
+      let distance = 22
+      for (const candidate of this.terrain.plots) {
+        const at = this.projectToScreen(candidate.pos.x, candidate.pos.y + .15, candidate.pos.z)
+        if (!at) continue
+        const d = Math.hypot(at.x - sx, at.y - sy)
+        if (d < distance) { closest = candidate; distance = d }
+      }
+      if (closest) {
+        const nearby = this.towers.find(t => t.plot === closest && !t.isGhost)
+        if (nearby) { if (nearby === this.selectedTower) this.clearSelection(); else this.selectTower(nearby); return }
+        if (!closest.occupied) { if (closest === this.selectedPlot) this.clearSelection(); else this.selectPlot(closest, sx, sy); return }
+      }
     }
     if (this.heroSelected && this.hero && !this.hero.dead) {
       const g = this.groundPoint(sx, sy)
@@ -2456,10 +2475,14 @@ export class Game implements World {
     if (!mode) return
     if (mode === 'expand') {
       const [c, r] = this.expansionCell(g)
-      if (!this.targetValid(g)) { this.hud.showToast(this.terrain?.expansionBlockReason(c, r) ?? 'Choose clear ground.', 2); this.sfx('error'); return }
+      if (!this.targetValid(g)) { this.hud.showTargetError(this.terrain?.expansionBlockReason(c, r) ?? 'Choose clear ground.'); this.sfx('error'); return }
       this.expandPlot(c, r); this.setTargetMode(null); return
     }
-    if (!this.targetValid(g)) { this.sfx('error'); return }
+    if (!this.targetValid(g)) {
+      this.hud.showTargetError(mode === 'rally' ? 'Choose a nearby road point within rally range.'
+        : mode === 'holdline' ? 'Aim away from the tower to set a direction.' : 'Choose a point on the road.')
+      this.sfx('error'); return
+    }
     const tower = this.selectedTower
     const routed = mode === 'meteor' ? this.route({ kind: 'meteor', x: g.x, z: g.z })
       : mode === 'reinforce' ? this.route({ kind: 'reinforce', x: g.x, z: g.z })
@@ -2467,9 +2490,7 @@ export class Game implements World {
       : mode === 'holdline' && tower ? this.route({ kind: 'holdline', plot: tower.plot.index, x: g.x, z: g.z })
       : false
     if (!routed) this.performTarget(mode, g.x, g.z, tower)
-    this.targetMode = null
-    this.targetRing.visible = false
-    this.hud.setTargetMode(null)
+    this.setTargetMode(null)
   }
 
   /** the targeted action itself, from either the click here or the room */
@@ -2549,16 +2570,19 @@ export class Game implements World {
   setTargetMode(mode: TargetMode): void {
     if (this.paused && mode !== null) return
     if (mode === 'expand' && this.expansionCredits <= 0) return
-    this.targetRing.scale.setScalar(mode === 'expand' ? 0.42 : 1)
     if (mode === 'holdline' && !this.selectedTower?.canHoldLine) { this.sfx('error'); return }
     if (mode === 'meteor' && this.abilities.meteor.cooldown > 0) { this.sfx('error'); return }
     if (mode === 'reinforce' && this.abilities.reinforce.cooldown > 0) { this.sfx('error'); return }
+    this.targetRing.scale.setScalar(mode === 'expand' ? 0.42 : 1)
+    const previous = this.targetMode
     this.targetMode = mode
     this.hud.setTargetMode(mode)
     if (mode) {
       this.hud.closeBuildMenu()
       if (mode !== 'rally' && mode !== 'holdline') this.clearSelection()
+      else this.hud.closeTowerPanel()
     } else {
+      if ((previous === 'rally' || previous === 'holdline') && this.selectedTower) this.hud.openTowerPanel(this.selectedTower)
       this.targetRing.visible = false
     }
   }
@@ -2572,7 +2596,7 @@ export class Game implements World {
   }
 
   selectTower(tower: Tower): void {
-    this.clearPreviewLinks()
+    this.clearSelection()
     this.selectedPlot = null
     this.selectedTower = tower
     this.hud.closeBuildMenu()
@@ -2586,7 +2610,7 @@ export class Game implements World {
   }
 
   selectPlot(plot: PlotInfo, sx: number, sy: number): void {
-    this.clearPreviewLinks()
+    this.clearSelection()
     this.selectedTower = null
     this.hud.closeTowerPanel()
     this.selectedPlot = plot
@@ -2599,6 +2623,7 @@ export class Game implements World {
   }
 
   clearSelection(): void {
+    this.hud.hideEnemyTip()
     this.clearPreviewLinks()
     this.selectedTower = null
     this.selectedPlot = null
