@@ -78,6 +78,19 @@ test('tower panels keep details optional and track damage for the current hunt l
     ;(window.vg.screens as unknown as Screens).onPlayLevel('greenhollow', 'normal', 'aldric', 'campaign')
     g.buildTower('arrow', g.terrain!.plots[0])
   })
+  await page.waitForFunction(() => document.querySelector('.tower-panel')!.getAnimations().length === 0)
+  const summary = page.locator('.tp-mastery summary')
+  const beforeHover = (await summary.boundingBox())!
+  await page.locator('.tower-panel .raise').hover()
+  const positions = await summary.evaluate(async element => {
+    const ys: number[] = []
+    for (let i = 0; i < 6; i++) {
+      await new Promise(requestAnimationFrame)
+      ys.push(element.getBoundingClientRect().y)
+    }
+    return ys
+  })
+  expect(positions.every(y => Math.abs(y - beforeHover.y) < 1), 'hovering Raise Ground must not move the inspector controls').toBe(true)
   await page.locator('.tp-mastery summary').click()
   await expect(page.locator('.tp-mastery')).toContainText('Campaign battles do not count')
   await expect(page.locator('.tp-mastery progress')).toHaveCount(0)

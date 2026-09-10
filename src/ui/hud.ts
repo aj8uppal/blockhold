@@ -982,10 +982,13 @@ export class HUD {
       ? `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${cost}</span>`
       : `${icon(def.icon)} ${def.name} ${icon('coin')}${cost}`
     const description = this.game.towers.find(t => t.plot === plot)?.isBeacon ? 'Raise this Beacon onto high ground to extend its aura by 15%.' : def.description
-    btn.title = description
+    btn.title = `${description} Permanent. The next foundation after this costs ${raiseCost(this.game.raisedCount() + 1)} gold.`
     const showTip = () => {
       const tip = document.getElementById('build-tip')
-      if (tip) {
+      // A desktop hover must not resize the bottom-anchored inspector: moving
+      // the hovered button can alternate enter/leave forever. Its native title
+      // supplies the details; touch players can still hold to inspect them.
+      if (tip && (isCoarsePointer() || !parent.closest('.tower-panel'))) {
         tip.innerHTML = `<b>${def.name}</b><br>${description}<br><span class="tip-stats">Permanent. The next foundation after this costs ${icon('coin')}${raiseCost(this.game.raisedCount() + 1)}.</span>`
         tip.classList.remove('hidden')
       }
