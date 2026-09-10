@@ -295,7 +295,8 @@ export class Tower {
     this.seraphPulse = Math.max(0, this.seraphPulse - dt * 12)
     const halo = getPart(this.model, 'halo')
     if (halo) {
-      if (this.branch === 0 && this.level >= 4) halo.rotation.z += dt * 0.22
+      if (this.level === 6 && this.branch === 1) halo.rotation.z += dt * 0.12
+      else if (this.branch === 0 && this.level >= 4) halo.rotation.z += dt * 0.22
       else halo.rotation.y += dt * (this.level >= 4 ? 0.22 : this.seraphSpeed * 0.65)
       halo.position.y = (halo.userData.baseY ??= halo.position.y) + Math.sin(world.time * 1.4) * 0.03
     }
@@ -313,6 +314,14 @@ export class Tower {
     }
     const heart = getPart(this.model, 'heart')
     if (heart) heart.scale.setScalar(1 + this.seraphPulse * 0.22 + Math.sin(world.time * 2) * 0.025)
+    if (this.level === 6 && this.branch === 1) {
+      // Small, continuous levitation; never tie the statue's pose to a hit.
+      const lift = Math.sin(world.time * 1.4) * 0.025
+      for (const part of [getPart(this.model, 'figure'), heart, wingL, wingR,
+        getPart(this.model, 'wingLowL'), getPart(this.model, 'wingLowR')]) {
+        if (part) part.position.y = (part.userData.baseY ??= part.position.y) + lift
+      }
+    }
   }
 
   private updateSeraphSignature(world: World): void {

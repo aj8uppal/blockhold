@@ -45,7 +45,8 @@ const assets = join(root, 'dist', 'assets')
 // unlock contributions add ~4.6 KiB total; sandbox controls remain lazy loaded.
 // Historical battle compatibility, full battle backups and XP receipts add ~1.4 KiB.
 const APP_CHUNK_LIMIT = 160 * 1024
-const TOTAL_JS_LIMIT = 296 * 1024
+// Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
+const TOTAL_JS_LIMIT = 297 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

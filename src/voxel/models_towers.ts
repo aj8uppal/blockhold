@@ -701,9 +701,73 @@ function ascendedSeraph(level: number, solar: boolean): VoxModel {
   return { parts, pivots, scale: 0.125 }
 }
 
-// Mythics keep one halo and the same clean mantle; a bright core and inset
-// foundation distinguish mastery without another layer of orbiting geometry.
+/** Event Horizon: a suspended archangel beneath one eclipsed crown. */
+function eventHorizonSeraph(): VoxModel {
+  const stone = 0x292638, shade = 0x161420, edge = 0x665687
+  const light = 0xb894ff, hot = 0xe8dcff
+  const shoulderY = 11.0, crownY = 14.1, crownZ = -1.7
+  const parts: VoxModel['parts'] = {
+    base: [
+      box(0, 0.6, 0, 7.4, 1.2, 7.4, W.stoneDark),
+      box(0, 1.5, 0, 6.5, 0.5, 6.5, edge),
+      box(0, 2.3, 0, 5.4, 1.1, 5.4, shade),
+      box(0, 3, 0, 5.9, 0.35, 5.9, stone),
+      box(0, 3.25, 0, 2.4, 0.12, 2.4, light, true),
+    ],
+    figure: [
+      // A narrow, tapered mantle leaves daylight above the plinth.
+      box(0, 6, 0, 1.3, 2.3, 1.4, shade),
+      box(0, 8.1, 0, 2.2, 3.3, 1.8, stone),
+      box(0, 10.5, 0, 3.1, 2.2, 2.1, stone),
+      box(0, 8.3, 1.0, 0.65, 3.8, 0.2, edge),
+      box(0, 12.4, 0, 1.6, 1.6, 1.6, shade),
+      box(0, 12.65, 0.85, 1.05, 0.18, 0.15, hot, true),
+      box(-1.8, 9.4, 0.1, 0.8, 3.3, 0.9, stone),
+      box(1.8, 9.4, 0.1, 0.8, 3.3, 0.9, stone),
+    ],
+    heart: [
+      box(0, shoulderY, 1.2, 0.65, 1.6, 0.45, hot, true),
+      box(0, shoulderY, 1.2, 1.3, 0.55, 0.45, hot, true),
+    ],
+    wingL: [], wingR: [], wingLowL: [], wingLowR: [], halo: [],
+  }
+  const pivots: NonNullable<VoxModel['pivots']> = {
+    heart: [0, shoulderY, 1.2], halo: [0, crownY, crownZ],
+    wingL: [-1.8, shoulderY, -0.8], wingR: [1.8, shoulderY, -0.8],
+    wingLowL: [-1.6, 9.5, -0.9], wingLowR: [1.6, 9.5, -0.9],
+  }
+  for (const side of [-1, 1]) {
+    const wing = parts[side < 0 ? 'wingL' : 'wingR']
+    // Two broad swept blades, with a single pale tip on each side.
+    for (let i = 0; i < 4; i++) {
+      wing.push(box(side * (2.5 + i * 1.25), shoulderY + i * 1.65, -1 - i * 0.12,
+        1.7 - i * 0.25, 3.5 - i * 0.1, 0.85, i === 3 ? edge : stone))
+    }
+    wing.push(box(side * 6.25, 17.9, -1.4, 0.45, 0.7, 0.45, light, true))
+    const lower = parts[side < 0 ? 'wingLowL' : 'wingLowR']
+    for (let i = 0; i < 3; i++) {
+      lower.push(box(side * (2.35 + i * 0.95), 8.5 - i * 1.15, -1.2,
+        1.3 - i * 0.2, 2.4 - i * 0.2, 0.65, i === 2 ? edge : shade))
+    }
+  }
+  // A dark disk and a single luminous rim, authored as a crisp stepped circle.
+  // No transparent layers or particles: it stays readable at gameplay zoom.
+  for (let i = -6; i <= 6; i++) {
+    const x = i * 0.5, height = Math.sqrt(3.3 ** 2 - x ** 2) * 2
+    parts.halo.push(box(x, crownY, crownZ, 0.52, height, 0.5, 0x100e1c))
+  }
+  for (let i = 0; i < 24; i++) {
+    const a = i / 24 * Math.PI * 2, b = (i + 1) / 24 * Math.PI * 2
+    const x1 = Math.cos(a) * 3.4, y1 = Math.sin(a) * 3.4
+    const x2 = Math.cos(b) * 3.4, y2 = Math.sin(b) * 3.4
+    parts.halo.push(box((x1 + x2) / 2, crownY + (y1 + y2) / 2, crownZ + 0.32,
+      Math.abs(x2 - x1) + 0.22, Math.abs(y2 - y1) + 0.22, 0.25, i < 4 || i >= 16 && i < 20 ? hot : light, true))
+  }
+  return { parts, pivots, scale: 0.125 }
+}
+
 function mythicSeraph(solar: boolean): VoxModel {
+  if (!solar) return eventHorizonSeraph()
   const m = ascendedSeraph(5, solar)
   const light = solar ? 0xfff2bc : 0xe0ceff
   m.parts.base.push(box(0, 1.35, 0, 7, 0.25, 7, solar ? W.gold : 0x8470b6))

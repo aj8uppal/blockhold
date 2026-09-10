@@ -13,7 +13,8 @@ try{
   const page=await browser.newPage({viewport:{width:1200,height:800}})
   const errors=[];page.on('pageerror',e=>errors.push(e.message))
   await page.goto(server.resolvedUrls.local[0]);await page.waitForFunction(()=>window.vg?.game)
-  for(const [tier,branch] of [[1,0],[2,0],[3,0],[4,0],[4,1],[5,0],[5,1]]){
+  const models=process.argv.includes('--mythic')?[[5,1],[6,1]]:[[1,0],[2,0],[3,0],[4,0],[4,1],[5,0],[5,1],[6,0],[6,1]]
+  for(const [tier,branch] of models){
     const result=await page.evaluate(async({tier,branch})=>{
       const {game:g,screens}=window.vg
       const {levelById}=await import('/src/game/levels.ts')
@@ -42,7 +43,7 @@ try{
     },{tier,branch})
     await page.screenshot({path:`${out}/${result.model}-${tag}.jpg`,type:'jpeg',quality:88})
     console.log(result)
-    if(tag==='after'&&tier===5&&process.argv.includes('--motion')){
+    if(tier>=5&&process.argv.includes('--motion')){
       const bytes=await page.evaluate(async()=>{
         const g=window.vg.game,t=g.towers[0],canvas=document.querySelector('canvas')
         const stream=canvas.captureStream(30),chunks=[]
@@ -62,9 +63,26 @@ try{
         clearInterval(timer);recorder.stop();await stopped;stream.getTracks().forEach(t=>t.stop())
         return Array.from(new Uint8Array(await new Blob(chunks).arrayBuffer()))
       })
-      writeFileSync(`${out}/${result.model}-motion.webm`,new Uint8Array(bytes))
+      writeFileSync(`${out}/${result.model}-${tag}-motion.webm`,new Uint8Array(bytes))
+    }
+    if(tier===6&&process.argv.includes('--mythic')){
+      await page.evaluate(()=>{
+        const g=window.vg.game
+        g.clearSelection()
+        for(const p of g.projectiles){g.dynamic.remove(p.mesh);p.dispose?.()}
+        g.projectiles=[];g.engine.render()
+      })
+      await page.screenshot({path:`${out}/${result.model}-${tag}-idle.jpg`,type:'jpeg',quality:88})
+      await page.setViewportSize({width:844,height:390})
+      await page.evaluate(()=>{
+        const g=window.vg.game
+        g.engine.distGoal=13;g.engine.updateCamera(5);g.engine.render()
+      })
+      await page.screenshot({path:`${out}/${result.model}-${tag}-mobile.jpg`,type:'jpeg',quality:88})
+      await page.setViewportSize({width:1200,height:800})
     }
   }
+  if(!process.argv.includes('--mythic')){
   await page.evaluate(async()=>{
     const {game:g,screens}=window.vg
     const {levelById}=await import('/src/game/levels.ts')
@@ -78,5 +96,6 @@ try{
     g.engine.render()
   })
   await page.screenshot({path:`${out}/range-${tag}.jpg`,type:'jpeg',quality:88})
+  }
   if(errors.length)throw Error(errors.join('\n'))
 }finally{await browser.close();await server.close()}
