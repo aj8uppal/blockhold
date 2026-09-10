@@ -1,3 +1,6 @@
+import { readSession, readSessionIssue } from '../game/session.ts'
+import { huntById, type HuntId } from '../game/hunts.ts'
+import { heroPath } from '../game/heroPaths.ts'
 // the field guide and the cards are reading rooms, opened on demand: lazy chunks
 import { coopEnabled, type CoopSession, type CoopSetup } from '../core/coop.ts'
 import { levels, levelById } from '../game/levels.ts'
@@ -6,7 +9,7 @@ import { difficultyMods } from '../game/difficulty.ts'
 import { HERO_DEFS } from '../game/hero.ts'
 import { starsAvailable, starsEarned, buyTier, respec, armoryTier, crownStars, visibleTracks, trialStars, ARMORY_TOTAL_COST } from '../game/armory.ts'
 import { TRIAL_KINDS, TRIAL_NAMES, TRIAL_ICONS, trialFor, trialsWon, type TrialKind } from '../game/trials.ts'
-import { exportSave, importSave, writeSave } from '../core/save.ts'
+import { writeSave } from '../core/save.ts'
 import type { SaveData } from '../core/save.ts'
 import { icon } from './icons.ts'
 import { readCheckpoint } from '../game/checkpoint.ts'
@@ -15,11 +18,10 @@ import { fetchDaily, leaderboardEnabled, nickname, setNickname } from '../core/l
 import { dailyNumber } from '../game/ruleset.ts'
 import { holdPieces, holdSummary } from '../game/hold.ts'
 import { isUnlocked, levelProgress, nextUnlock, unlockLevel, xpForLevel, MAX_LEVEL, type UnlockDef } from '../game/progress.ts'
-import { cloud, applyCloud, toCloud } from '../core/cloud.ts'
-import { mergeSaves } from '../core/saveMerge.ts'
+import { cloud } from '../core/cloud.ts'
 import { dailyShareText, challengeUrl, runChallengeUrl, runShareText, type DailyResult } from '../game/share.ts'
 
-export type ScreenName = 'menu' | 'levels' | 'victory' | 'defeat' | 'coop' | 'none'
+export type ScreenName = 'menu' | 'levels' | 'victory' | 'defeat' | 'coop' | 'hunts' | 'none'
 
 const THEME_ART: Record<string, string> = {
   forest: 'linear-gradient(160deg, #79c057 0%, #4e9a3d 55%, #2e7a52 100%)',
@@ -74,6 +76,7 @@ export interface BattleStats {
   firstClear: boolean,
   trial?: { kind: TrialKind, name: string, newStar: boolean },
   newCards?: string[],
+  hunt?: { id: HuntId, name: string, honors: string[] },
 }
 
 /**
@@ -155,6 +158,7 @@ export class Screens {
   root: HTMLElement
   onPlayLevel: (levelId: string, difficulty?: Difficulty, hero?: HeroId, mode?: GameMode) => void = () => {}
   onMenu: () => void = () => {}
+  onPlayHunt: (id: HuntId, difficulty: Difficulty, hero: HeroId) => void = () => {}
   onResume: () => void = () => {}
   onPlayDaily: () => void = () => {}
   onPlayWatches: () => void = () => {}
@@ -177,6 +181,7 @@ export class Screens {
     switch (name) {
       case 'menu': this.renderMenu(); break
       case 'levels': this.renderLevels(); break
+      case 'hunts': void import('./endgame.ts').then(({ renderEndgame }) => { if (this.current === 'hunts') renderEndgame(this.root, this.save(), this.onPlayHunt, () => this.show('menu')) }); break
       case 'coop': this.renderCoop(opts.coopCode); break
       case 'victory': this.renderEnd(true, opts.stars ?? 1, opts.levelId!, opts.stats); break
       case 'defeat': this.renderEnd(false, 0, opts.levelId!, opts.stats); break
@@ -207,17 +212,27 @@ export class Screens {
       else this.show('levels')
     }
     // a battle interrupted mid-campaign is worth more than a fresh one
+    const session = readSession()
+    const sessionLevel = session ? (session.hunt ? huntById(session.hunt)?.name : levels.find(l => l.id === session.levelId)?.name) : null
+    if (session && sessionLevel) {
+      const resume = el('button', 'btn primary', card, `${icon('respawn')} Continue ${sessionLevel} · wave ${Math.max(1, session.wave)}`) as HTMLButtonElement
+      resume.onclick = () => this.onResume()
+    } else if (readSessionIssue()?.kind === 'incompatible') {
+      el('p', 'menu-note', card, 'Your saved battle uses an older game version. Account progress is safe; start a new battle to use the updated rules.')
+    }
     const cp = readCheckpoint()
     // a checkpoint whose level no longer exists (an older build saved one for
     // the Daily, or a map was renamed) must not offer a button that cannot open
     const cpLevel = cp ? levels.find(l => l.id === cp.levelId) : undefined
-    if (cp && cpLevel) {
+    if (!session && cp && cpLevel) {
       const depth = cp.waveIndex + 1 - cpLevel.waves.length
       const resume = el('button', 'btn primary', card, cp.freeplay
         ? `${icon('castle')} Hold the line on ${cpLevel.name} · +${Math.max(1, depth)}`
         : `${icon('respawn')} Resume ${cpLevel.name} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
     }
+    const hunts = el('button', 'btn ghost', card, `${icon('crown')} Boss hunts & hero paths`) as HTMLButtonElement
+    hunts.onclick = () => this.show('hunts')
     // one battle, the same one for everyone in the world today
     const day = dailyNumber()
     const done = save.dailyBest?.day === day
@@ -253,7 +268,7 @@ export class Screens {
     if (cloud.enabled) {
       const st = cloud.status()
       const acct = el('button', 'btn ghost', card,
-        `${icon('chest')} ${st.signedIn ? 'Your progress is saved' : 'Save my progress'}`) as HTMLButtonElement
+        `${icon('chest')} ${st.provider ? 'Your account' : 'Sign in & sync'}`) as HTMLButtonElement
       acct.onclick = () => this.renderAccount()
     }
     const how = el('button', 'btn ghost', card, 'How to play') as HTMLButtonElement
@@ -307,6 +322,9 @@ export class Screens {
     el('span', 'level-xp', row, level >= MAX_LEVEL ? `${save.xp.toLocaleString()} XP` : `${(span - into).toLocaleString()} XP to Level ${level + 1}`)
     if (next) {
       el('span', 'level-next', row, `${icon(next.kind === 'hero' ? 'helmPlume' : 'castle')} ${next.name} at ${next.level}`)
+    } else {
+      const hunt = el('button', 'level-next', row, `${icon('crown')} Hunt victories unlock hero paths & Mythics`) as HTMLButtonElement
+      hunt.onclick = () => this.show('hunts')
     }
   }
 
@@ -648,7 +666,7 @@ export class Screens {
         `<span class="hero-name">${def.name}</span><span class="hero-title">${def.title}</span>` +
         `<span class="hero-blurb">${def.blurb}</span>` +
         `<span class="hero-stats">${icon('heart')} ${def.hp} · ${icon('sword')} ${def.damage[0]}–${def.damage[1]}${def.attackRange ? ` · ${icon('range')} ${def.attackRange}` : ' · melee'}</span>` +
-        `<span class="hero-ability">✦ ${def.ability.name}: ${def.ability.blurb}</span>`
+        `<span class="hero-ability">✦ ${heroPath(def.id, save.heroPaths?.[def.id])?.abilityName ?? def.ability.name}: ${heroPath(def.id, save.heroPaths?.[def.id])?.blurb ?? def.ability.blurb}</span>`
       btn.onclick = () => {
         hero = def.id
         heroBtns.forEach((b, id) => b.classList.toggle('picked', id === hero))
@@ -679,9 +697,26 @@ export class Screens {
     const endless = stats?.endless ?? false
     const hasNext = won && !endless && idx >= 0 && idx < levels.length - 1
     const daily = stats?.daily
+    const hunt = stats?.hunt
     const wrap = el('div', 'screen end-screen', this.root)
     const card = el('div', `end-card ${won ? 'won' : 'lost'}`, wrap)
     if (daily) { this.renderDailyResult(card, daily, won, stats); return }
+    if (hunt && stats) {
+      el('div', 'end-emoji', card, icon(won ? 'crown' : 'skull'))
+      el('h2', 'end-title', card, won ? `${hunt.name} conquered` : 'The hunt continues')
+      el('p', 'end-sub', card, won ? 'The keep stands. Your hunt achievements are saved.' : `${stats.wavesCleared} waves held. Adjust your defense and try again.`)
+      this.renderXp(card, stats)
+      if (hunt.honors.length) {
+        const lines = hunt.honors.map(code => code.startsWith('hero:') ? 'Hero path progress earned' : code.startsWith('mastery:') ? `${code.split(':')[1] === 'seraph' ? 'Seraph' : 'Barracks'} mastery earned` : 'First clear on this difficulty')
+        el('div', 'end-objective', card, [...new Set(lines)].join('<br>'))
+      }
+      const row = el('div', 'end-actions', card)
+      const retry = el('button', 'btn', row, 'Hunt again') as HTMLButtonElement
+      retry.onclick = () => this.onPlayHunt(hunt.id, stats.difficulty, this.save().lastHero as HeroId)
+      const next = el('button', 'btn primary', row, 'Hunts & hero paths') as HTMLButtonElement
+      next.onclick = () => { this.onMenu(); this.show('hunts') }
+      return
+    }
     const freeplay = stats?.freeplay ?? false
     const trial = stats?.trial
     el('div', 'end-emoji', card, icon(trial ? TRIAL_ICONS[trial.kind] : endless ? 'moon' : freeplay ? 'castle' : won ? 'trophy' : 'skull'))
@@ -866,150 +901,11 @@ export class Screens {
     overlay.onclick = (e) => { if (e.target === overlay) overlay.remove() }
   }
 
-  /**
-   * Cloud saves, in the player's language.
-   *
-   * There is no sign-up, no email and no password - so this screen's whole
-   * job is to explain that a code *is* the account, and to make that code
-   * easy to move to another device.
-   */
   renderAccount(): void {
-    const overlay = el('div', 'help-overlay', this.root)
-    const card = el('div', 'help-card account-card', overlay)
-    const draw = () => {
-      card.innerHTML = ''
-      const st = cloud.status()
-      el('h2', '', card, `${icon('chest')} Your progress`)
-
-      if (!st.signedIn) {
-        el('p', 'account-body', card,
-          'Right now your campaign lives only in this browser. Clearing site data, a private window, or a new phone would lose it.')
-        el('p', 'account-body', card,
-          'Saving gives you a short code. No email, no password, nothing about you - the code is the account. Type it on another device and your progress follows.')
-        const go = el('button', 'btn primary', card, 'Save my progress') as HTMLButtonElement
-        go.onclick = async () => {
-          go.disabled = true
-          go.textContent = 'Saving…'
-          await cloud.createAccount(this.save())
-          draw()
-        }
-        const have = el('button', 'btn ghost', card, 'I already have a code') as HTMLButtonElement
-        have.onclick = () => this.renderLinkEntry(overlay, draw)
-      } else {
-        el('p', 'account-body', card, 'Your progress is saved. Keep this code somewhere safe - it is the only way back to it.')
-        const codeBox = el('div', 'account-code', card, st.linkCode ?? '••••-••••')
-        // a device that joined with a code holds the token but not the code
-        // itself, so fetch it rather than showing the player dots
-        if (!st.linkCode) {
-          void cloud.refreshLinkCode().then(c => { if (c) codeBox.textContent = c })
-        }
-        const copy = el('button', 'btn primary', card, 'Copy code') as HTMLButtonElement
-        copy.onclick = async () => {
-          try {
-            await navigator.clipboard.writeText(st.linkCode ?? '')
-            copy.textContent = 'Copied'
-          } catch {
-            // clipboard can be blocked; the code is on screen either way
-            codeBox.classList.add('flash')
-            copy.textContent = 'Select it above'
-          }
-          setTimeout(() => { copy.textContent = 'Copy code' }, 2200)
-        }
-        const rotate = el('button', 'btn ghost', card, 'Replace this code') as HTMLButtonElement
-        rotate.title = 'Invalidates the old code, in case you shared it'
-        rotate.onclick = async () => { rotate.disabled = true; await cloud.rotateLinkCode(); draw() }
-        const out = el('button', 'btn ghost', card, 'Stop saving on this device') as HTMLButtonElement
-        out.onclick = () => { cloud.signOut(); draw() }
-        if (st.lastError) el('div', 'account-warn', card, st.lastError)
-      }
-      this.renderBackupCode(card)
-      const close = el('button', 'btn ghost', card, 'Back') as HTMLButtonElement
-      close.onclick = () => { overlay.remove(); this.show('menu') }
-    }
-    draw()
-    overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); this.show('menu') } }
+    void import('./account.ts').then(({ renderAccountPanel }) =>
+      renderAccountPanel(this.root, this.save, restored => this.onRestore(restored), () => this.show('menu')))
   }
 
-  /**
-   * A save as a block of text the player owns outright.
-   *
-   * `exportSave` and `importSave` have existed and been tested for a long time
-   * with nothing anywhere calling them, so the offline half of "your progress
-   * cannot be lost" was a promise made only in a comment. This is the escape
-   * hatch for everyone the cloud does not suit: no account, no service, no
-   * network - paste the code somewhere and it will still restore in a year.
-   */
-  private renderBackupCode(card: HTMLElement): void {
-    const wrap = el('div', 'account-backup', card)
-    el('div', 'account-backup-head', wrap, 'Or keep a backup code')
-    el('p', 'account-body', wrap,
-      'A copy of your progress as text. It needs no account and no connection - paste it back on any device to restore.')
-    const row = el('div', 'account-backup-row', wrap)
-
-    const copy = el('button', 'btn ghost small', row, 'Copy my code') as HTMLButtonElement
-    copy.onclick = async () => {
-      const code = exportSave(this.save())
-      try {
-        await navigator.clipboard.writeText(code)
-        copy.textContent = 'Copied'
-      } catch {
-        const box = el('textarea', 'account-code', wrap) as HTMLTextAreaElement
-        box.value = code
-        box.readOnly = true
-        box.select()
-        copy.textContent = 'Select and copy'
-      }
-      setTimeout(() => { copy.textContent = 'Copy my code' }, 2500)
-    }
-
-    const paste = el('button', 'btn ghost small', row, 'Restore from a code') as HTMLButtonElement
-    const warn = el('div', 'account-warn', wrap, '')
-    paste.onclick = () => {
-      const box = el('textarea', 'account-code', wrap) as HTMLTextAreaElement
-      box.placeholder = 'Paste your backup code here'
-      box.focus()
-      paste.textContent = 'Restore'
-      paste.onclick = () => {
-        const restored = importSave(box.value)
-        if (!restored) { warn.textContent = 'That does not look like a Blockhold code.'; return }
-        // the same merge the cloud uses, so restoring never costs this device
-        // whatever it earned since the backup was taken
-        this.onRestore(applyCloud(this.save(), mergeSaves(toCloud(this.save()), toCloud(restored))))
-      }
-    }
-  }
-
-  private renderLinkEntry(overlay: HTMLElement, back: () => void): void {
-    const card = overlay.querySelector('.account-card') as HTMLElement
-    card.innerHTML = ''
-    el('h2', '', card, 'Enter your code')
-    el('p', 'account-body', card, 'Type the code from your other device. Anything you have already earned here is kept and merged in.')
-    const input = el('input', 'account-input', card) as HTMLInputElement
-    input.placeholder = 'ABCD-EFGH'
-    input.autocapitalize = 'characters'
-    input.spellcheck = false
-    input.maxLength = 12
-    const warn = el('div', 'account-warn', card, '')
-    const go = el('button', 'btn primary', card, 'Restore') as HTMLButtonElement
-    go.onclick = async () => {
-      go.disabled = true
-      warn.textContent = ''
-      const res = await cloud.linkDevice(input.value, this.save())
-      if (!res.ok || !res.save) {
-        warn.textContent = res.error ?? 'That did not work.'
-        go.disabled = false
-        return
-      }
-      const merged = applyCloud(this.save(), res.save)
-      this.onRestore(merged)
-      back()
-    }
-    const cancel = el('button', 'btn ghost', card, 'Back') as HTMLButtonElement
-    cancel.onclick = back
-    setTimeout(() => input.focus(), 40)
-  }
-
-  /** hands a restored save back to the game */
   onRestore: (save: SaveData) => void = () => {}
 
   /** how many watches are still to come; 0 outside the mode */

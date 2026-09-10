@@ -57,7 +57,7 @@ export interface World {
   heroBark?(text: string): void
   onEnemyKilled(e: Enemy): void
   onEnemyLeaked(e: Enemy): void
-  spawnEnemyAt(id: string, laneIndex: number, dist: number, opts?: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean }): void
+  spawnEnemyAt(id: string, laneIndex: number, dist: number, opts?: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, phaseHealthMult?: number, waveTag?: number, noReward?: boolean }): void
   fireProjectile(p: ProjectileSpec): void
   /** Second Wind: multiplier on hero respawn time (0.5 when bought) */
   readonly heroReviveMult: number

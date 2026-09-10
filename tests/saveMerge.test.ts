@@ -89,3 +89,50 @@ describe('validating what a client sends', () => {
     expect(sanitizeCloudSave(undefined).unlocked).toBe(1)
   })
 })
+
+describe('endgame progress migration between devices', () => {
+  it('unions authored honors monotonically across older, newer and repeated syncs', () => {
+    const older = base({ honors: ['hunt:ossuary:normal', 'hero:aldric:ossuary'], updatedAt: 100 })
+    const newer = base({ honors: ['hunt:ossuary:normal', 'mastery:seraph:empress'], updatedAt: 200 })
+    const expected = new Set(['hunt:ossuary:normal', 'hero:aldric:ossuary', 'mastery:seraph:empress'])
+    const union = mergeSaves(older, newer)
+    expect(new Set(union.honors)).toEqual(expected)
+    expect(new Set(mergeSaves(newer, older).honors)).toEqual(expected)
+    expect(new Set(mergeSaves(union, base({ updatedAt: 900 })).honors)).toEqual(expected)
+    expect(mergeSaves(union, union).honors?.length).toBe(3)
+  })
+
+  it('accepts only finite authored honors and deduplicates hostile repeated input', () => {
+    const all: string[] = []
+    for (const hunt of ['ossuary', 'empress']) {
+      for (const difficulty of ['casual', 'normal', 'veteran']) all.push(`hunt:${hunt}:${difficulty}`)
+      for (const hero of ['aldric', 'liora', 'zephyra']) all.push(`hero:${hero}:${hunt}`)
+      for (const tower of ['seraph', 'barracks']) all.push(`mastery:${tower}:${hunt}`)
+    }
+    const input = [...Array(100).fill(all).flat(), 'hunt:unknown:normal', 'hero:fake:ossuary', 'mastery:arrow:empress', '<script>', null, 5]
+    const clean = sanitizeCloudSave({ honors: input }).honors!
+    expect(new Set(clean)).toEqual(new Set(all))
+    expect(clean).toHaveLength(16)
+    expect(clean.length).toBeLessThanOrEqual(32)
+    for (const bad of [null, {}, 'hunt:ossuary:normal', 42]) expect(sanitizeCloudSave({ honors: bad }).honors).toEqual([])
+  })
+
+  it('takes the newest specialization choices including deliberately unequipping', () => {
+    const old = base({ heroPaths: { aldric: 'bulwark', liora: 'hawkeye' }, updatedAt: 100 })
+    const newer = base({ heroPaths: { aldric: 'vanguard' }, updatedAt: 200 })
+    expect(mergeSaves(old, newer).heroPaths).toEqual({ aldric: 'vanguard' })
+    expect(mergeSaves(newer, old).heroPaths).toEqual({ aldric: 'vanguard' })
+    const unequipped = base({ heroPaths: {}, updatedAt: 300 })
+    expect(mergeSaves(unequipped, newer).heroPaths).toEqual({})
+    expect(mergeSaves(old, mergeSaves(newer, unequipped)).heroPaths).toEqual({})
+  })
+
+  it('rejects invented heroes and paths and defaults legacy saves safely', () => {
+    const old = sanitizeCloudSave({ stars: { greenhollow: 3 }, xp: 725 })
+    expect(old.honors).toEqual([])
+    expect(old.heroPaths).toEqual({})
+    expect(old.xp).toBe(725)
+    const clean = sanitizeCloudSave({ heroPaths: { aldric: 'hawkeye', liora: 'gale', zephyra: 'riftbinder', fake: 'bulwark' } })
+    expect(clean.heroPaths).toEqual({ liora: 'gale', zephyra: 'riftbinder' })
+  })
+})

@@ -1,3 +1,4 @@
+import { HUNTS, huntAccess } from '../game/hunts.ts'
 import type { SaveData } from '../core/save.ts'
 import type { Difficulty, HeroId } from '../game/types.ts'
 import { levels } from '../game/levels.ts'
@@ -131,6 +132,11 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
       if (lvl.id === setup.levelId) o.selected = true
       sel.appendChild(o)
     })
+    if (huntAccess(save)) for (const hunt of HUNTS) {
+      const o = document.createElement('option')
+      o.value = `hunt-${hunt.id}`; o.textContent = `Hunt · ${hunt.name}`
+      o.selected = o.value === setup.levelId; sel.append(o)
+    }
     sel.onchange = () => { setup.levelId = sel.value; sendSetup() }
     el('div', 'diff-sub', card, 'Champion')
     const heroRow = el('div', 'mode-row', card)
@@ -151,7 +157,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
     paintStart()
     start.onclick = () => {
       setup.seed = newRunSeed()
-      setup.loadout = { armory: { ...save.armory }, xp: save.xp }
+      setup.loadout = { armory: { ...save.armory }, xp: save.xp, honors: [...(save.honors ?? [])], heroPaths: { ...save.heroPaths } }
       void session.send('start', setup)
     }
     // the first setup goes out as soon as the room has a picture to send
@@ -162,7 +168,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
     const paintPlan = () => {
       const st = session.setup
       if (!st) { plan.textContent = 'The host is choosing…'; return }
-      const lvl = levels.find(l => l.id === st.levelId)
+      const lvl = levels.find(l => l.id === st.levelId) ?? HUNTS.find(h => `hunt-${h.id}` === st.levelId)
       plan.innerHTML = `${icon('swords')} <b>${lvl?.name ?? st.levelId}</b> · ${difficultyMods(st.levelId, st.difficulty).name} · ${HERO_DEFS[st.hero]?.name ?? st.hero}`
     }
     paintPlan()
@@ -177,8 +183,8 @@ let coopPaint: () => void = () => {}
 
 function defaultCoopSetup(save: SaveData): CoopSetup {
   const last = levels[Math.max(0, Math.min(save.unlocked, levels.length) - 1)]
-  const hero = (isUnlocked(save, 'hero', save.lastHero as HeroId) ? save.lastHero : 'aldric') as HeroId
-  return { levelId: last.id, difficulty: 'normal', hero, seed: 0, loadout: { armory: { ...save.armory }, xp: save.xp } }
+  const hero = (Object.hasOwn(HERO_DEFS, save.lastHero) && isUnlocked(save, 'hero', save.lastHero as HeroId) ? save.lastHero : 'aldric') as HeroId
+  return { levelId: last.id, difficulty: 'normal', hero, seed: 0, loadout: { armory: { ...save.armory }, xp: save.xp, honors: [...(save.honors ?? [])], heroPaths: { ...save.heroPaths } } }
 }
 
 function attachCoop(api: LobbyApi): void {
@@ -201,4 +207,3 @@ function attachCoop(api: LobbyApi): void {
   })
   session.connect()
 }
-

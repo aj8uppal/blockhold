@@ -1,3 +1,5 @@
+import { readSession } from './game/session.ts'
+import { huntLevel, huntAccess, huntById } from './game/hunts.ts'
 import { requestDurableStorage, writeSave } from './core/save.ts'
 import { hasWebGL, safeLocal, showFatal } from './core/boot.ts'
 import { cloud } from './core/cloud.ts'
@@ -119,8 +121,14 @@ if (invite) setTimeout(() => screens.show('coop', { coopCode: invite }), 0)
 
 screens.onCoopStart = (session, setup) => {
   enterBattle()
-  game.startLevel(levelById(setup.levelId), setup.difficulty, setup.hero, 'campaign',
-    { seed: setup.seed, coop: { session, loadout: setup.loadout } })
+  game.startLevel(setup.levelId.startsWith('hunt-') ? huntLevel(huntById(setup.levelId.slice(5))!.id) : levelById(setup.levelId), setup.difficulty, setup.hero, 'campaign',
+    { hunt: setup.levelId.startsWith('hunt-') ? huntById(setup.levelId.slice(5))?.id : undefined, seed: setup.seed, coop: { session, loadout: setup.loadout } })
+}
+
+screens.onPlayHunt = (id, difficulty, hero) => {
+  if (!huntAccess(game.save)) return
+  enterBattle()
+  game.startLevel(huntLevel(id), difficulty, hero, 'campaign', { hunt: id })
 }
 
 screens.onPlayTrial = (id, kind) => {
@@ -241,6 +249,14 @@ screens.onHoldTheLine = () => {
   game.holdTheLine()
 }
 screens.onResume = () => {
+  const session = readSession()
+  if (session) {
+    enterBattle()
+    void game.resumeSession(session).then(ok => {
+      if (!ok) { screens.show('menu'); hud.setChrome(false); hud.showToast('Could not restore this battle. Your saved battle has been kept.', 6) }
+    })
+    return
+  }
   const cp = readCheckpoint()
   if (!cp) return
   // stale checkpoints outlive the build that wrote them; drop one whose level
@@ -267,7 +283,7 @@ hud.onHome = () => {
   game.showMenuBackdrop()
   hud.reset()
   hud.setChrome(false)
-  screens.show('levels')
+  screens.show('menu')
 }
 game.onPhaseChange = (phase, stars) => {
   // a finished run is exactly when progress is worth getting off this device
@@ -456,8 +472,13 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 // Backgrounding a tab should not cost the player a run: a phone call, a tab
 // switch or a lock screen now pauses the battle instead of letting it run on.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && game.phase === 'playing' && !game.paused) game.togglePause()
+  if (document.hidden && game.phase === 'playing') {
+    if (game.canSaveSession) game.saveSession()
+    if (!game.paused) game.togglePause()
+  }
 })
+
+window.addEventListener('pagehide', () => { if (game.canSaveSession) game.saveSession() })
 
 // best-effort storage really is evicted; ask to keep the campaign
 void requestDurableStorage()
@@ -484,7 +505,11 @@ function syncNow(): void {
     writeSave(game.save)
   })
 }
-if (cloud.signedIn) syncNow()
+void cloud.finishSignIn(game.save).then(merged => {
+  if (merged) { Object.assign(game.save, merged); writeSave(game.save); if (game.phase === 'idle') screens.show('menu'); hud.showToast('Signed in. Your progress is synced.', 4) }
+  else if (cloud.status().lastError) hud.showToast(cloud.status().lastError!, 6)
+  if (cloud.signedIn) syncNow()
+})
 window.addEventListener('error', (e) => telemetry.track({ type: 'error', message: String(e.message).slice(0, 200) }))
 // a rejected promise never reached the error handler above, so every failure in
 // an async path - sync, capture, fullscreen - was invisible in production

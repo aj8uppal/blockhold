@@ -21,7 +21,7 @@ export interface CoopSetup {
   hero: HeroId
   seed: number
   /** the host's Armory and ladder, so both boards play by the same loadout */
-  loadout: { armory: Record<string, number>, xp: number }
+  loadout: { armory: Record<string, number>, xp: number, honors?: string[], heroPaths?: Record<string, string> }
 }
 
 export type CoopEvent =

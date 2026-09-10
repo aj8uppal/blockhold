@@ -61,6 +61,7 @@ export type CapstoneSignature =
   | 'skyfall'          // a flyer struck is knocked from the air
   | 'greatbolt'        // every fourth shot pierces the whole line at double weight
   | 'dawnfall'         // on a timer, a column of light falls on the strongest foe in reach
+  | 'solarStrike' | 'eventHorizon' | 'legionStandard'
   | 'eclipse'          // on a timer, a nova stuns everything in reach and strips its defenses
 
 export interface TowerLevelDef {

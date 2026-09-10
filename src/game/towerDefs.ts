@@ -1,3 +1,4 @@
+import { mythicFor } from './mythics.ts'
 import { TowerTree, TowerKind, TowerLevelDef, SoldierDef } from './types.ts'
 
 export const towerTrees: Record<TowerKind, TowerTree> = {
@@ -418,6 +419,7 @@ export function investedGold(kind: TowerKind, level: number, branch: 0 | 1 | nul
   for (let i = 0; i < Math.min(level, 3); i++) sum += tree.levels[i].cost
   if (level >= 4 && branch !== null) sum += tree.branches[branch].cost
   if (level >= 5 && branch !== null) sum += tree.capstones[branch].cost
+  if (level >= 6 && branch !== null) sum += mythicFor(kind, branch)?.cost ?? 0
   return sum
 }
 

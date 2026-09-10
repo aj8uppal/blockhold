@@ -60,7 +60,7 @@ test('Seraph beams render and the panel shows target growth with upgrades', asyn
   await startBattle(page)
   const hitCount = await page.evaluate(() => {
     const game = window.vg.game as unknown as Game
-    game.save.xp = 9264
+    game.roster.xp = 9264
     game.gold = 30000
     const plot = game.terrain!.plots.find(p => !p.occupied)!
     game.buildTower('seraph', plot)
@@ -89,7 +89,7 @@ test('Beacon range and high-ground benefit are visible in the tower panel', asyn
   await startBattle(page)
   const reach = await page.evaluate(() => {
     const game = window.vg.game as unknown as Game
-    game.save.xp = 9264
+    game.roster.xp = 9264
     game.gold = 10000
     const plot = game.terrain!.plots.find(p => !p.occupied && !game.terrain!.isOnHill(...p.cell))!
     game.buildTower('beacon', plot)
@@ -109,7 +109,7 @@ test('elevated range follows the ground, raising is disabled, and preview links 
   const result = await page.evaluate(() => {
     const g = window.vg.game as unknown as Game
     window.vg.screens.onPlayLevel('sunderfall', 'normal', 'aldric', 'campaign')
-    g.save.xp = 10000; g.gold = 10000
+    g.roster.xp = 10000; g.gold = 10000
     const plot = g.terrain!.plots.find(p => p.cell[0] === 19 && p.cell[1] === 6)!
     g.buildTower('beacon', plot)
     const before = g.gold

@@ -1,3 +1,5 @@
+import { huntById, huntLevel, huntClearGold, awardHunt, heroHunts, masteryReady, masteryHint, type HuntDef, type HuntId } from './hunts.ts'
+import { HERO_PATHS } from './heroPaths.ts'
 import * as THREE from 'three'
 import { Engine } from '../core/engine.ts'
 import { audio, SfxName } from '../core/audio.ts'
@@ -46,6 +48,7 @@ import { randRange, simChance, setSimSeed, pick } from '../core/utils.ts'
 import { newRunSeed, runStamp, RULESET_VERSION, type RunStamp } from './ruleset.ts'
 import { writeCheckpoint, clearCheckpoint, readCheckpoint, type Checkpoint } from './checkpoint.ts'
 import { ReplayLog } from './replay.ts'
+import { writeSession, clearSession, parseSession, SESSION_MAX_COMMANDS, SESSION_MAX_TICKS, type BattleSession } from './session.ts'
 import { canRecordTape } from '../core/captureSupport.ts'
 import { attachDebris, shatter, updateDebris, clearDebris, type DeathFlavor } from './debris.ts'
 
@@ -69,6 +72,136 @@ export class Game implements World {
   engine: Engine
   hud!: HUD
   save: SaveData
+  private recoverySave: SaveData | null = null
+  private frozenLoadout: SaveData | null = null
+  private journal: BattleSession | null = null
+  private sessionTick = 0
+  private sessionSaveT = 0
+  private sessionWriteWarned = false
+  private recovering = false
+  private legacyCheckpointRun = false
+
+  private get battleSave(): SaveData { return this.recoverySave ?? this.save }
+
+  private persistProgress(): boolean { return this.recovering || writeSave(this.save) }
+
+  private track(event: Parameters<typeof telemetry.track>[0]): void {
+    if (!this.recovering) telemetry.track(event)
+  }
+
+  get canSaveSession(): boolean {
+    return !this.recovering && !!this.journal && !this.coop && this.phase === 'playing'
+      && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial
+      && this.sessionTick <= SESSION_MAX_TICKS && this.journal.commands.length <= SESSION_MAX_COMMANDS
+  }
+
+  private sessionStateHash(): number {
+    const values = [this.sessionTick, this.gold, this.lives, this.shards, this.time, this.killCount,
+      this.goldEarned, this.shardsEarned, this.liveXp, this.perfectWaves, this.leaks,
+      this.waves?.waveIndex ?? -1, this.waves?.totalWaves ?? 0, this.isFreeplay ? 1 : 0,
+      this.abilities.meteor.cooldown, this.abilities.reinforce.cooldown,
+      this.enemies.length, this.towers.length, this.soldiers.length, this.projectiles.length, this.pendingCasts.length]
+    for (const e of this.enemies) values.push(e.hp, e.maxHp, e.dist, e.pos.x, e.pos.y, e.pos.z, e.armor, e.magicResistNow, e.stunUntil, e.slowUntil)
+    for (const t of this.towers) values.push(t.plot.index, t.level, t.branch ?? -1, t.damage, t.kills, t.soldiers.length)
+    for (const s of this.soldiers) values.push(s.hp, s.maxHp, s.group.position.x, s.group.position.y, s.group.position.z, s.dead ? 1 : 0)
+    if (this.hero) values.push(this.hero.level, this.hero.xp, this.hero.signatureRank, this.hero.abilityCooldown, this.hero.respawnCountdown)
+    return stateHash(values)
+  }
+
+  /** Save the exact completed tick, including inputs issued since that tick. */
+  saveSession(): boolean {
+    if (!this.canSaveSession || !this.journal) return false
+    const saved = writeSession({ ...this.journal, tick: this.sessionTick, savedAt: Date.now(),
+      wave: (this.waves?.waveIndex ?? -1) + 1, stateHash: this.sessionStateHash() })
+    if (!saved && !this.sessionWriteWarned) {
+      this.sessionWriteWarned = true
+      this.hud.showToast('Could not save this battle. Your previous saved battle is still available.', 5)
+    }
+    return saved
+  }
+
+  /** Rebuild in bounded batches without spending account rewards a second time. */
+  async resumeSession(input: BattleSession): Promise<boolean> {
+    if (this.recovering || this.coop) return false
+    const session = parseSession(input)
+    if (!session) return false
+    const level = session.hunt ? huntLevel(session.hunt) : levels.find(l => l.id === session.levelId)
+    if (!level || level.id !== session.levelId) return false
+    const liveHud = this.hud
+    let succeeded = false
+    this.recovering = true
+    this.recoverySave = JSON.parse(JSON.stringify(session.initialSave)) as SaveData
+    // Keep game.save bound to the live account throughout asynchronous replay.
+    // Cloud merges can still arrive there without corrupting the frozen run.
+    this.hud = new Proxy(liveHud, { get(target, key) {
+      const value = Reflect.get(target, key)
+      return typeof value === 'function' ? () => undefined : value
+    } })
+    audio.setMuted(true)
+    audio.setMusicMuted(true)
+    this.engine.cancelCinematic()
+    try {
+      this.isWatches = false
+      this.startLevel(level, session.difficulty, session.heroId, session.mode, { seed: session.seed, hunt: session.hunt })
+      this.onboarding = null
+      let next = 0
+      while (true) {
+        const batchStart = performance.now()
+        do {
+          while (next < session.commands.length && session.commands[next].tick === this.sessionTick) {
+            this.applyCoopCommand(session.commands[next++].cmd, -1)
+          }
+          if (this.sessionTick === session.tick) break
+          if (this.phase !== 'playing' || this.sessionTick > session.tick) throw new Error('Replay ended before the saved tick')
+          this.simStep(1 / 60)
+        } while (performance.now() - batchStart < 12)
+        if (this.sessionTick === session.tick) {
+          // A batch can finish immediately after its last simulation step.
+          while (next < session.commands.length && session.commands[next].tick === this.sessionTick) {
+            this.applyCoopCommand(session.commands[next++].cmd, -1)
+          }
+          break
+        }
+        liveHud.showToast(`Restoring battle… ${Math.floor(this.sessionTick / Math.max(1, session.tick) * 100)}%`, 2)
+        await new Promise<void>(resolve => setTimeout(resolve, 0))
+      }
+      if (next !== session.commands.length || this.phase !== 'playing'
+        || (this.waves?.waveIndex ?? -1) + 1 !== session.wave
+        || (session.stateHash !== undefined && this.sessionStateHash() !== session.stateHash)) {
+        throw new Error('Saved battle did not reproduce its recorded state')
+      }
+      this.journal = { ...session, commands: session.commands.map(entry => ({ tick: entry.tick, cmd: { ...entry.cmd } })) }
+      this.sessionSaveT = 0
+      this.sessionWriteWarned = false
+      succeeded = true
+    } catch {
+      this.disposeLevel()
+    } finally {
+      this.hud = liveHud
+      this.recoverySave = null
+      this.recovering = false
+      this.pendingFx = []
+      this.hitstopT = 0
+      this.simAccumulator = 0
+      this.engine.cancelCinematic()
+      audio.setMuted(this.save.sfxMuted)
+      audio.setMusicMuted(this.save.musicMuted)
+    }
+    if (!succeeded) {
+      liveHud.showToast('This saved battle could not be restored. Its saved data has been kept.', 6)
+      return false
+    }
+    this.paused = true
+    liveHud.setChrome(true)
+    if (!this.recovering) this.onPhaseChange('playing')
+    liveHud.setPaused(true)
+    liveHud.refresh(this)
+    liveHud.showToast('Battle restored exactly. Resume when you are ready.', 4)
+    if (!this.recovering) audio.startMusic()
+    this.track({ type: 'battle_start', level: level.id, difficulty: session.difficulty, hero: session.heroId,
+      mode: session.hunt ? 'hunt' : this.isFreeplay ? 'freeplay' : session.mode, seed: session.seed, resumed: true })
+    return true
+  }
 
   // world state
   dynamic = new THREE.Group()
@@ -220,7 +353,7 @@ export class Game implements World {
 
   // ---------------- World impl ----------------
 
-  sfx(name: SfxName, volume = 1): void { audio.play(name, volume) }
+  sfx(name: SfxName, volume = 1): void { if (!this.recovering) audio.play(name, volume) }
 
   addGold(amount: number, x?: number, y?: number, z?: number): void {
     this.gold += amount
@@ -231,6 +364,7 @@ export class Game implements World {
   }
 
   floater(x: number, y: number, z: number, text: string, cls: string): void {
+    if (this.recovering) return
     const p = this.projectToScreen(x, y, z)
     if (p) this.hud.spawnFloater(p.x, p.y, text, cls)
   }
@@ -342,7 +476,7 @@ export class Game implements World {
     const warded = e.def.boss && hasArmory(this.loadout, 'veilward')
     const cost = e.def.boss ? (warded ? 10 : this.lives) : e.def.livesCost
     const fatal = this.lives - cost <= 0
-    if (fatal) this.engine.cinematic(e.pos.x, e.pos.z, 9, 2.4, 0.7)
+    if (fatal && !this.recovering) this.engine.cinematic(e.pos.x, e.pos.z, 9, 2.4, 0.7)
     else if (warded) this.hud.showToast('The Veilward holds - the gate stands, at a price', 3)
     const before = this.lives
     this.lives = Math.max(0, this.lives - cost)
@@ -423,25 +557,25 @@ export class Game implements World {
     return difficultyMods(this.level?.id ?? null, this.difficulty, this.modeKey())
   }
 
-  spawnEnemyAt(id: string, laneIndex: number, dist: number, opts: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, waveTag?: number, noReward?: boolean, hpMult?: number, affix?: string, raised?: boolean } = {}): void {
+  spawnEnemyAt(id: string, laneIndex: number, dist: number, opts: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, phaseHealthMult?: number, waveTag?: number, noReward?: boolean, hpMult?: number, affix?: string, raised?: boolean } = {}): void {
     const def = enemyDef(id)
     // interaction enemies teach themselves the first time they appear
     // First meeting with anything notable: stop, explain it, and never
     // interrupt for that enemy again. A boss camera move is arresting once and
     // irritating by the fourth Juggernaut.
-    const firstMeeting = isNotable(def) && !this.save.seenEnemies.includes(id)
+    const firstMeeting = isNotable(def) && !this.battleSave.seenEnemies.includes(id)
     // a boss's entrance camera waits for the dossier to close: it used to run
     // behind the modal, and the player came back to a camera already settling
     let dossierShown = false
     if (firstMeeting) {
-      this.save.seenEnemies.push(id)
-      writeSave(this.save)
+      this.battleSave.seenEnemies.push(id)
+      this.persistProgress()
       this.mechanicsSeen.add(id)
       // in co-op a modal would stop one board and not the other; the room's
       // clock keeps running, so the introduction is a line, not a pause
       if (this.coop) {
         this.hud.showToast(`${def.name}: ${counterFor(def)}`, 5)
-      } else if (!this.paused) {
+      } else if (!this.paused && !this.recovering) {
         this.paused = true
         dossierShown = true
         this.hud.showDossier(def, () => {
@@ -460,8 +594,8 @@ export class Game implements World {
     const affix = ladderAffix ?? (elite ? pick(AFFIX_IDS) : null)
     const hpScale = opts.hpScale ?? (this.endlessHpScale() * this.freeplayHpScale())
     const e = new Enemy(def, this.lanes[laneIndex], laneIndex, dist, {
-      hpMult: this.mods().enemyHp * (surged ? 1.3 : 1)
-        * hpScale * this.campaignHpScale() * (opts.hpMult ?? 1),
+      hpMult: opts.phaseHealthMult ?? (this.mods().enemyHp * (surged ? 1.3 : 1)
+        * hpScale * this.campaignHpScale() * (opts.hpMult ?? 1)),
       toughness: this.endlessToughness(),
       speedMult: surged ? 1.12 : 1,
       elite: elite || !!ladderAffix,
@@ -471,12 +605,12 @@ export class Game implements World {
       noReward: opts.noReward ?? false,
       raised: opts.raised ?? false,
     })
-    e.phaseHpScale = hpScale
+    e.phaseHpScale = e.maxHp / def.hp
     this.enemies.push(e)
     this.dynamic.add(e.group)
     // stage a boss's arrival the first time the player ever sees it; after
     // that they know what it is and the camera should stay out of the way
-    if (def.boss && this.phase === 'playing' && firstMeeting && !dossierShown) {
+    if (!this.recovering && def.boss && this.phase === 'playing' && firstMeeting && !dossierShown) {
       this.engine.cinematic(e.pos.x, e.pos.z, 8.5, 2.0, 0.72)
       this.engine.addShake(0.16)
       this.impact('heavy')
@@ -484,7 +618,9 @@ export class Game implements World {
       this.hud.showBanner(`${def.name.toUpperCase()}`, 'final')
       this.engine.addShake(0.12)
     }
-    if (e.waveTag >= 0) {
+    // A replacement phase occupies its predecessor's unresolved wave slot.
+    // Counting it as a new spawn would leave that wave permanently one short.
+    if (e.waveTag >= 0 && opts.phaseHealthMult === undefined) {
       const track = this.waveTracks.get(e.waveTag) ?? { spawned: 0, gone: 0, leaked: false }
       track.spawned++
       this.waveTracks.set(e.waveTag, track)
@@ -504,7 +640,7 @@ export class Game implements World {
       // Clearing the wave funds a recovery even when one foe got through.
       // Perfect defense still earns its separate, escalating streak bonus.
       const waveNo = e.waveTag + 1
-      const clearBonus = 10 + waveNo * 3
+      const clearBonus = 10 + waveNo * 3 + (this.hunt ? huntClearGold(waveNo) : 0)
       this.addGold(clearBonus)
       if (track.leaked) {
         const end = e.lane.sample(e.lane.length - 0.5)
@@ -535,7 +671,7 @@ export class Game implements World {
           const topUp = Math.max(0, this.waveXpValue() - paid)
           if (topUp > 0.01) { this.liveXp += topUp; this.hud.xpTick(topUp) }
         }
-        telemetry.track({ type: 'wave_cleared', level: this.level.id, wave: e.waveTag + 1, lives: this.lives, leaked: false })
+        this.track({ type: 'wave_cleared', level: this.level.id, wave: e.waveTag + 1, lives: this.lives, leaked: false })
         if (this.defenseStreak > 0 && this.defenseStreak % 5 === 0) {
           // this is the unbroken streak, not the wave number: saying "15 WAVES
           // HELD" on wave 19 reads as a miscount rather than a streak
@@ -563,9 +699,12 @@ export class Game implements World {
   private onboarding: OnboardingDirector | null = null
   /** per-wave result, in order, for the shareable daily block */
   waveOutcomes: ('held' | 'leaked')[] = []
+  hunt: HuntDef | null = null
+  private huntHonors: string[] = []
   isDaily = false
   dailyDay = 0
   private maybeCheckpoint(): void {
+    if (!this.legacyCheckpointRun || this.recovering || this.journal || this.hunt || this.hero?.hasActiveField) return
     if (this.phase !== 'playing' || !this.level || !this.waves) return
     // Only campaign and endless boards can be resumed. The Daily, the Watches
     // and the Bellfoundry all run on `dailyLevel()`, whose id is `daily` and is
@@ -648,8 +787,8 @@ export class Game implements World {
     if (!o) return
     if (o.finished) {
       this.onboarding = null
-      this.save.taughtBasics = true
-      writeSave(this.save)
+      this.battleSave.taughtBasics = true
+      this.persistProgress()
       this.hud.setCoachMark(null)
       this.terrain?.pulsePlots(false)
       return
@@ -796,7 +935,7 @@ export class Game implements World {
     h.signatureRank++
     this.sfx('upgrade')
     this.particles.healSparkle(h.group.position.x, h.group.position.y + 1, h.group.position.z)
-    this.hud.showToast(`${h.heroDef.ability.name} sharpened to rank ${h.signatureRank}`, 3)
+    this.hud.showToast(`${h.abilityName} sharpened to rank ${h.signatureRank}`, 3)
     this.hud.openHeroPanel(h)
   }
 
@@ -808,7 +947,7 @@ export class Game implements World {
     if (this.route({ kind: 'heroSig' })) return
     if (!h.castSignature(this)) {
       this.sfx('error')
-      this.hud.showToast(`${h.heroDef.ability.name}: nothing in reach`, 1.6)
+      this.hud.showToast(`${h.abilityName}: nothing in reach`, 1.6)
     }
   }
 
@@ -821,6 +960,7 @@ export class Game implements World {
 
   /** the first-meeting camera for a boss, run once its dossier has closed */
   private bossEntrance(def: Enemy['def'], laneIndex: number, dist: number): void {
+    if (this.recovering) return
     const boss = this.enemies.find(e => e.alive && e.def === def) ?? null
     const at = boss ? boss.pos : this.lanes[laneIndex].sample(dist)
     this.engine.cinematic(at.x, at.z, 8.5, 2.0, 0.72)
@@ -906,11 +1046,11 @@ export class Game implements World {
   private coopWaitingT = 0
 
   /** the save unlocks and the Armory are read from: the host's in co-op */
-  get roster(): SaveData { return this.coopLoadout ?? this.save }
+  get roster(): SaveData { return this.coopLoadout ?? this.frozenLoadout ?? this.battleSave }
 
   /** true when this client is the author of what is being applied (or nothing is) */
   private get localAction(): boolean {
-    return !this.applying || this.applyingSeat === (this.coop?.seat ?? -1)
+    return !this.recovering && (!this.applying || this.applyingSeat === (this.coop?.seat ?? -1))
   }
 
   /**
@@ -919,7 +1059,19 @@ export class Game implements World {
    * co-op, or the command is arriving back from the room to be applied.
    */
   private route(cmd: CoopCommand): boolean {
-    if (!this.coop || this.applying) return false
+    if (this.applying) return false
+    if (this.recovering) return true
+    if (!this.coop) {
+      if (this.journal && (this.phase === 'playing' || cmd.kind === 'hold')) {
+        if (this.journal.commands.length >= SESSION_MAX_COMMANDS || this.sessionTick > SESSION_MAX_TICKS) {
+          this.journal = null
+          this.hud.showToast('This battle has reached the resume limit. Your last saved point is still available.', 6)
+        } else {
+          this.journal.commands.push({ tick: this.sessionTick, cmd: { ...cmd } })
+        }
+      }
+      return false
+    }
     if (this.phase !== 'playing' && cmd.kind !== 'hold') return false
     void this.coop.send('cmd', cmd)
     return true
@@ -989,6 +1141,7 @@ export class Game implements World {
         case 'upgrade': if (t) this.upgradeTower(t, cmd.opt); break
         case 'sell': if (t) this.sellTower(t); break
         case 'ascend': if (t) this.ascendTower(t, cmd.perk); break
+        case 'mythic': if (t) this.activateMythic(t); break
         case 'overcharge': if (t) this.overchargeTower(t); break
         case 'policy': if (t) this.cycleTargetPolicy(t); break
         case 'trackline': if (t) this.clearHoldLine(t); break
@@ -1090,7 +1243,7 @@ export class Game implements World {
   /** the save the Armory is read from: the player's, the host's in co-op, or a blank one in a trial */
   private get loadout(): SaveData {
     if (this.coopLoadout) return this.coopLoadout
-    if (!this.trial) return this.save
+    if (!this.trial) return this.frozenLoadout ?? this.battleSave
     if (!this.blankLoadout || this.blankLoadout.xp !== this.save.xp) this.blankLoadout = { ...this.save, armory: {} }
     return this.blankLoadout
   }
@@ -1170,14 +1323,21 @@ export class Game implements World {
     difficulty: Difficulty = 'normal',
     heroId: HeroId = 'aldric',
     mode: 'campaign' | 'endless' = 'campaign',
-    opts: { seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean, trial?: TrialDef, coop?: { session: CoopSession, loadout: { armory: Record<string, number>, xp: number } } } = {},
+    opts: { hunt?: HuntId, seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean, trial?: TrialDef, coop?: { session: CoopSession, loadout: { armory: Record<string, number>, xp: number, honors?: string[], heroPaths?: Record<string, string> } } } = {},
   ): void {
+    if (!Object.hasOwn(HERO_DEFS, heroId)) heroId = 'aldric'
     this.disposeLevel()
+    if (!this.recovering) { clearSession(); if (!opts.resume) clearCheckpoint() }
+    this.sessionTick = 0
+    this.sessionSaveT = 0
+    this.sessionWriteWarned = false
+    this.legacyCheckpointRun = !!opts.resume
+    this.frozenLoadout = JSON.parse(JSON.stringify(this.battleSave)) as SaveData
     // co-op: the room's clock and the host's loadout, for everyone
     if (opts.coop) {
       if (this.coop && this.coop !== opts.coop.session) this.leaveCoop()
       this.coop = opts.coop.session
-      this.coopLoadout = { ...this.save, armory: { ...opts.coop.loadout.armory }, xp: opts.coop.loadout.xp }
+      this.coopLoadout = { ...this.save, armory: { ...opts.coop.loadout.armory }, xp: opts.coop.loadout.xp, honors: [...(opts.coop.loadout.honors ?? [])], heroPaths: { ...opts.coop.loadout.heroPaths } }
       this.coopUnsub?.()
       this.coopUnsub = this.coop.on(e => this.onCoopEvent(e))
       this.coopMarkers = []
@@ -1197,6 +1357,8 @@ export class Game implements World {
     setSimSeed(this.runSeed)
     this.isBellfoundry = opts.bellfoundry ?? false
     this.isWatches = opts.watches ?? this.isWatches
+    this.hunt = opts.hunt ? huntById(opts.hunt) ?? null : null
+    this.huntHonors = []
     this.isDaily = opts.daily !== undefined
     this.dailyDay = opts.daily ?? 0
     this.isFreeplay = false
@@ -1205,12 +1367,12 @@ export class Game implements World {
     this.trial = opts.trial ?? null
     this.blankLoadout = null
     if (this.trial) heroId = 'aldric'   // a trial is fought by the first champion, at level one
-    this.level = this.trial ? trialLevel(level, this.trial.kind, this.trial.startGold)
+    this.level = this.hunt ? huntLevel(this.hunt.id) : this.trial ? trialLevel(level, this.trial.kind, this.trial.startGold)
       : this.isEndless ? { ...level, waves: generateEndlessWaves(level, undefined, this.runSeed) } : level
     level = this.level
     this.difficulty = difficulty
-    this.save.lastHero = heroId
-    writeSave(this.save)
+    this.battleSave.lastHero = heroId
+    this.persistProgress()
     this.goldEarned = 0
     this.shardsEarned = 0
     this.defenseStreak = 0
@@ -1302,18 +1464,22 @@ export class Game implements World {
     const hs = lane0.sample(lane0.length * 0.62, 0.7)
     const heroDef = HERO_DEFS[heroId] ?? HERO_DEFS.aldric
     this.hero = new Hero(heroDef, new THREE.Vector3(hs.x, 0, hs.z))
+    if (!this.trial && !this.isDaily && !this.isWatches && !this.isBellfoundry) {
+      const path = this.roster.heroPaths?.[heroId]
+      const index = HERO_PATHS[heroId].findIndex(p => p.id === path)
+      if (index >= 0 && heroHunts(this.roster, heroId) >= index + 1) this.hero.setSpecialization(path ?? null)
+    }
     this.soldiers.push(this.hero)
     this.dynamic.add(this.hero.group)
 
     this.hazard = level.hazard ? createHazard(level.hazard, level.id) : null
     this.buildLanePreview()
     this.phase = 'playing'
-    this.onPhaseChange('playing')
+    if (!this.recovering) this.onPhaseChange('playing')
     this.hud.setSpeed(1)
-    audio.init()
-    audio.resume()
-    audio.startMusic()
-    telemetry.track({
+    if (!this.recovering) { audio.init(); audio.resume() }
+    if (!this.recovering) audio.startMusic()
+    this.track({
       type: 'battle_start',
       level: level.id, difficulty, hero: heroId,
       mode: this.coop ? 'coop' : this.isEndless ? 'endless' : 'campaign',
@@ -1322,12 +1488,21 @@ export class Game implements World {
     this.firstBuildAt = -1
     this.heroHasMoved = false
     // the guided opening runs once, on a player's very first battle
-    this.onboarding = (!this.save.taughtBasics && !this.isDaily && !this.isWatches && !this.trial && !this.coop)
+    this.onboarding = (!this.recovering && !this.battleSave.taughtBasics && !this.isDaily && !this.isWatches && !this.trial && !this.hunt && !this.coop)
       ? new OnboardingDirector() : null
     if (this.isWatches) this.raiseGhosts()
     if (resume) this.applyCheckpoint(resume)
     else if (this.trial) this.hud.showToast(this.trial.rules, 7)
     else if (level.intro) this.hud.showToast(level.intro, 5)
+    if (!resume && !this.coop && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial) {
+      this.journal = {
+        ruleset: RULESET_VERSION, levelId: level.id, difficulty, heroId, mode,
+        ...(this.hunt ? { hunt: this.hunt.id } : {}), seed: this.runSeed, tick: 0,
+        commands: [], initialSave: JSON.parse(JSON.stringify(this.frozenLoadout)) as SaveData,
+        savedAt: Date.now(), wave: 0,
+      }
+      if (!this.recovering) this.saveSession()
+    }
   }
 
   /**
@@ -1341,7 +1516,7 @@ export class Game implements World {
    * where the campaign left it rather than restarting.
    */
   holdTheLine(): void {
-    if (this.phase !== 'victory' || !this.level || !this.waves || this.isEndless || this.isDaily || this.isWatches || this.isBellfoundry || this.trial) return
+    if (this.phase !== 'victory' || !this.level || !this.waves || this.isEndless || this.isDaily || this.isWatches || this.isBellfoundry || this.trial || this.hunt) return
     if (this.route({ kind: 'hold' })) { this.hud.showToast('Holding the line together: waiting for the room', 2); return }
     this.isFreeplay = true
     this.liveXp = 0
@@ -1352,9 +1527,10 @@ export class Game implements World {
     this.hud.setChrome(true)
     this.hud.showBanner('HOLD THE LINE', 'final')
     this.sfx('horn', 0.9)
-    audio.startMusic()
-    this.onPhaseChange('playing')
-    telemetry.track({ type: 'battle_start', level: this.level.id, difficulty: this.difficulty, hero: this.hero?.heroDef.id ?? '', mode: 'freeplay', seed: this.runSeed, resumed: false })
+    if (!this.recovering) audio.startMusic()
+    if (!this.recovering) this.onPhaseChange('playing')
+    this.track({ type: 'battle_start', level: this.level.id, difficulty: this.difficulty, hero: this.hero?.heroDef.id ?? '', mode: 'freeplay', seed: this.runSeed, resumed: false })
+    if (!this.recovering) this.saveSession()
   }
 
   private extendFreeplay(): void {
@@ -1545,6 +1721,9 @@ export class Game implements World {
   }
 
   disposeLevel(): void {
+    this.journal = null
+    this.frozenLoadout = null
+    this.pendingFx = []
     this.clearPreviewLinks()
     this.engine.clearDioramaRim()
     audio.stopMusic()
@@ -1574,6 +1753,7 @@ export class Game implements World {
     clearMines(this)
     clearRunes(this)
     for (const e of this.enemies) { this.dynamic.remove(e.group); disposeClonedMaterials(e.group) }
+    this.hero?.setSpecialization(null)
     for (const s of this.soldiers) { this.dynamic.remove(s.group); disposeClonedMaterials(s.group) }
     for (const p of this.projectiles) { this.dynamic.remove(p.mesh); p.dispose?.() }
     for (const t of this.towers) { t.dismantle(this, true); this.dynamic.remove(t.group) }
@@ -1601,8 +1781,8 @@ export class Game implements World {
 
   private endGame(won: boolean): void {
     if (this.phase !== 'playing') return
-    // the run is over either way: there is nothing left to resume
-    clearCheckpoint()
+    // Keep the in-memory journal for a later Hold the Line command.
+    if (!this.recovering) { clearCheckpoint(); clearSession() }
     this.phase = won ? 'victory' : 'defeat'
     this.targetMode = null
     this.hud.closeBuildMenu()
@@ -1616,12 +1796,12 @@ export class Game implements World {
     clearRunes(this)
     this.hazard?.dispose(this)
     this.hazard = null
-    audio.play(won ? 'victory' : 'defeat')
+    if (!this.recovering) audio.play(won ? 'victory' : 'defeat')
     audio.stopMusic()
     let stars = 0
     // the star record is written a few lines down; the first-clear bonus has to
     // be decided from what it was before that, or it is never true on a win
-    const hadStars = this.level ? (this.save.stars[this.level.id] ?? 0) > 0 : true
+    const hadStars = this.level ? (this.battleSave.stars[this.level.id] ?? 0) > 0 : true
     if (this.level) {
       // honest scoring: lives held, perfect waves, nerve (early calls), weighted by difficulty
       const diffMult = { casual: 0.8, normal: 1, veteran: 1.3 }[this.difficulty]
@@ -1633,39 +1813,47 @@ export class Game implements World {
         (this.isEndless ? reached * 60 : won ? 1000 : 0)
       ) * diffMult)
       const scoreKey = `${this.level.id}:${this.trial ? `trial:${this.trial.kind}` : this.isEndless ? 'endless' : this.isFreeplay ? `freeplay:${this.difficulty}` : this.difficulty}`
-      this.lastPrevBestScore = this.save.bestScore[scoreKey] ?? 0
+      this.lastPrevBestScore = this.battleSave.bestScore[scoreKey] ?? 0
       this.lastNewBestScore = this.lastScore > this.lastPrevBestScore
-      if (this.lastNewBestScore) this.save.bestScore[scoreKey] = this.lastScore
+      if (this.lastNewBestScore) this.battleSave.bestScore[scoreKey] = this.lastScore
 
-      if (this.isWatches) {
+      let huntBonus = 0
+      if (this.hunt) {
+        if (won && this.hero) {
+          const qualified = [...new Set(this.towers.filter(t => !t.isGhost && t.level >= 5 && t.damage >= 4000).map(t => t.kind))]
+          const reward = awardHunt(this.battleSave, this.hunt.id, this.difficulty, this.hero.heroDef.id, qualified)
+          this.huntHonors = reward.honors
+          huntBonus = reward.bonusXp
+        }
+      } else if (this.isWatches) {
         // the watches are their own thing; they must not move the campaign
       } else if (this.isFreeplay) {
         // the clear was already paid for; freeplay records only how far past
         // it the line held, keyed by difficulty so a Veteran hold is its own number
         const depth = this.waves ? this.waves.freeplayDepth - (won ? 0 : 1) : 0
         const key = `${this.level.id}:${this.difficulty}`
-        this.lastNewWaveRecord = depth > (this.save.bestFreeplay[key] ?? 0)
-        if (this.lastNewWaveRecord) this.save.bestFreeplay[key] = depth
+        this.lastNewWaveRecord = depth > (this.battleSave.bestFreeplay[key] ?? 0)
+        if (this.lastNewWaveRecord) this.battleSave.bestFreeplay[key] = depth
       } else if (this.isDaily) {
         // the daily is its own ladder: it must never move campaign progress,
         // or a lucky day would unlock maps the player has not earned
-        const prev = this.save.dailyBest?.day === this.dailyDay ? this.save.dailyBest : null
+        const prev = this.battleSave.dailyBest?.day === this.dailyDay ? this.battleSave.dailyBest : null
         const reachedNow = won ? this.waves?.totalWaves ?? reached : reached
         if (!prev || reachedNow > prev.wave || (reachedNow === prev.wave && this.lastScore > prev.score)) {
-          this.save.dailyBest = { day: this.dailyDay, wave: reachedNow, won, score: this.lastScore }
+          this.battleSave.dailyBest = { day: this.dailyDay, wave: reachedNow, won, score: this.lastScore }
         }
-        telemetry.track({ type: 'daily_completed', day: this.dailyDay, wave: reachedNow, won })
+        this.track({ type: 'daily_completed', day: this.dailyDay, wave: reachedNow, won })
       } else if (this.isEndless) {
         // endless: the wave record is the headline; ties are not new records
-        const prevBestWave = this.save.bestEndless[this.level.id] ?? 0
+        const prevBestWave = this.battleSave.bestEndless[this.level.id] ?? 0
         this.lastNewWaveRecord = reached > prevBestWave
-        if (this.lastNewWaveRecord) this.save.bestEndless[this.level.id] = reached
+        if (this.lastNewWaveRecord) this.battleSave.bestEndless[this.level.id] = reached
       } else if (won && this.trial) {
         // a trial is worth one Armory star, once; it never touches the map's
         // stars, medals or unlocks
-        const wonList = this.save.trials[this.level.id] ?? []
+        const wonList = this.battleSave.trials[this.level.id] ?? []
         this.lastNewTrialStar = !wonList.includes(this.trial.kind)
-        if (this.lastNewTrialStar) this.save.trials[this.level.id] = [...wonList, this.trial.kind]
+        if (this.lastNewTrialStar) this.battleSave.trials[this.level.id] = [...wonList, this.trial.kind]
         stars = 1
       } else if (won) {
         const maxLives = this.mods().lives
@@ -1677,49 +1865,50 @@ export class Game implements World {
         for (const t of this.towers) {
           if (t.level < 5 || t.branch === null || t.isGhost) continue
           const id = `${t.kind}:${t.branch}`
-          if (!this.save.capstones.includes(id)) { this.save.capstones.push(id); this.lastNewCards.push(t.def.name) }
+          if (!this.battleSave.capstones.includes(id)) { this.battleSave.capstones.push(id); this.lastNewCards.push(t.def.name) }
         }
         const idx = levels.findIndex(l => l.id === this.level!.id)
-        if (idx >= 0) this.save.unlocked = Math.max(this.save.unlocked, Math.min(idx + 2, levels.length))
-        this.save.stars[this.level.id] = Math.max(this.save.stars[this.level.id] ?? 0, stars)
+        if (idx >= 0) this.battleSave.unlocked = Math.max(this.battleSave.unlocked, Math.min(idx + 2, levels.length))
+        this.battleSave.stars[this.level.id] = Math.max(this.battleSave.stars[this.level.id] ?? 0, stars)
         // mastery medals
-        const medals = new Set(this.save.medals[this.level.id] ?? [])
+        const medals = new Set(this.battleSave.medals[this.level.id] ?? [])
         if (this.difficulty === 'veteran') medals.add('veteran')
         // flawless means nothing got through - a leak the Gate Ward absorbed
         // still got through, so this counts leaks and not lives
         if (this.leaks === 0) medals.add('noleak')
-        this.save.medals[this.level.id] = [...medals]
+        this.battleSave.medals[this.level.id] = [...medals]
       }
       // experience: every wave held counts, win or lose, and the account
       // levels on it. Ghost watches are the one thing that pays nothing extra
       // over the first watch, so replaying a siege three times is not a farm.
-      const firstClear = won && !this.isEndless && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial && !hadStars
+      const firstClear = won && !this.isEndless && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial && !this.hunt && !hadStars
       this.lastFirstClear = firstClear
-      this.lastXpBefore = this.save.xp
+      this.lastXpBefore = this.battleSave.xp
       this.lastXpEarned = battleXp({
         // a trial pays at the Watches' rate: short, repeatable, and not a farm
-        mode: this.isDaily ? 'daily' : this.isWatches || this.trial ? 'watches' : this.isBellfoundry ? 'bellfoundry' : this.isEndless || this.isFreeplay ? 'endless' : 'campaign',
+        mode: this.hunt ? 'hunt' : this.isDaily ? 'daily' : this.isWatches || this.trial ? 'watches' : this.isBellfoundry ? 'bellfoundry' : this.isEndless || this.isFreeplay ? 'endless' : 'campaign',
         difficulty: this.difficulty,
         // freeplay pays only for the waves past the clear, which was paid for already
         wavesHeld: this.isFreeplay ? Math.max(0, this.wavesCleared() - (this.waves?.authoredWaves ?? 0)) : this.wavesCleared(),
         won,
         firstClear,
       })
-      this.save.xp += this.lastXpEarned
-      if (!writeSave(this.save)) {
-        telemetry.track({ type: 'save_write_failed' })
+      this.lastXpEarned += huntBonus
+      this.battleSave.xp += this.lastXpEarned
+      if (!this.persistProgress()) {
+        this.track({ type: 'save_write_failed' })
         this.hud.showToast('Could not save progress - your browser is blocking storage', 6)
       }
     }
-    telemetry.track({
+    this.track({
       type: 'battle_end',
       level: this.level?.id ?? '', difficulty: this.difficulty, won,
       wave: (this.waves?.waveIndex ?? 0) + 1,
       totalWaves: this.waves?.totalWaves ?? 0,
       lives: this.lives, score: this.lastScore, seconds: Math.round(this.time),
     })
-    telemetry.flush()
-    this.onPhaseChange(this.phase, stars)
+    if (!this.recovering) telemetry.flush()
+    if (!this.recovering) this.onPhaseChange(this.phase, stars)
   }
 
   private nextFodderShakeAt = 0
@@ -1747,6 +1936,7 @@ export class Game implements World {
   /** one wave's experience in this mode, before win bonuses */
   private waveXpValue(): number {
     const mult = { casual: 0.75, normal: 1, veteran: 1.4 }[this.difficulty]
+    if (this.hunt) return 30 * mult
     if (this.isDaily) return 10
     if (this.isWatches || this.isBellfoundry) return 8
     return 12 * mult
@@ -1814,6 +2004,7 @@ export class Game implements World {
     trial?: { kind: TrialKind, name: string, newStar: boolean },
     /** capstone cards stamped by this win, by name */
     newCards: string[],
+    hunt?: { id: HuntId, name: string, honors: string[] },
   } {
     return {
       daily: this.isDaily ? {
@@ -1864,6 +2055,7 @@ export class Game implements World {
       firstClear: this.lastFirstClear,
       trial: this.trial ? { kind: this.trial.kind, name: this.trial.name, newStar: this.lastNewTrialStar } : undefined,
       newCards: this.lastNewCards,
+      hunt: this.hunt ? { id: this.hunt.id, name: this.hunt.name, honors: this.huntHonors } : undefined,
     }
   }
 
@@ -2401,10 +2593,10 @@ export class Game implements World {
     this.recomputeResonance()
     this.recomputeHighGround()
     this.replay.record({ t: this.time, kind: 'build', tower: kind, plot: plot.index })
-    telemetry.track({ type: 'tower_built', kind, level: this.level?.id ?? '', wave: (this.waves?.waveIndex ?? -1) + 1 })
+    this.track({ type: 'tower_built', kind, level: this.level?.id ?? '', wave: (this.waves?.waveIndex ?? -1) + 1 })
     if (this.firstBuildAt < 0) {
       this.firstBuildAt = this.time
-      telemetry.track({ type: 'first_build_delay', seconds: Math.round(this.time) })
+      this.track({ type: 'first_build_delay', seconds: Math.round(this.time) })
     }
     this.teachSightline(tower)
     this.particles.buildDust(plot.pos.x, plot.pos.y + 0.1, plot.pos.z)
@@ -2727,7 +2919,7 @@ export class Game implements World {
     const eyes = this.towers.filter(t => t.isBeacon && t.def.aura?.reveal && !t.isGhost)
     for (const e of this.enemies) {
       if (!e.def.phasing) continue
-      e.revealed = eyes.some(b => Math.hypot(b.pos.x - e.pos.x, b.pos.z - e.pos.z) <= b.auraReach + e.radius)
+      e.revealed = this.time < e.revealedUntil || eyes.some(b => Math.hypot(b.pos.x - e.pos.x, b.pos.z - e.pos.z) <= b.auraReach + e.radius)
     }
   }
 
@@ -2743,12 +2935,28 @@ export class Game implements World {
   /** the Exchequer's count toward its next shard */
   private titheKills = 0
 
+  mythicLock(tower: Tower): string | null {
+    if (tower.level !== 5) return null
+    if (this.isDaily || this.isWatches || this.isBellfoundry || this.trial) return 'Mythics are available in campaign, hunts and endless play.'
+    if (this.towers.some(t => t !== tower && t.level === 6 && !t.isGhost)) return 'One Mythic may stand in a defense at a time.'
+    if (!masteryReady(this.roster, tower.kind)) return masteryHint(this.roster, tower.kind)
+    return null
+  }
+
+  activateMythic(tower: Tower): void {
+    if (this.paused || this.phase !== 'playing') return
+    if (this.route({ kind: 'mythic', plot: tower.plot.index })) return
+    if (!tower.activateMythic(this)) this.sfx('error')
+  }
+
   upgradeTower(tower: Tower, optionIndex: number): void {
     if (this.paused) return
     const opt = tower.upgradeOptions[optionIndex]
     if (!opt) return
     if (this.route({ kind: 'upgrade', plot: tower.plot.index, opt: optionIndex })) return
     if (this.trial && tower.level >= this.trial.maxTier) { this.sfx('error'); this.hud.showToast(`${this.trial.name}: tier ${this.trial.maxTier} is the ceiling`, 2.4); return }
+    const locked = this.mythicLock(tower)
+    if (tower.level === 5 && locked) { this.sfx('error'); this.hud.showToast(locked, 4); return }
     if (this.gold < opt.cost) { this.sfx('error'); this.hud.flashGold(); return }
     this.gold -= opt.cost
     tower.upgrade(tower.level === 3 ? optionIndex : 0, this)
@@ -2842,6 +3050,7 @@ export class Game implements World {
   }
 
   togglePause(): void {
+    if (this.recovering) return
     // in co-op the pause is the room's, so both boards stop on the same turn
     if (this.coop && this.phase === 'playing') { void this.coop.send('pause', !this.paused); return }
     this.paused = !this.paused
@@ -2849,6 +3058,7 @@ export class Game implements World {
   }
 
   toggleSpeed(): void {
+    if (this.recovering) return
     if (this.paused) return
     if (this.coop) { void this.coop.send('speed', this.speed === 1 ? 2 : 1); return }
     this.speed = this.speed === 1 ? 2 : 1
@@ -2858,13 +3068,13 @@ export class Game implements World {
   toggleSfx(): void {
     this.save.sfxMuted = !this.save.sfxMuted
     audio.setMuted(this.save.sfxMuted)
-    writeSave(this.save)
+    this.persistProgress()
   }
 
   toggleMusic(): void {
     this.save.musicMuted = !this.save.musicMuted
     audio.setMusicMuted(this.save.musicMuted)
-    writeSave(this.save)
+    this.persistProgress()
   }
 
   // ---------------- main update ----------------
@@ -2886,6 +3096,7 @@ export class Game implements World {
 
   /** hold the frame on a hit worth feeling; `weight` picks the tier */
   impact(weight: 'light' | 'heavy' | 'elite' | 'boss'): void {
+    if (this.recovering) return
     const now = performance.now() / 1000
     if (weight === 'light') {
       // light hits share one budget so a swarm cannot chain-freeze the frame
@@ -2905,6 +3116,7 @@ export class Game implements World {
 
   /** run something a beat later, on the render clock */
   private deferFx(delaySec: number, run: () => void): void {
+    if (this.recovering) return
     this.pendingFx.push({ at: performance.now() / 1000 + delaySec, run })
   }
 
@@ -2915,6 +3127,11 @@ export class Game implements World {
   }
 
   update(dtRaw: number): void {
+    if (this.recovering) return
+    if (this.canSaveSession) {
+      this.sessionSaveT += dtRaw
+      if (this.sessionSaveT >= 5) { this.sessionSaveT = 0; this.saveSession() }
+    }
     if (this.pendingFx.length) {
       const now = performance.now() / 1000
       for (let i = this.pendingFx.length - 1; i >= 0; i--) {
@@ -3001,6 +3218,7 @@ export class Game implements World {
   }
 
   private simStep(dt: number): void {
+    this.sessionTick = (this.sessionTick ?? 0) + 1
     if (this.pendingSim.length) {
       for (let i = 0; i < this.pendingSim.length; i++) {
         if (this.pendingSim[i].at <= this.time) { const p = this.pendingSim[i]; this.pendingSim.splice(i--, 1); p.run() }

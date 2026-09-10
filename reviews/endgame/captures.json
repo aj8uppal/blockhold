@@ -1,0 +1,129 @@
+{
+  "note": "Staged actual-renderer/UI visual review; gold, honors and enemy placement injected. Not combat evidence.",
+  "captures": [
+    {
+      "file": "helios-engine.png",
+      "name": "Helios Engine",
+      "model": "seraph6a",
+      "tier": 6,
+      "beamTargets": 7,
+      "draws": 180
+    },
+    {
+      "file": "event-horizon.png",
+      "name": "Event Horizon",
+      "model": "seraph6b",
+      "tier": 6,
+      "beamTargets": 7,
+      "draws": 188
+    },
+    {
+      "file": "last-legion.png",
+      "name": "Last Legion",
+      "model": "barracks6a",
+      "tier": 6,
+      "draws": 147
+    },
+    {
+      "file": "ossuary-radius.png",
+      "boss": "ossuary",
+      "hp": 33150,
+      "hud": "The Bone Procession · Final boss · the green ring raises fallen escorts; focus the Ossuary",
+      "bounds": {
+        "x": 390,
+        "y": 108,
+        "width": 500,
+        "height": 68,
+        "top": 108,
+        "right": 890,
+        "bottom": 176,
+        "left": 390
+      }
+    },
+    {
+      "file": "empress-air.png",
+      "boss": "veilempress",
+      "hp": 19200,
+      "hud": "The Fallen Crown · Phase 1 / 2 · break her wings; keep ground coverage ready",
+      "bounds": {
+        "x": 390,
+        "y": 108,
+        "width": 500,
+        "height": 50,
+        "top": 108,
+        "right": 890,
+        "bottom": 158,
+        "left": 390
+      }
+    },
+    {
+      "file": "empress-ground.png",
+      "boss": "veilempressLanded",
+      "hp": 16800,
+      "hud": "The Fallen Crown · Phase 2 / 2 · she has landed; focus the armored crown",
+      "bounds": {
+        "x": 390,
+        "y": 108,
+        "width": 500,
+        "height": 50,
+        "top": 108,
+        "right": 890,
+        "bottom": 158,
+        "left": 390
+      }
+    },
+    {
+      "file": "hub-desktop.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "scrollHeight": 1354,
+      "clientHeight": 1100,
+      "horizontalOverflow": false
+    },
+    {
+      "file": "hub-small-landscape.png",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "scrollHeight": 1335,
+      "clientHeight": 390,
+      "horizontalOverflow": false,
+      "cards": [
+        {
+          "title": " Bulwark",
+          "width": 383,
+          "scrollWidth": 383
+        },
+        {
+          "title": " Vanguard",
+          "width": 383,
+          "scrollWidth": 383
+        },
+        {
+          "title": "The Bone Procession",
+          "width": 383,
+          "scrollWidth": 383
+        },
+        {
+          "title": "The Fallen Crown",
+          "width": 383,
+          "scrollWidth": 383
+        },
+        {
+          "title": "Helios Engine / Event Horizon",
+          "width": 784,
+          "scrollWidth": 784
+        },
+        {
+          "title": "Last Legion",
+          "width": 784,
+          "scrollWidth": 784
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

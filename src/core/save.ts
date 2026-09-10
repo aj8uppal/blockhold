@@ -1,3 +1,4 @@
+import { sanitizeHonors, sanitizeHeroPaths } from './saveMerge.ts'
 import { seedXpFromProgress } from '../game/progress.ts'
 
 export interface SaveData {
@@ -13,6 +14,8 @@ export interface SaveData {
   trials: Record<string, string[]>
   /** capstone cards stamped on a campaign win with that capstone standing: 'kind:branch' */
   capstones: string[]
+  honors?: string[]
+  heroPaths?: Record<string, string>
   lastHero: string
   /** the guided first battle has been played, so it never runs again */
   taughtBasics: boolean
@@ -57,7 +60,7 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
 }
 
 const DEFAULT_SAVE = (): SaveData =>
-  ({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestFreeplay: {}, bestScore: {}, medals: {}, trials: {}, capstones: [], seenEnemies: [], taughtBasics: false, lastHero: 'aldric', sfxMuted: false, musicMuted: false, xp: 0 })
+  ({ unlocked: 1, stars: {}, armory: {}, bestEndless: {}, bestFreeplay: {}, bestScore: {}, medals: {}, trials: {}, capstones: [], seenEnemies: [], taughtBasics: false, honors: [], heroPaths: {}, lastHero: 'aldric', sfxMuted: false, musicMuted: false, xp: 0 })
 
 /** validate anything claiming to be a save; the same gate for disk and for imports */
 export function parseSave(d: unknown): SaveData | null {
@@ -119,6 +122,8 @@ export function parseSave(d: unknown): SaveData | null {
           capstones: Array.isArray(o.capstones)
             ? [...new Set(o.capstones.filter((x): x is string => typeof x === 'string' && /^[a-z]+:[01]$/.test(x)))].slice(0, 32)
             : [],
+          honors: sanitizeHonors(o.honors),
+          heroPaths: sanitizeHeroPaths(o.heroPaths),
           lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',
           dailyBest: parseDailyBest(o.dailyBest),
           changedAt: clampInt(o.changedAt, 0, Number.MAX_SAFE_INTEGER, 0) || undefined,

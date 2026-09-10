@@ -8,8 +8,8 @@ import { createHash, randomBytes } from 'node:crypto'
  * JSON blob per player and this is a browser tower defense, not a bank. Node
  * 24 ships SQLite in core, so the service has no dependencies at all.
  *
- * There is no personal data here by design: an account is a random token and
- * a progress blob. Nobody's email is stored because none is ever collected.
+ * Accounts store progress and optional Google subject identifiers. Email and
+ * profile data are neither requested nor stored.
  * Telemetry follows the same rule - a raw IP address is never written to
  * disk, only a salted hash of one, and the salt lives in this database so it
  * cannot be recovered from a leaked copy of the events table alone.
@@ -107,6 +107,16 @@ export class Store {
       );
       CREATE INDEX IF NOT EXISTS accounts_token ON accounts(token);
       CREATE INDEX IF NOT EXISTS accounts_link ON accounts(link_code);
+      CREATE TABLE IF NOT EXISTS identities (
+        provider TEXT NOT NULL, subject TEXT NOT NULL, account_id TEXT NOT NULL,
+        PRIMARY KEY (provider, subject), UNIQUE (provider, account_id)
+      );
+      CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL, expires_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS auth_flows (
+        key_hash TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL, expires_at INTEGER NOT NULL
+      );
 
       -- key/value for the few things the process must not regenerate on a
       -- restart. Right now that is only the IP hashing salt: a fresh salt
@@ -205,8 +215,9 @@ export class Store {
 
   byToken(t: string): (Account & { linkCode: string }) | null {
     const row = this.db.prepare(
-      'SELECT id, save, updated_at, link_code FROM accounts WHERE token = ?',
-    ).get(t) as Record<string, unknown> | undefined
+      `SELECT id, save, updated_at, link_code FROM accounts WHERE token = ?
+       OR id IN (SELECT account_id FROM sessions WHERE token_hash = ? AND expires_at > ?)`,
+    ).get(t, createHash('sha256').update(t).digest('hex'), Date.now()) as Record<string, unknown> | undefined
     if (!row) return null
     return {
       id: String(row.id),
@@ -214,6 +225,48 @@ export class Store {
       updatedAt: Number(row.updated_at),
       linkCode: String(row.link_code),
     }
+  }
+
+  /** One-use, expiring OAuth state and browser handoffs survive process suspension. */
+  putAuth(key: string, kind: string, payload: unknown, ttl: number): void {
+    this.db.prepare('DELETE FROM auth_flows WHERE expires_at <= ?').run(Date.now())
+    this.db.prepare('INSERT INTO auth_flows VALUES (?, ?, ?, ?)')
+      .run(createHash('sha256').update(key).digest('hex'), kind, JSON.stringify(payload), Date.now() + ttl)
+  }
+
+  takeAuth(key: string, kind: string): string | null {
+    const row = this.db.prepare('DELETE FROM auth_flows WHERE key_hash = ? AND kind = ? RETURNING payload, expires_at')
+      .get(createHash('sha256').update(key).digest('hex'), kind) as Record<string, unknown> | undefined
+    return row && Number(row.expires_at) > Date.now() ? String(row.payload) : null
+  }
+
+  providerFor(id: string): string | null {
+    const row = this.db.prepare('SELECT provider FROM identities WHERE account_id = ?').get(id) as Record<string, unknown> | undefined
+    return row ? String(row.provider) : null
+  }
+
+  /** Only call after provider verification AND proof from the browser that began sign-in. */
+  signInIdentity(provider: string, subject: string, linkAccountId: string | null): { token: string, account: Account } {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const identity = this.db.prepare('SELECT account_id FROM identities WHERE provider = ? AND subject = ?')
+        .get(provider, subject) as Record<string, unknown> | undefined
+      if (identity && linkAccountId && String(identity.account_id) !== linkAccountId) throw new Error('account conflict')
+      let id = identity ? String(identity.account_id) : linkAccountId
+      if (id && !identity && this.providerFor(id)) throw new Error('account conflict')
+      if (id && !this.db.prepare('SELECT id FROM accounts WHERE id = ?').get(id)) throw new Error('account conflict')
+      if (!id) id = this.create('{}').id
+      if (!identity) this.db.prepare('INSERT INTO identities VALUES (?, ?, ?)').run(provider, subject, id)
+      const t = token()
+      this.db.prepare('INSERT INTO sessions VALUES (?, ?, ?)')
+        .run(createHash('sha256').update(t).digest('hex'), id, Date.now() + 30 * 86_400_000)
+      this.db.exec('COMMIT')
+      return { token: t, account: this.byToken(t)! }
+    } catch (e) { this.db.exec('ROLLBACK'); throw e }
+  }
+
+  revokeSession(t: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(createHash('sha256').update(t).digest('hex'))
   }
 
   /** exchange a link code for that account's token, so a new device can join */
@@ -415,9 +468,12 @@ export class Store {
     try {
       const events = this.db.prepare('DELETE FROM events WHERE received_at < ?').run(eventCutoff)
       this.db.prepare(
-        'DELETE FROM daily_scores WHERE account_id IN (SELECT id FROM accounts WHERE updated_at < ?)',
+        'DELETE FROM daily_scores WHERE account_id IN (SELECT id FROM accounts WHERE updated_at < ? AND id NOT IN (SELECT account_id FROM identities))',
       ).run(acctCutoff)
-      const accounts = this.db.prepare('DELETE FROM accounts WHERE updated_at < ?').run(acctCutoff)
+      // Google-linked progress remains recoverable even after a long break.
+      const accounts = this.db.prepare('DELETE FROM accounts WHERE updated_at < ? AND id NOT IN (SELECT account_id FROM identities)').run(acctCutoff)
+      this.db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(now)
+      this.db.prepare('DELETE FROM auth_flows WHERE expires_at <= ?').run(now)
       // a counter whose window closed a day ago is not protecting anything
       const limits = this.db.prepare('DELETE FROM rate_limits WHERE window_start < ?').run(now - 86_400_000)
       this.db.exec('COMMIT')

@@ -83,7 +83,7 @@ export function levelProgress(xp: number): { level: number, into: number, span: 
 const DIFFICULTY_XP: Record<Difficulty, number> = { casual: 0.75, normal: 1, veteran: 1.4 }
 
 export interface BattleXpInput {
-  mode: 'campaign' | 'endless' | 'daily' | 'watches' | 'bellfoundry'
+  mode: 'campaign' | 'endless' | 'daily' | 'watches' | 'bellfoundry' | 'hunt'
   difficulty: Difficulty
   wavesHeld: number
   won: boolean
@@ -95,6 +95,8 @@ export interface BattleXpInput {
 export function battleXp(b: BattleXpInput): number {
   const mult = DIFFICULTY_XP[b.difficulty]
   switch (b.mode) {
+    case 'hunt':
+      return Math.round((b.wavesHeld * 30 + (b.won ? 300 : 0)) * mult)
     case 'campaign':
       return Math.round((b.wavesHeld * 12 + (b.won ? 120 : 0) + (b.won && b.firstClear ? 100 : 0)) * mult)
     case 'endless':

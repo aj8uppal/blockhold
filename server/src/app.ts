@@ -2,14 +2,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Store, type DailyScore, type EventIn } from './db.ts'
 import { mergeSaves, sanitizeCloudSave } from '../../src/core/saveMerge.ts'
 import { handleCoop } from './coop.ts'
+import { handleAuth, googleFromEnv, type GoogleConfig } from './auth.ts'
 import { RULESET_VERSION } from '../../src/game/ruleset.ts'
 
 /**
  * Blockhold cloud saves, telemetry and the daily leaderboard.
  *
- * No dependencies, no personal data. An account is a random token a device
- * holds and a short link code the player can type on another device. Nobody
- * signs up, nobody enters an email, and there is nothing here worth breaching.
+ * Accounts support Google sign-in plus existing legacy recovery codes.
+ * Google subject identifiers are stored; email and profile data are not.
  *
  * Progress is merged rather than overwritten - see src/core/saveMerge.ts for
  * why last-write-wins would quietly delete a player's afternoon.
@@ -67,6 +67,7 @@ export interface AppConfig {
    * quietly publish the dashboard - and cannot advertise that it is there.
    */
   statsToken: string | null
+  google?: GoogleConfig
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -74,6 +75,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
     allowedOrigins: (env.ALLOWED_ORIGINS
       ?? 'https://aj8uppal.github.io,http://localhost:5173,http://localhost:4173,http://localhost:4174,http://localhost:4180')
       .split(',').map(s => s.trim()).filter(Boolean),
+    google: googleFromEnv(env),
     statsToken: env.STATS_TOKEN && env.STATS_TOKEN.length >= 16 ? env.STATS_TOKEN : null,
   }
 }
@@ -289,6 +291,7 @@ export function createApp(store: Store, cfg: AppConfig): Server {
     }
 
     try {
+      if (await handleAuth(req, res, url, store, cfg.google, cfg.allowedOrigins, () => readBody(req), bearer(req))) return
       // deliberately says nothing but that the process is up. The account
       // count it used to return is a business metric on an unauthenticated
       // endpoint - free intelligence for nobody's benefit.

@@ -14,6 +14,7 @@ export type CoopCommand =
   | { kind: 'upgrade', plot: number, opt: number }
   | { kind: 'sell', plot: number }
   | { kind: 'ascend', plot: number, perk: 0 | 1 }
+  | { kind: 'mythic', plot: number }
   | { kind: 'overcharge', plot: number }
   | { kind: 'policy', plot: number }
   | { kind: 'trackline', plot: number }

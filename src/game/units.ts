@@ -158,6 +158,10 @@ const ELITE_TINT = 0x9f3aff
  */
 const UNIT_SCALE = isCoarsePointer() ? 1.28 : 1
 
+const RAISE_RING_GEO = new THREE.RingGeometry(2.94, 3, 64)
+RAISE_RING_GEO.rotateX(-Math.PI / 2)
+const RAISE_RING_MAT = new THREE.MeshBasicMaterial({ color: 0xa5d68a, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide, toneMapped: false })
+
 export class Enemy {
   group: THREE.Group
   hp: number
@@ -281,6 +285,11 @@ export class Enemy {
       this.shadow.scale.setScalar((def.boss ? 1.7 : 1) / s)
       this.group.add(this.shadow)
     }
+    if (def.raises) {
+      this.raiseRing = new THREE.Mesh(RAISE_RING_GEO, RAISE_RING_MAT)
+      this.raiseRing.scale.setScalar(def.raises.radius / 3 / s)
+      this.group.add(this.raiseRing)
+    }
     const start = lane.sample(startDist, this.offset)
     this.group.position.set(start.x, def.yOffset ?? 0, start.z)
     this.yaw = Math.atan2(start.dirX, start.dirZ)
@@ -292,6 +301,9 @@ export class Enemy {
   /** alive AND currently hittable (mistwalkers phase out) */
   /** standing in a Watchfire's light: a phasing enemy can still be shot */
   revealed = false
+  private raiseRing: THREE.Mesh | null = null
+  revealedUntil = 0
+  mythicExposedUntil = 0
   get targetable(): boolean { return this.alive && (!this.phased || this.revealed) }
   /** perched out of melee reach (soldiers must not chase a hexing imp) */
   get unreachable(): boolean { return this.hexTarget !== null }
@@ -351,6 +363,7 @@ export class Enemy {
         world.particles.magicImpact(this.pos.x, this.pos.y + 0.45, this.pos.z, 0x8fdfff)
       }
     }
+    if (world.time < this.mythicExposedUntil) mult *= 1.3
     if (this.inCutting) mult *= 1 + CUTTING_VULN
     const dealt = Math.max(0, amount * mult)
     if (opts.credit) opts.credit.damage += Math.min(dealt, Math.max(0, this.hp))
@@ -420,7 +433,7 @@ export class Enemy {
     world.shake(0.28)
     world.floater(this.pos.x, this.pos.y + this.barY + 0.4, this.pos.z, 'She lands!', 'crit')
     world.particles.buildDust(this.pos.x, world.groundY(this.pos.x, this.pos.z) + 0.1, this.pos.z)
-    world.spawnEnemyAt(next, this.laneIndex, this.dist, { waveTag: this.waveTag, hpScale: this.phaseHpScale })
+    world.spawnEnemyAt(next, this.laneIndex, this.dist, { waveTag: this.waveTag, phaseHealthMult: this.phaseHpScale })
   }
 
   /** the health scaling this enemy was spawned with, so a second phase inherits it */
@@ -622,6 +635,8 @@ export class Enemy {
     // Stun stops travel; a hovering enemy still beats its wings.
     if (stunned && this.def.flying) this.animWalk(dt, 0)
 
+    if (this.raiseRing) this.raiseRing.position.y = (world.groundY(this.pos.x, this.pos.z) - this.group.position.y + 0.045) / this.group.scale.y
+
     // poison ticks (true damage); a poison kill credits its strongest source
     if (this.poisons.length) {
       this.poisons = this.poisons.filter(p => p.until > world.time)
@@ -636,8 +651,8 @@ export class Enemy {
         this.hp -= dps * dt
         if (Math.random() < dt * 6) world.particles.poisonDrip(this.pos.x, this.pos.y + 0.3, this.pos.z)
         if (this.hp <= 0) {
-          if (strongest) strongest.kills++
-          this.die(world)
+          if (this.def.phaseInto) this.phaseOut(world)
+          else { if (strongest) strongest.kills++; this.die(world) }
           return
         }
       }

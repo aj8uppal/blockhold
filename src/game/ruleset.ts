@@ -24,8 +24,9 @@
  *   5  Seraph chains, Beacon reach and height bonuses, difficulty-based freeplay growth.
  *   6  Distinct late maps, non-stacking healing, soldier auras and wave recovery income.
  *   7  Independent Seraph targeting; naturally elevated plots cannot be raised.
+ *   8  Boss hunts, hero paths, Mythic upgrades and complete boss phase scaling.
  */
-export const RULESET_VERSION = 7
+export const RULESET_VERSION = 8
 
 /** identifies a reproducible run */
 export interface RunStamp {

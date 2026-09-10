@@ -36,8 +36,10 @@ const assets = join(root, 'dist', 'assets')
  * 139 / 266 KB for distinct Seraph forms, independent beams and terrain-
  * projected range indicators: about +1.6 KB of app code for this visual pass.
  */
-const APP_CHUNK_LIMIT = 139 * 1024
-const TOTAL_JS_LIMIT = 266 * 1024
+// Boss hunts, six hero paths, three Mythics, exact battle recovery and SSO add
+// about 13 KiB gzip total; account and endgame screens are loaded on demand.
+const APP_CHUNK_LIMIT = 151 * 1024
+const TOTAL_JS_LIMIT = 282 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

@@ -263,7 +263,7 @@ export class HUD {
     // to confirm: one tap casts it
     this.tapOrHold('ability:signature', this.signatureBtn, () => {
       const h = this.game.hero
-      if (h) this.showAbilityTip(h.heroDef.ability.name, h.heroDef.ability.blurb)
+      if (h) this.showAbilityTip(h.abilityName, h.abilityBlurb)
     }, () => this.hideAbilityTip())
     this.signatureBtn.onclick = () => {
       if (this.heldFor === 'ability:signature') { this.heldFor = null; return }
@@ -349,7 +349,13 @@ export class HUD {
     }
 
     this.quitBtn = el('button', 'btn', card, 'Abandon mission') as HTMLButtonElement
-    this.quitBtn.onclick = () => { this.game.togglePause(); this.onHome() }
+    this.quitBtn.onclick = () => {
+      if (this.game.canSaveSession && !this.game.saveSession()) {
+        this.showToast('Could not save this battle. Keep the game open and try again.', 5)
+        return
+      }
+      this.onHome()
+    }
     this.bankedEl = el('div', 'pause-banked', card)
   }
   private quitBtn!: HTMLButtonElement
@@ -357,7 +363,30 @@ export class HUD {
 
   // ---------------- per-frame refresh ----------------
 
+  private huntStatus: HTMLElement | null = null
+  private huntStatusText = ''
+  private refreshHunt(game: Game): void {
+    if (!this.huntStatus) {
+      this.huntStatus = el('div', 'hunt-status hidden', this.root)
+      this.huntStatus.innerHTML = '<span></span><progress max="1" value="1" aria-label="Boss health"></progress>'
+    }
+    const show = !!game.hunt && game.phase === 'playing'
+    this.huntStatus.classList.toggle('hidden', !show)
+    if (!show) return
+    const boss = game.enemies.find(e => e.alive && (e.def.id === game.hunt!.boss || e.def.id === 'veilempressLanded'))
+    const stage = !boss ? `Wave ${Math.max(1, (game.waves?.waveIndex ?? 0) + 1)} / 10 · prepare your defense`
+      : boss.def.id === 'veilempress' ? 'Phase 1 / 2 · break her wings; keep ground coverage ready'
+      : boss.def.id === 'veilempressLanded' ? 'Phase 2 / 2 · she has landed; focus the armored crown'
+      : 'Final boss · the green ring raises fallen escorts; focus the Ossuary'
+    const text = `${game.hunt!.name} · ${stage}`
+    if (text !== this.huntStatusText) { this.huntStatus.querySelector('span')!.textContent = text; this.huntStatusText = text }
+    const hp = this.huntStatus.querySelector('progress')!
+    hp.hidden = !boss
+    if (boss) { hp.value = Math.max(0, boss.hp / boss.maxHp); hp.setAttribute('aria-valuetext', `${Math.ceil(Math.max(0, boss.hp))} of ${boss.maxHp} health`) }
+  }
+
   refresh(game: Game): void {
+    this.refreshHunt(game)
     const now = performance.now()
     const dt = Math.min(0.1, (now - this.lastRefreshAt) / 1000)
     this.lastRefreshAt = now
@@ -477,7 +506,7 @@ export class HUD {
         this.lastHeroId = hero.heroDef.id
         const heroIco = this.heroBtn.querySelector('.ability-icon') as HTMLElement
         if (heroIco) heroIco.innerHTML = `<img class="hero-face" src="art/hero-${hero.heroDef.id}.webp" alt="">`
-        this.heroBtn.title = `${hero.heroDef.name} ${hero.heroDef.title} — select, then click the ground to move. ${hero.heroDef.ability.name}: ${hero.heroDef.ability.blurb} Hotkey H.`
+        this.heroBtn.title = `${hero.heroDef.name} ${hero.heroDef.title} — select, then click the ground to move. ${hero.abilityName}: ${hero.abilityBlurb} Hotkey H.`
       }
       const sweep = this.heroBtn.querySelector('.cd-sweep') as HTMLElement
       // dead: respawn countdown · alive: signature-ability recharge
@@ -511,7 +540,7 @@ export class HUD {
         const ico = HUD.SIGNATURE_ICON[h.heroDef.ability.kind] ?? 'sparkle'
         const slot = this.signatureBtn.querySelector('.ability-icon') as HTMLElement
         if (slot) slot.innerHTML = icon(ico)
-        this.signatureBtn.title = `${h.heroDef.ability.name} — ${h.heroDef.ability.blurb} Hotkey 3.`
+        this.signatureBtn.title = `${h.abilityName} — ${h.abilityBlurb} Hotkey 3.`
       }
       const sweep = this.signatureBtn.querySelector('.cd-sweep') as HTMLElement
       sweep.style.setProperty('--p', `${h.abilityFraction * 100}%`)
@@ -942,7 +971,7 @@ export class HUD {
     el('div', 'tp-icon', head, icon(TOWER_ICONS[tower.kind]))
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, tower.def.name)
-    el('div', 'tp-level', title, (tower.level === 5 ? '✦ ' : tower.level === 4 ? '★ ' : '')
+    el('div', 'tp-level', title, (tower.level === 6 ? 'Mythic · ' : tower.level === 5 ? '✦ ' : tower.level === 4 ? '★ ' : '')
       + `Tier ${tower.level}/5`
       + `<span class="tp-kills" title="Enemies slain by this building, and the health it has taken from them"> · ${icon('skull')} <span class="tp-kill-n">${tower.kills}</span> · ${icon('swords')} <span class="tp-dmg-n">${fmtDamage(tower.damage)}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
@@ -1041,7 +1070,8 @@ export class HUD {
     }
     if (!capped) tower.upgradeOptions.forEach((opt, i) => {
       const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, actions) as HTMLButtonElement
-      btn.dataset.cost = `${opt.cost}`
+      const mythicLock = this.game.mythicLock(tower)
+      if (!mythicLock) btn.dataset.cost = `${opt.cost}`
       btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span><span class="u-desc">${opt.description}</span>` +
         `<span class="u-delta">${deltaLines(tower, opt, m)}</span><span class="u-need"></span>`
       // show what the upgrade actually buys in range terms, on both pointers:
@@ -1053,6 +1083,11 @@ export class HUD {
         `upgrade:${tower.plot.index}:${i}`, btn, preview, clearPreview,
         () => { this.game.previewUpgradeRange(tower, null); this.game.upgradeTower(tower, i) },
       )
+      if (mythicLock) {
+        btn.disabled = true
+        btn.querySelector('.u-need')!.textContent = mythicLock
+        return
+      }
       btn.disabled = this.game.gold < opt.cost
       if (btn.disabled) btn.querySelector('.u-need')!.textContent = `Needs ${opt.cost - this.game.gold} more gold`
     })
@@ -1080,6 +1115,11 @@ export class HUD {
       this.lastOcHtml = ''
       this.confirmOnTouch(oc, 'Spend a shard? Tap again', () => this.game.overchargeTower(tower))
       oc.disabled = !tower.canOvercharge(this.game)
+    }
+    if (tower.def.signature === 'legionStandard') {
+      const standard = el('button', 'btn small', row, 'Plant Legion Standard') as HTMLButtonElement
+      standard.title = 'At the rally point: restore and relocate your legion, then heal its formation for seven seconds. 24-second recharge.'
+      standard.onclick = this.menuGuard(() => this.game.activateMythic(tower))
     }
     if (tower.isBarracks) {
       const rally = el('button', 'btn small', row, `${icon('flag')} Rally point`) as HTMLButtonElement
@@ -1171,12 +1211,12 @@ export class HUD {
         : chip('Guards', `${icon('range')} r ${hero.guardRange}`)))
 
     el('div', 'tp-traits', p,
-      `✦ <b>${hero.heroDef.ability.name}</b>${hero.signatureRank > 0 ? ` <span class="hero-rank">rank ${hero.signatureRank}</span>` : ''}`
-      + ` — ${hero.heroDef.ability.blurb} <span class="ability-cd-num"></span>`)
+      `✦ <b>${hero.abilityName}</b>${hero.signatureRank > 0 ? ` <span class="hero-rank">rank ${hero.signatureRank}</span>` : ''}`
+      + ` — ${hero.abilityBlurb} <span class="ability-cd-num"></span>`)
     if (hero.signatureRank < HERO_RANK_MAX) {
       const cost = heroRankCost(hero.signatureRank)
       const up = el('button', 'btn upgrade', p,
-        `<span class="u-name">✦ Sharpen ${hero.heroDef.ability.name}</span>`
+        `<span class="u-name">✦ Sharpen ${hero.abilityName}</span>`
         + `<span class="u-cost">${icon('gem')}${cost}</span>`
         + `<span class="u-desc">Rank ${hero.signatureRank + 1}: +28% effect, +18% reach, 12% faster recharge.</span>`) as HTMLButtonElement
       up.onclick = this.menuGuard(() => this.game.upgradeHeroSignature())
@@ -1354,7 +1394,10 @@ export class HUD {
   setPaused(paused: boolean): void {
     this.pauseBtn.innerHTML = icon(paused ? 'play' : 'pause', 'plain')
     this.pauseOverlay.classList.toggle('hidden', !paused)
-    if (paused) {
+    if (paused && this.game.canSaveSession) {
+      this.quitBtn.textContent = 'Save & exit'
+      this.bankedEl.textContent = 'Saves this moment on this device, including the current wave. Continue from the main menu after reloading.'
+    } else if (paused) {
       // leaving is not losing when the board is banked; the card says so
       const wave = this.game.bankedWave()
       const authored = this.game.waves?.authoredWaves ?? 0
@@ -1456,6 +1499,7 @@ export class HUD {
     this.bannerEl.classList.add('hidden')
     this.toastEl.classList.add('hidden')
     this.modeHint.classList.add('hidden')
+    this.huntStatus?.classList.add('hidden')
     this.pauseOverlay.classList.add('hidden')
     this.waveBtn.classList.add('hidden')
     this.lastGold = this.lastLives = this.lastXp = -1

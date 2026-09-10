@@ -4,6 +4,7 @@ import { World } from './world.ts'
 import { HeroDef, HeroId, SoldierDef } from './types.ts'
 import { lerpAngle, randRange, simRandom } from '../core/utils.ts'
 import { icon } from '../ui/icons.ts'
+import { heroPath, type HeroPathId } from './heroPaths.ts'
 
 const RESPAWN_TIME = 16
 const XP_LEVELS = [0, 60, 150, 280, 450, 660, 920, 1240, 1620, 2100]
@@ -85,6 +86,42 @@ export class Hero extends Soldier {
   private walkT = 0
   abilityCooldown = 6
   protected moveSpeed: number
+  specialization: HeroPathId | null = null
+  private signatureField: {
+    kind: 'bulwark' | 'gale' | 'tempest' | 'riftbinder'
+    center: THREE.Vector3
+    direction: THREE.Vector2
+    radius: number
+    until: number
+    nextPulse: number
+    pulses: number
+    power: number
+    visual: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>
+  } | null = null
+
+  get abilityName(): string { return heroPath(this.heroDef.id, this.specialization)?.abilityName ?? this.heroDef.ability.name }
+  get abilityBlurb(): string { return heroPath(this.heroDef.id, this.specialization)?.blurb ?? this.heroDef.ability.blurb }
+  get hasActiveField(): boolean { return this.signatureField !== null }
+
+  /** Selection is validated again at the entity boundary, including imported loadouts. */
+  setSpecialization(path: string | null): void {
+    this.clearSignatureField()
+    this.specialization = heroPath(this.heroDef.id, path)?.id ?? null
+  }
+
+  private clearSignatureField(): void {
+    if (!this.signatureField) return
+    const mesh = this.signatureField.visual
+    mesh.removeFromParent()
+    mesh.geometry.dispose()
+    mesh.material.dispose()
+    this.signatureField = null
+  }
+
+  removeQuietly(): void {
+    this.clearSignatureField()
+    super.removeQuietly()
+  }
 
   get abilityFraction(): number {
     return Math.max(0, this.abilityCooldown / this.heroDef.ability.cooldown)
@@ -157,6 +194,7 @@ export class Hero extends Soldier {
 
   die(world: World): void {
     if (this.dead) return
+    this.clearSignatureField()
     this.deathPos.copy(this.group.position)
     // Second Wind halves the wait; the full-health return is handled on revive
     this.respawnCountdown = RESPAWN_TIME * (world.heroReviveMult ?? 1)
@@ -166,6 +204,7 @@ export class Hero extends Soldier {
   }
 
   update(dt: number, world: World): void {
+    this.updateSignatureField(world)
     if (this.dead) {
       this.respawnCountdown -= dt
       if (this.respawnCountdown <= 0) {
@@ -264,17 +303,36 @@ export class Hero extends Soldier {
   private castSignatureInner(world: World): boolean {
     const pos = this.group.position
     const kind = this.heroDef.ability.kind
+    if (this.specialization === 'gale' || this.specialization === 'tempest' || this.specialization === 'riftbinder') {
+      const radius = (this.specialization === 'gale' ? 3.5 : this.specialization === 'tempest' ? 3 : 2.1) * this.signatureReach
+      const nearby = world.enemies.filter(e => e.alive && (e.targetable || this.specialization === 'riftbinder') && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < radius)
+        .sort((a, b) => a.remaining - b.remaining)
+      if (!nearby.length) return false
+      this.abilityCooldown = this.signatureCooldown
+      this.plantSignatureField(this.specialization, world, radius, nearby[0].pos)
+      world.floater(pos.x, 0.9, pos.z, `${this.abilityName}!`, 'gold')
+      world.sfx('lightning', 0.8)
+      this.updateSignatureField(world)
+      return true
+    }
     if (kind === 'slam') {
       const victims = world.enemies.filter(e => e.targetable && !e.def.flying && e.pos.distanceTo(pos) < 1.35 * this.signatureReach)
-      if (!victims.length) return false
+      const wounded = this.specialization === 'bulwark' && [this, ...world.soldiers].some(s => s.alive && s.hp < s.maxHp && s.group.position.distanceTo(pos) < 2.2 * this.signatureReach)
+      if (!victims.length && !wounded) return false
       this.abilityCooldown = this.signatureCooldown
       const dmg = (26 + this.level * 6) * this.signaturePower
+      const priority = this.specialization === 'vanguard' ? [...victims].sort((a, b) => b.maxHp - a.maxHp || a.remaining - b.remaining)[0] : null
       for (const v of victims) {
-        v.takeDamage(dmg * (0.85 + simRandom() * 0.3), 'true', world, { credit: this })
+        if (v === priority) v.shredArmor(0.2)
+        v.takeDamage(dmg * (v === priority ? 2 : 1) * (0.85 + simRandom() * 0.3), 'true', world, { credit: this })
         v.applyStun(0.8, world)
       }
+      if (this.specialization === 'bulwark') {
+        this.plantSignatureField('bulwark', world, 2.2 * this.signatureReach)
+        this.updateSignatureField(world)
+      }
       world.particles.explosion(pos.x, 0.15, pos.z, 0.55)
-      world.floater(pos.x, 0.9, pos.z, 'Valor Slam!', 'gold')
+      world.floater(pos.x, 0.9, pos.z, `${this.abilityName}!`, 'gold')
       world.sfx('crit', 1)
       world.shake(0.09)
       world.impact('heavy')
@@ -284,21 +342,22 @@ export class Hero extends Soldier {
       const range = this.heroDef.attackRange ?? 3
       const victims = world.enemies
         .filter(e => e.targetable && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < range + 0.5)
-        .sort((a, b) => a.remaining - b.remaining)
+        .sort((a, b) => this.specialization === 'hawkeye' ? b.maxHp - a.maxHp || a.remaining - b.remaining : a.remaining - b.remaining)
       if (!victims.length) return false
       this.abilityCooldown = this.signatureCooldown
-      for (const v of victims.slice(0, 7 + this.signatureRank * 2)) {
+      for (const v of victims.slice(0, this.specialization === 'hawkeye' ? 3 : 7 + this.signatureRank * 2)) {
         world.fireProjectile({
           kind: 'arrow',
           from: pos.clone().add(new THREE.Vector3(0, 0.5, 0)),
           target: v,
-          damage: randRange(...this.def.damage) * 1.25 * this.signaturePower,
+          damage: randRange(...this.def.damage) * (this.specialization === 'hawkeye' ? 3.2 : 1.25) * this.signaturePower,
+          armorPierce: this.specialization === 'hawkeye' ? 0.65 : undefined,
           crit: true,
           credit: this,
           world,
         })
       }
-      world.floater(pos.x, 0.9, pos.z, 'Piercing Volley!', 'gold')
+      world.floater(pos.x, 0.9, pos.z, `${this.abilityName}!`, 'gold')
       world.sfx('crit', 1)
       return true
     }
@@ -317,6 +376,63 @@ export class Hero extends Soldier {
     world.sfx('lightning', 1)
     world.impact('heavy')
     return true
+  }
+
+  private plantSignatureField(kind: 'bulwark' | 'gale' | 'tempest' | 'riftbinder', world: World, radius: number, aim?: THREE.Vector3): void {
+    this.clearSignatureField()
+    const center = this.group.position.clone()
+    const direction = new THREE.Vector2(aim ? aim.x - center.x : 1, aim ? aim.z - center.z : 0).normalize()
+    if (!direction.lengthSq()) direction.set(1, 0)
+    const corridor = kind === 'gale'
+    const geometry = corridor ? new THREE.PlaneGeometry(radius, 1.5 * this.signatureReach) : new THREE.RingGeometry(radius * 0.95, radius, 48)
+    const color = kind === 'bulwark' ? 0xffd985 : kind === 'riftbinder' ? 0xbc8cff : kind === 'tempest' ? 0x73baff : 0x91efce
+    const visual = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: corridor ? 0.18 : 0.65, depthWrite: false, side: THREE.DoubleSide }))
+    visual.name = `hero-field-${kind}`
+    visual.rotation.x = -Math.PI / 2
+    if (corridor) visual.rotation.z = -Math.atan2(direction.y, direction.x)
+    visual.position.set(center.x + (corridor ? direction.x * radius / 2 : 0), world.groundY(center.x, center.z) + 0.06, center.z + (corridor ? direction.y * radius / 2 : 0))
+    world.dynamic.add(visual)
+    this.signatureField = { kind, center, direction, radius, until: world.time + (kind === 'tempest' ? 3 : 5), nextPulse: world.time, pulses: 0, power: this.signaturePower, visual }
+  }
+
+  private updateSignatureField(world: World): void {
+    const field = this.signatureField
+    if (!field) return
+    if (world.time + 1e-6 >= field.until || this.dead) { this.clearSignatureField(); return }
+    const contains = (p: THREE.Vector3, radius = field.radius): boolean => {
+      const x = p.x - field.center.x, z = p.z - field.center.z
+      if (field.kind !== 'gale') return Math.hypot(x, z) <= radius
+      const along = x * field.direction.x + z * field.direction.y
+      const across = Math.abs(x * field.direction.y - z * field.direction.x)
+      return along >= -0.15 && along <= field.radius && across <= 0.75 * this.signatureReach
+    }
+    if (field.kind === 'riftbinder') {
+      for (const enemy of world.enemies) {
+        if (!enemy.alive || !contains(enemy.pos)) continue
+        enemy.revealedUntil = Math.max(enemy.revealedUntil, world.time + 0.15)
+        enemy.revealed = true
+      }
+    }
+    if (field.pulses >= (field.kind === 'tempest' ? 3 : 5) || world.time + 1e-6 < field.nextPulse) return
+    field.nextPulse += 1
+    field.pulses++
+    const radius = field.kind === 'tempest' ? field.radius * field.pulses / 3 : field.radius
+    if (field.kind === 'tempest') field.visual.scale.setScalar(field.pulses / 3)
+    if (field.kind === 'bulwark') {
+      for (const soldier of new Set([this, ...world.soldiers])) {
+        if (!soldier.alive || !contains(soldier.group.position) || soldier.hp >= soldier.maxHp) continue
+        soldier.hp = Math.min(soldier.maxHp, soldier.hp + (12 + this.level * 2) * field.power)
+        world.particles.healSparkle(soldier.group.position.x, 0.5, soldier.group.position.z)
+      }
+      return
+    }
+    const amount = (field.kind === 'tempest' ? 18 + this.level * 5 : field.kind === 'riftbinder' ? 10 + this.level * 3 : 8 + this.level * 2) * field.power
+    for (const enemy of world.enemies) {
+      if (!enemy.targetable || !contains(enemy.pos, radius)) continue
+      enemy.takeDamage(amount, 'magic', world, { credit: this })
+      if (field.kind !== 'riftbinder') enemy.applySlow(field.kind === 'gale' ? 0.6 : 0.5, 1.15, world)
+    }
+    world.particles.magicImpact(field.center.x, 0.25, field.center.z, field.kind === 'riftbinder' ? 0xbc8cff : 0x91dcff)
   }
 
   private rangedAttackTimer = 0

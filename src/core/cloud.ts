@@ -21,6 +21,8 @@ import { mergeSaves, sanitizeCloudSave, type CloudSave } from './saveMerge.ts'
 
 const TOKEN_KEY = 'blockhold.cloud.token'
 const CODE_KEY = 'blockhold.cloud.code'
+const PROVIDER_KEY = 'blockhold.cloud.provider'
+const PROOF_KEY = 'blockhold.auth.verifier'
 const TIMEOUT = 6000
 
 /** where the sync service lives; empty disables cloud saves entirely */
@@ -29,6 +31,7 @@ const API = (import.meta.env?.VITE_SYNC_URL ?? '').replace(/\/$/, '')
 export interface CloudStatus {
   enabled: boolean
   signedIn: boolean
+  provider: string | null
   linkCode: string | null
   lastError: string | null
   lastSyncedAt: number | null
@@ -61,6 +64,8 @@ export function toCloud(save: SaveData, updatedAt = save.changedAt ?? Date.now()
     medals: save.medals,
     trials: save.trials ?? {},
     capstones: save.capstones ?? [],
+    honors: save.honors ?? [],
+    heroPaths: save.heroPaths ?? {},
     lastHero: save.lastHero,
     dailyBest: save.dailyBest,
     xp: save.xp,
@@ -81,6 +86,8 @@ export function applyCloud(save: SaveData, cloud: CloudSave): SaveData {
     medals: cloud.medals,
     trials: cloud.trials ?? {},
     capstones: cloud.capstones ?? [],
+    honors: cloud.honors ?? [],
+    heroPaths: cloud.heroPaths ?? {},
     lastHero: cloud.lastHero,
     dailyBest: cloud.dailyBest,
     xp: Math.max(save.xp, cloud.xp),
@@ -90,6 +97,8 @@ export function applyCloud(save: SaveData, cloud: CloudSave): SaveData {
 export class Cloud {
   private token: string | null = readLocal(TOKEN_KEY)
   private code: string | null = readLocal(CODE_KEY)
+  private provider: string | null = readLocal(PROVIDER_KEY)
+  private authVersion = 0
   private lastError: string | null = null
   private lastSyncedAt: number | null = null
   private inFlight = false
@@ -110,6 +119,7 @@ export class Cloud {
     return {
       enabled: this.enabled,
       signedIn: this.signedIn,
+      provider: this.provider,
       linkCode: this.code,
       lastError: this.lastError,
       lastSyncedAt: this.lastSyncedAt,
@@ -117,6 +127,7 @@ export class Cloud {
   }
 
   private async call(path: string, init: RequestInit = {}): Promise<unknown> {
+    const requestToken = this.token
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT)
     try {
@@ -136,13 +147,80 @@ export class Cloud {
         // database - permanently unrecoverable, because the code the player
         // needed to link again had been deleted from their device along with
         // the token. Local progress is untouched either way.
-        this.dropToken()
-        throw new Error('This device was signed out. Your code still works - restore with it to sync again.')
+        if (this.token === requestToken) this.dropToken()
+        throw new Error('Sign in again to sync. Your progress is still on this device.')
       }
-      if (!res.ok) throw new Error(`Sync failed (${res.status})`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(body.error ?? `Sync failed (${res.status})`)
+      }
       return await res.json()
     } finally {
       clearTimeout(timer)
+    }
+  }
+
+  async googleAvailable(): Promise<boolean> {
+    if (!this.enabled) return false
+    const out = await this.call('/v1/auth/providers') as { google?: boolean }
+    return out.google === true
+  }
+
+  async refreshIdentity(): Promise<void> {
+    if (!this.signedIn) return
+    const version = this.authVersion
+    try {
+      const out = await this.call('/v1/auth/session') as { provider: string | null }
+      if (version !== this.authVersion) return
+      this.provider = out.provider
+      if (this.provider) writeLocal(PROVIDER_KEY, this.provider)
+      else dropLocal(PROVIDER_KEY)
+    } catch (e) { this.lastError = e instanceof Error ? e.message : 'Sync unavailable' }
+  }
+
+  async signInGoogle(): Promise<void> {
+    const bytes = crypto.getRandomValues(new Uint8Array(32))
+    const encode = (v: Uint8Array) => btoa(String.fromCharCode(...v)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    const verifier = encode(bytes)
+    // A tab-bound proof keeps a copied redirect from signing somebody else in.
+    sessionStorage.setItem(PROOF_KEY, verifier)
+    const challenge = encode(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))))
+    const out = await this.call('/v1/auth/google/start', {
+      method: 'POST', body: JSON.stringify({ challenge, returnUrl: location.origin + location.pathname }),
+    }) as { url: string }
+    const target = new URL(out.url)
+    if (target.origin !== 'https://accounts.google.com') throw new Error('Invalid sign-in destination.')
+    location.assign(target.href)
+  }
+
+  /** Complete a redirect before normal startup sync, returning the union of both saves. */
+  async finishSignIn(save: SaveData): Promise<SaveData | null> {
+    const params = new URLSearchParams(location.hash.slice(1))
+    const code = params.get('blockhold_auth')
+    const error = params.get('blockhold_auth_error')
+    if (!code && !error) return null
+    history.replaceState(null, '', location.pathname + location.search)
+    try {
+      const verifier = sessionStorage.getItem(PROOF_KEY)
+      sessionStorage.removeItem(PROOF_KEY)
+      if (error) throw new Error('Sign-in was cancelled or could not finish. Please try again.')
+      if (!verifier) throw new Error('Sign-in must finish in the same browser tab. Please try again.')
+      const out = await this.call('/v1/auth/exchange', {
+        method: 'POST', body: JSON.stringify({ code, verifier }),
+      }) as { token: string, provider: string, save: unknown }
+      this.authVersion++
+      this.token = out.token
+      this.provider = out.provider
+      this.code = null
+      writeLocal(TOKEN_KEY, out.token)
+      writeLocal(PROVIDER_KEY, out.provider)
+      dropLocal(CODE_KEY)
+      this.lastError = null
+      const merged = applyCloud(save, mergeSaves(toCloud(save), sanitizeCloudSave(out.save)))
+      return (await this.sync(merged)) ?? merged
+    } catch (e) {
+      this.lastError = e instanceof Error ? e.message : 'Could not finish sign-in.'
+      return null
     }
   }
 
@@ -154,6 +232,9 @@ export class Cloud {
         method: 'POST',
         body: JSON.stringify({ save: toCloud(save) }),
       }) as { token: string, linkCode: string }
+      this.authVersion++
+      this.provider = null
+      dropLocal(PROVIDER_KEY)
       this.token = out.token
       this.code = out.linkCode
       writeLocal(TOKEN_KEY, out.token)
@@ -186,6 +267,9 @@ export class Cloud {
       if (res.status === 404) return { ok: false, error: 'That code does not match an account.' }
       if (!res.ok) return { ok: false, error: `Could not link (${res.status})` }
       const out = await res.json() as { token: string, save: unknown }
+      this.authVersion++
+      this.provider = null
+      dropLocal(PROVIDER_KEY)
       this.token = out.token
       writeLocal(TOKEN_KEY, out.token)
       // the code that got us here is this account's code; remember it so the
@@ -215,18 +299,20 @@ export class Cloud {
   async sync(save: SaveData): Promise<SaveData | null> {
     if (!this.signedIn || this.inFlight) return null
     this.inFlight = true
+    const version = this.authVersion
     try {
       const out = await this.call('/v1/save', {
         method: 'PUT',
         body: JSON.stringify({ save: toCloud(save) }),
       }) as { save: unknown }
+      if (version !== this.authVersion) return null
       const merged = sanitizeCloudSave(out.save)
       this.lastError = null
       this.lastSyncedAt = Date.now()
       // merge locally too, so anything earned during the round trip survives
       return applyCloud(save, mergeSaves(toCloud(save), merged))
     } catch (e) {
-      this.lastError = e instanceof Error ? e.message : 'Sync unavailable'
+      if (version === this.authVersion) this.lastError = e instanceof Error ? e.message : 'Sync unavailable'
       return null
     } finally {
       this.inFlight = false
@@ -259,11 +345,18 @@ export class Cloud {
   }
 
   /** stop syncing this device. Local progress is untouched. */
-  signOut(): void {
+  async signOut(): Promise<void> {
+    const request = this.token ? this.call('/v1/auth/logout', { method: 'POST' }).catch(() => null) : Promise.resolve(null)
+    this.authVersion++
     this.token = null
+    this.provider = null
     this.code = null
+    this.lastError = null
+    this.lastSyncedAt = null
     dropLocal(TOKEN_KEY)
+    dropLocal(PROVIDER_KEY)
     dropLocal(CODE_KEY)
+    await request
   }
 
   /**
@@ -273,6 +366,7 @@ export class Cloud {
    * the only thing that can get the account back.
    */
   private dropToken(): void {
+    this.authVersion++
     this.token = null
     dropLocal(TOKEN_KEY)
   }

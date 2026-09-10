@@ -678,6 +678,70 @@ function seraph(level: 1 | 2 | 3 | 4 | 5, aspect: SeraphAspect = 'plain'): VoxMo
   }
 }
 
+// ---------------- Mythic transformations ----------------
+// Keep the idol and independent heart emitter, but replace the crown's outline.
+// Small overlapping voxel segments make the moving rings read continuously.
+function mythicSeraph(solar: boolean): VoxModel {
+  const m = seraph(5, solar ? 'solar' : 'void')
+  const light = solar ? 0xffdf80 : 0xb78fff
+  const trim = solar ? W.gold : 0x675080
+  const centerY = solar ? 13.5 : 18
+  m.parts.halo = []
+  m.pivots!.halo = [0, centerY, -1.8]
+  for (let i = 0; i < 48; i++) {
+    const a = i / 48 * Math.PI * 2
+    const radius = solar ? 7.2 : 6.2
+    m.parts.halo.push(box(Math.cos(a) * radius, centerY + Math.sin(a) * radius, -1.8,
+      0.7, 0.7, 0.4, light, true))
+    if (solar && i % 4 === 0) m.parts.halo.push(box(Math.cos(a) * (radius + 1.1), centerY + Math.sin(a) * (radius + 1.1), -1.8,
+      0.65, 0.65, 0.7, trim))
+  }
+  if (solar) {
+    // Three substantial solar vanes on either side: a six-winged engine.
+    for (const side of [-1, 1]) {
+      const name = side < 0 ? 'wingCrownL' : 'wingCrownR'
+      m.parts[name] = Array.from({ length: 5 }, (_, i) => box(side * (3.0 + i * 1.0),
+        16 + i * 0.8, -0.8, 0.85, 2.2, 0.55, i % 2 ? W.white : light, i % 2 === 0))
+    }
+    m.parts.base.push(box(0, 1.0, 0, 9.1, 0.4, 9.1, W.gold))
+  } else {
+    // The dark crown contains a visible empty center and four anchor pylons.
+    // A second tilted ring gives it a different outline from the sun wheel.
+    m.parts.orbitInner = []
+    m.pivots!.orbitInner = [0, centerY - 1.5, 0]
+    for (let i = 0; i < 40; i++) {
+      const a = i / 40 * Math.PI * 2
+      m.parts.orbitInner.push(box(Math.cos(a) * 7, centerY - 1.5 + Math.sin(a) * 3.5,
+        Math.sin(a) * 4.5, 0.6, 0.6, 0.6, 0xd9c8ff, true))
+    }
+    for (const side of [-1, 1]) for (const z of [-3, 3]) {
+      m.parts.base.push(box(side * 4, 4, z, 1.0, 6, 1.0, W.obsidian),
+        box(side * 4, 7.2, z, 0.7, 0.7, 0.7, light, true))
+    }
+  }
+  return m
+}
+
+function lastLegion(): VoxModel {
+  const m = oathgateCitadel(0)
+  // An open command arch carries a tall split standard; no oversized roof
+  // hides the rallied formation beneath it.
+  m.parts.base.push(
+    box(-3.2, 9, 0, 1.0, 8, 1.2, W.white),
+    box(3.2, 9, 0, 1.0, 8, 1.2, W.white),
+    box(0, 13.2, 0, 7.4, 0.8, 1.5, W.gold),
+    box(0, 14.4, 0, 0.7, 1.6, 0.7, 0x8fe5d2, true),
+  )
+  m.parts.flag = [
+    box(0, 14.5, 0.4, 0.3, 6, 0.3, W.gold),
+    box(-1, 15.4, 0.5, 1.5, 3.0, 0.18, 0x24766c),
+    box(1, 15.4, 0.5, 1.5, 3.0, 0.18, 0x24766c),
+    box(0, 16.3, 0.6, 3.5, 0.4, 0.2, W.gold),
+  ]
+  m.pivots = { ...m.pivots, flag: [0, 15, 0.4] }
+  return m
+}
+
 // ---------------- Ballistae ----------------
 // Low and wide where the arrow towers are tall: a siege engine on a mount,
 // and the whole bow is the turret so it visibly swings to aim.
@@ -793,12 +857,15 @@ export type TowerModelId =
   | 'arrow1' | 'arrow2' | 'arrow3' | 'arrow4a' | 'arrow4b' | 'arrow5a' | 'arrow5b'
   | 'mage1' | 'mage2' | 'mage3' | 'mage4a' | 'mage4b' | 'mage5a' | 'mage5b'
   | 'cannon1' | 'cannon2' | 'cannon3' | 'cannon4a' | 'cannon4b' | 'cannon5a' | 'cannon5b'
+  | 'barracks6a'
   | 'barracks1' | 'barracks2' | 'barracks3' | 'barracks4a' | 'barracks4b' | 'barracks5a' | 'barracks5b'
   | 'beacon1' | 'beacon2' | 'beacon3' | 'beacon4a' | 'beacon4b' | 'beacon5a' | 'beacon5b'
   | 'ballista1' | 'ballista2' | 'ballista3' | 'ballista4a' | 'ballista4b' | 'ballista5a' | 'ballista5b'
+  | 'seraph6a' | 'seraph6b'
   | 'seraph1' | 'seraph2' | 'seraph3' | 'seraph4a' | 'seraph4b' | 'seraph5a' | 'seraph5b'
 
 const factories: Record<TowerModelId, () => VoxModel> = {
+  barracks6a: lastLegion, seraph6a: () => mythicSeraph(true), seraph6b: () => mythicSeraph(false),
   arrow1: () => arrowTower(1), arrow2: () => arrowTower(2), arrow3: () => arrowTower(3),
   arrow4a: sharpshooterTower, arrow4b: galeTower,
   arrow5a: () => crownwingAerie(0), arrow5b: () => crownwingAerie(1),
@@ -831,6 +898,7 @@ export function towerModel(id: TowerModelId): VoxModel {
 
 /** world-space height where projectiles originate */
 export const muzzleHeights: Record<TowerModelId, number> = {
+  barracks6a: 1.8, seraph6a: 2.9, seraph6b: 2.9,
   arrow1: 0.75, arrow2: 0.9, arrow3: 1.05, arrow4a: 1.35, arrow4b: 1.2, arrow5a: 1.4, arrow5b: 1.25,
   mage1: 0.95, mage2: 1.15, mage3: 1.3, mage4a: 1.25, mage4b: 1.05, mage5a: 1.3, mage5b: 1.1,
   cannon1: 0.5, cannon2: 0.6, cannon3: 0.72, cannon4a: 0.8, cannon4b: 0.62, cannon5a: 0.85, cannon5b: 0.66,

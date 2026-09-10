@@ -32,6 +32,8 @@ export interface CloudSave {
   trials: Record<string, string[]>
   /** capstone cards; monotonic, merged by union */
   capstones: string[]
+  honors?: string[]
+  heroPaths?: Record<string, string>
   lastHero: string
   dailyBest?: { day: number, wave: number, won: boolean, score: number }
   /** account experience: monotonic, the higher copy wins */
@@ -56,6 +58,23 @@ function numberMap(v: unknown, max: number): Record<string, number> {
   for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
     if (n++ >= MAX_KEYS || k.length > MAX_KEY_LEN) break
     out[k] = clampInt(val, 0, max, 0)
+  }
+  return out
+}
+
+/** Only authored achievements and specialization choices cross devices. */
+export function sanitizeHonors(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((x): x is string => typeof x === 'string' &&
+    /^(hunt:(ossuary|empress):(casual|normal|veteran)|hero:(aldric|liora|zephyra):(ossuary|empress)|mastery:(seraph|barracks):(ossuary|empress))$/.test(x)))].slice(0, 32)
+}
+export function sanitizeHeroPaths(value: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!value || typeof value !== 'object') return out
+  const paths: Record<string, string[]> = { aldric: ['bulwark', 'vanguard'], liora: ['hawkeye', 'gale'], zephyra: ['tempest', 'riftbinder'] }
+  for (const [id, choices] of Object.entries(paths)) {
+    const picked = (value as Record<string, unknown>)[id]
+    if (typeof picked === 'string' && choices.includes(picked)) out[id] = picked
   }
   return out
 }
@@ -100,6 +119,8 @@ export function sanitizeCloudSave(v: unknown): CloudSave {
     capstones: Array.isArray(o.capstones)
       ? [...new Set(o.capstones.filter((x): x is string => typeof x === 'string' && /^[a-z]+:[01]$/.test(x)))].slice(0, 32)
       : [],
+    honors: sanitizeHonors(o.honors),
+    heroPaths: sanitizeHeroPaths(o.heroPaths),
     lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',
     dailyBest: d && typeof d.day === 'number' ? {
       day: clampInt(d.day, 0, 999_999, 0),
@@ -152,6 +173,8 @@ export function mergeSaves(a: CloudSave, b: CloudSave): CloudSave {
     xp: Math.max(a.xp, b.xp),
     // choices, not achievements: a respec must survive the merge
     armory: { ...recent.armory },
+    honors: [...new Set([...(a.honors ?? []), ...(b.honors ?? [])])],
+    heroPaths: { ...recent.heroPaths },
     lastHero: recent.lastHero,
     updatedAt: Math.max(a.updatedAt, b.updatedAt),
   }

@@ -3,18 +3,15 @@
 A tiny sync service so a player's campaign survives a cleared cache, a private window, or a new phone.
 It also carries anonymous telemetry and the daily leaderboard, because both need somewhere to write and this is the only server the game has.
 
-No dependencies, no build step, no personal data.
+No dependencies or build step. Optional Google sign-in stores a Google subject identifier; email and profile details are not requested or stored. See [Google sign-in setup](AUTH.md).
 Node 24 runs the TypeScript directly and ships SQLite in core, so the whole service is a handful of files and a volume.
 
 ## What an account is
 
-A random token the device holds, and a short link code the player can type on another device.
+An account holds a progress blob. Google sign-in identifies it by Google's stable subject ID and gives each device an expiring, revocable bearer session. Signing in on an authenticated legacy device links its existing account in place; no save is replaced. Existing anonymous tokens and recovery codes remain usable for migration.
 
-There is no sign-up, no email and no password.
-Nothing here identifies a person, which is the point: there is no personal data to leak, and nothing to ask consent for.
+Google identity is verified server-side; accounts are never matched by email. If linking would join two existing accounts, the request fails explicitly. The player can sign out and sign in to their chosen Google account; the client preserves and merges local progress.
 
-- **Token** — 32 random bytes, kept in the device's `localStorage`. It is the credential.
-- **Link code** — eight readable characters (`7JV5-3JM6`), from an alphabet with no vowels and no look-alikes, because it gets read aloud and typed by hand. It can be rotated if it is shared too widely.
 
 ## Endpoints
 
@@ -130,7 +127,7 @@ Nothing here is kept for its own sake.
 A sweep runs at startup and every six hours (a daily timer on a process that is usually suspended would simply never fire) and deletes:
 
 - **events older than 90 days** - nothing the dashboard asks is answered by older data
-- **accounts with no save write in 180 days** - a wiped device or a player who moved on; keeping them forever turns a service that stores almost nothing into one that stores everything, slowly
+- **unlinked legacy accounts with no save write in 180 days** - a wiped device or a player who moved on; keeping them forever turns a service that stores almost nothing into one that stores everything, slowly
 - **leaderboard rows belonging to a collected account** - a name on a public board with no account behind it can never be corrected or removed on request
 - **rate limit counters whose window closed over a day ago**
 
@@ -267,5 +264,5 @@ Two caveats worth writing down rather than rediscovering:
 ## What this deliberately does not do
 
 - **No verified leaderboard.** There is a board, but see above: scores are bounded and stored with their replay, not re-simulated. The claim it makes is deliberately small.
-- **No accounts you can recover without the code.** Losing the device and the link code loses the save. That is the honest trade for collecting nothing; the export/import code in the game is the manual backup.
+- **Google setup is required.** Until the OAuth client credentials are configured, the game honestly marks Google sign-in unavailable. Existing saves keep syncing, and file backups plus legacy code recovery remain available. Google-linked accounts are exempt from the legacy 180-day account retention sweep.
 - **No blocking.** Every client call is best-effort. A player with no network, a blocked request or a service that is down gets exactly the game they had before, immediately.

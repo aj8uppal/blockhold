@@ -13,6 +13,7 @@ import { towerModel, muzzleHeights, rallyFlagModel } from '../voxel/models_tower
 import { randRange, lerpAngle, clamp, simChance } from '../core/utils.ts'
 import { RAMPART_RANGE_BONUS, RAMPART_DAMAGE_BONUS } from './earthworks.ts'
 import { onBeat, BEAT_BONUS } from './beat.ts'
+import { mythicFor, SOLAR_CHARGES, SOLAR_WARNING, SOLAR_RADIUS, RIFT_COOLDOWN, RIFT_DURATION, RIFT_RADIUS, LEGION_COOLDOWN, LEGION_DURATION, LEGION_RADIUS } from './mythics.ts'
 
 /**
  * Cross-family reactions replace the old same-family resonance.
@@ -136,7 +137,7 @@ const boltColors: Record<string, number> = {
 }
 
 /** each upgrade visibly grows the building: presence tracks power */
-const TIER_SCALE = [0.9, 1.0, 1.1, 1.2, 1.3]
+const TIER_SCALE = [0.9, 1.0, 1.1, 1.2, 1.3, 1.38]
 
 /** Shared by built Beacons, placement links and range previews. */
 export function beaconReach(range: number, highGround: boolean, lamplighters: number, farsight = false): number {
@@ -146,6 +147,7 @@ export function beaconReach(range: number, highGround: boolean, lamplighters: nu
 
 /** where the ascension sigil floats, per tower model */
 function towerCrownHeight(model: string): number {
+  if (model.includes('6')) return model.startsWith('seraph') ? 3.5 : 2.0
   const t5 = model.includes('5')
   if (model.startsWith('arrow')) return t5 ? 2.1 : 1.6
   if (model.startsWith('mage')) return t5 ? 2.0 : 1.75
@@ -159,15 +161,15 @@ function towerCrownHeight(model: string): number {
 /** the colour of each Seraph's light: the aspects differ, the crowns burn hotter */
 const SERAPH_LIGHT: Record<string, number> = {
   seraph1: 0xfff1b0, seraph2: 0xfff1b0, seraph3: 0xfff4c8,
-  seraph4a: 0xffd166, seraph5a: 0xffe08a,
-  seraph4b: 0x9d6bff, seraph5b: 0xb98cff,
+  seraph4a: 0xffd166, seraph5a: 0xffe08a, seraph6a: 0xfff2b0,
+  seraph4b: 0x9d6bff, seraph5b: 0xb98cff, seraph6b: 0xd3b6ff,
 }
 
 export class Tower {
   group: THREE.Group
   model!: THREE.Group
   def!: TowerLevelDef
-  level: 1 | 2 | 3 | 4 | 5 = 1
+  level: 1 | 2 | 3 | 4 | 5 | 6 = 1
   branch: 0 | 1 | null = null
   /** capstone: attack counter driving Crown Volley / Convergence Rune */
   private signatureCount = 0
@@ -225,6 +227,11 @@ export class Tower {
   private seraphT = 0
   private seraphPulse = 0
   private seraphSpeed = 1.3
+  private mythicCharge = 0
+  private mythicReadyAt = 0
+  private mythicUntil = 0
+  private mythicAt: THREE.Vector3 | null = null
+  private mythicMarker: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial> | null = null
 
   /**
    * The special attack, counted down where the player can see it.
@@ -252,6 +259,17 @@ export class Tower {
       case 'lastMuster': {
         const left = Math.max(0, this.musterReadyAt - time)
         return { text: left <= 0 ? 'Last Muster ready' : `Last Muster in ${Math.ceil(left)}s`, next: left <= 0 }
+      }
+      case 'solarStrike': return this.mythicAt
+        ? { text: 'Solar Strike charging on marked ground', next: true }
+        : { text: `Solar Strike · ${this.mythicCharge}/${SOLAR_CHARGES} beam charge`, next: this.mythicCharge >= SOLAR_CHARGES - 14 }
+      case 'eventHorizon': {
+        const left = this.mythicReadyAt === 0 ? RIFT_COOLDOWN : Math.max(0, this.mythicReadyAt - time)
+        return { text: this.mythicAt ? 'Event Horizon open · +30% damage inside' : `Event Horizon in ${Math.ceil(left)}s`, next: !!this.mythicAt || left < 3 }
+      }
+      case 'legionStandard': {
+        const left = Math.max(0, this.mythicReadyAt - time)
+        return { text: this.mythicAt ? 'Legion formation active' : left > 0 ? `Legion Standard in ${Math.ceil(left)}s` : 'Legion Standard ready · plant at rally', next: left <= 0 }
       }
       case 'dawnfall':
       case 'eclipse': {
@@ -297,6 +315,7 @@ export class Tower {
 
   private updateSeraphSignature(world: World): void {
     if (this.isGhost || this.level < 5 || !this.def.signature) return
+    if (this.level === 6) return
     // the crowns
     const every = this.def.signature === 'dawnfall' ? Tower.DAWNFALL_EVERY : Tower.ECLIPSE_EVERY
     if (this.seraphAt === 0) this.seraphAt = world.time + every
@@ -305,6 +324,109 @@ export class Tower {
     this.seraphAt = world.time + every
     if (this.def.signature === 'dawnfall') this.dawnfall(world)
     else this.eclipse(world)
+  }
+
+  /** The standard uses the existing rally command for its destination. */
+  activateMythic(world: World): boolean {
+    if (this.def.signature !== 'legionStandard' || this.isGhost || world.time < this.mythicReadyAt) return false
+    this.mythicReadyAt = world.time + LEGION_COOLDOWN
+    this.mythicUntil = world.time + LEGION_DURATION
+    this.mythicAt = this.rallyPoint.clone()
+    this.soldiers.forEach((s, i) => {
+      // Remove both sides of the old engagement before relocating the squad.
+      if (s.target) {
+        const index = s.target.blockers.indexOf(s)
+        if (index >= 0) s.target.blockers.splice(index, 1)
+        s.target = null
+      }
+      const home = this.soldierHome(i)
+      home.y = world.groundY(home.x, home.z)
+      s.home.copy(home)
+      s.revive(home)
+      s.reengageAt = world.time + 0.25
+      world.particles.healSparkle(home.x, home.y + 0.4, home.z)
+    })
+    this.showMythicMarker(world, LEGION_RADIUS, 0x8fe5d2)
+    world.floater(this.mythicAt.x, this.mythicAt.y + 1.0, this.mythicAt.z, 'Legion Standard!', 'gold')
+    world.sfx('reinforce', 0.8)
+    return true
+  }
+
+  private showMythicMarker(world: World, radius: number, color: number): void {
+    this.clearMythicMarker(world)
+    const geometry = new THREE.RingGeometry(radius - 0.045, radius, 64)
+    geometry.rotateX(-Math.PI / 2)
+    const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false, side: THREE.DoubleSide })
+    this.mythicMarker = new THREE.Mesh(geometry, material)
+    this.mythicMarker.position.copy(this.mythicAt!)
+    this.mythicMarker.position.y = world.groundY(this.mythicAt!.x, this.mythicAt!.z) + 0.07
+    this.mythicMarker.renderOrder = 4
+    world.dynamic.add(this.mythicMarker)
+  }
+
+  private clearMythicMarker(world: World): void {
+    if (!this.mythicMarker) return
+    world.dynamic.remove(this.mythicMarker)
+    this.mythicMarker.geometry.dispose()
+    this.mythicMarker.material.dispose()
+    this.mythicMarker = null
+  }
+
+  private updateMythic(dt: number, world: World): void {
+    const signature = this.def.signature
+    if (signature === 'eventHorizon' && !this.mythicAt) {
+      if (this.mythicReadyAt === 0) this.mythicReadyAt = world.time + RIFT_COOLDOWN
+      if (world.time >= this.mythicReadyAt) {
+        // A rift can find phased enemies; otherwise a lone hidden foe could
+        // never open the very ability intended to expose it.
+        let best: Enemy | null = null
+        for (const e of world.enemies) {
+          if (!e.alive || Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) > this.range + e.radius || !this.canSee(e, world)) continue
+          if (!best || e.hp > best.hp) best = e
+        }
+        if (best) {
+          this.mythicAt = best.pos.clone()
+          this.mythicUntil = world.time + RIFT_DURATION
+          this.mythicReadyAt = world.time + RIFT_COOLDOWN
+          this.showMythicMarker(world, RIFT_RADIUS, 0xb98cff)
+          world.sfx('eclipse', 0.65)
+          world.floater(best.pos.x, best.pos.y + 1.2, best.pos.z, 'Event Horizon · 4s', 'crit')
+        }
+      }
+    }
+    if (!this.mythicAt) return
+    // Checkpoint restore stores the gameplay state; rebuild its visual once.
+    if (!this.mythicMarker) this.showMythicMarker(world,
+      signature === 'solarStrike' ? SOLAR_RADIUS : signature === 'eventHorizon' ? RIFT_RADIUS : LEGION_RADIUS,
+      signature === 'solarStrike' ? 0xffd166 : signature === 'eventHorizon' ? 0xb98cff : 0x8fe5d2)
+    if (this.mythicMarker) this.mythicMarker.material.opacity = 0.55 + Math.sin(world.time * 6) * 0.15
+    if (world.time >= this.mythicUntil) {
+      if (signature === 'solarStrike') {
+        for (const e of world.enemies.slice()) {
+          if (!e.targetable || Math.hypot(e.pos.x - this.mythicAt.x, e.pos.z - this.mythicAt.z) > SOLAR_RADIUS + e.radius) continue
+          e.takeDamage(2400 * (this.perk?.id === 'radiance' ? 1.2 : 1) * (1 + this.auraDamage), 'true', world, { credit: this, crit: true, flavor: 'fire' })
+        }
+        world.fireProjectile({ kind: 'seraphBloom', at: this.mythicAt.clone(), solar: true, world })
+        world.sfx('dawnfall', 0.7)
+      }
+      this.mythicAt = null
+      this.clearMythicMarker(world)
+      return
+    }
+    if (signature === 'eventHorizon') {
+      for (const e of world.enemies) {
+        if (!e.alive || Math.hypot(e.pos.x - this.mythicAt.x, e.pos.z - this.mythicAt.z) > RIFT_RADIUS + e.radius) continue
+        const until = Math.min(this.mythicUntil, world.time + dt + 0.001)
+        e.revealedUntil = Math.max(e.revealedUntil, until)
+        e.mythicExposedUntil = Math.max(e.mythicExposedUntil, until)
+        e.revealed = true
+      }
+    } else if (signature === 'legionStandard') {
+      for (const s of world.soldiers) {
+        if (!s.alive || Math.hypot(s.group.position.x - this.mythicAt.x, s.group.position.z - this.mythicAt.z) > LEGION_RADIUS) continue
+        s.hp = Math.min(s.maxHp, s.hp + s.maxHp * 0.12 * dt)
+      }
+    }
   }
 
   /** Dawnfall: a column of true light on the toughest thing in reach, and a burning road beneath it */
@@ -546,6 +668,10 @@ export class Tower {
     if (this.level === 1 || this.level === 2) return [tree.levels[this.level]]
     if (this.level === 3) return [...tree.branches]
     if (this.level === 4 && this.branch !== null) return [resolveCapstone(this.kind, this.branch)]
+    if (this.level === 5 && this.branch !== null) {
+      const mythic = mythicFor(this.kind, this.branch)
+      return mythic ? [mythic] : []
+    }
     return []
   }
 
@@ -585,7 +711,7 @@ export class Tower {
     this.model = buildModel(towerModel(def.model), `tower:${def.model}`, { cloneMaterials: true })
     if (this.isGhost) applyGhostLook(this.model)
     this.group.add(this.model)
-    this.sizeMult = TIER_SCALE[this.level - 1]
+    this.sizeMult = TIER_SCALE[this.level - 1] ?? TIER_SCALE[0]
     this.buildT = 0
     // the new silhouette stays out of sight until the old one has crouched
     if (this.oldModel) this.model.visible = false
@@ -599,6 +725,7 @@ export class Tower {
   }
 
   upgrade(optionIndex: number, world: World): void {
+    if (!Number.isInteger(optionIndex) || !this.upgradeOptions[optionIndex]) return
     const tree = towerTrees[this.kind]
     if (this.level < 3) {
       this.level = (this.level + 1) as 2 | 3
@@ -614,12 +741,20 @@ export class Tower {
       if (this.crownMesh) this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult
       world.particles.magicImpact(this.pos.x, this.pos.y + 1.0, this.pos.z, 0xffe89f)
     }
+    else if (this.level === 5 && this.branch !== null) {
+      const mythic = mythicFor(this.kind, this.branch)
+      if (!mythic) return
+      this.level = 6
+      this.applyLevel(mythic, world)
+      if (this.crownMesh) this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult
+    }
     // dust and the upgrade sound belong to the reveal, not to the press;
     // update() plays them when the new silhouette rises
     void world
   }
 
   dismantle(world: World, silent = false): void {
+    this.clearMythicMarker(world)
     for (const s of this.soldiers) {
       if (s.alive) {
         if (silent) s.removeQuietly()
@@ -898,6 +1033,8 @@ export class Tower {
 
     if (this.isSeraph) { this.animateSeraph(dt, world); this.updateSeraphSignature(world) }
 
+    if (this.level === 6 && !this.isGhost) this.updateMythic(dt, world)
+
     // ascension sigil + overcharge ring
     if (this.crownMesh) {
       this.crownMesh.rotation.y += dt * 2.2
@@ -1103,6 +1240,19 @@ export class Tower {
           damageType: def.damageType ?? 'physical', color, width: this.level >= 5 ? 0.09 : this.level >= 4 ? 0.07 : 0.05,
           crit: crit || undefined, armorShred: shred, credit: this, world,
         })
+        if (def.signature === 'solarStrike' && !this.isGhost && !this.mythicAt) {
+          this.mythicCharge += targets.length
+          if (this.mythicCharge >= SOLAR_CHARGES) {
+            this.mythicCharge = 0
+            const strongest = world.enemies.filter(e => e.targetable
+              && Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) <= this.range + e.radius
+              && this.canSee(e, world)).reduce((best, e) => e.hp > best.hp ? e : best, target)
+            this.mythicAt = strongest.pos.clone()
+            this.mythicUntil = world.time + SOLAR_WARNING
+            this.showMythicMarker(world, SOLAR_RADIUS, 0xffd166)
+            world.floater(this.mythicAt.x, this.mythicAt.y + 1.2, this.mythicAt.z, 'Solar Strike · 1.4s', 'gold')
+          }
+        }
         this.seraphPulse = 1
         getPart(this.model, 'heart')?.scale.setScalar(1.22)
         world.sfx('ray', 0.6)
