@@ -1,3 +1,4 @@
+import { HUNTS, masteryReady } from '../game/hunts.ts'
 import { QUALITY_OPTIONS, type QualityPreference } from '../core/quality.ts'
 import { fmtDamage } from './screens.ts'
 import type { Game, TargetMode } from '../game/game.ts'
@@ -20,10 +21,10 @@ import { traitsOf, counterFor } from '../game/dossier.ts'
 import { HERO_RANK_MAX, heroRankCost } from '../game/hero.ts'
 import type { EnemyDef, TowerAura } from '../game/types.ts'
 import { icon, BOSS_ART } from './icons.ts'
-import { isUnlocked, unlockLevel, levelProgress, MAX_LEVEL } from '../game/progress.ts'
+import { unlockLevel, levelForXp, levelProgress, MAX_LEVEL } from '../game/progress.ts'
 
 function chip(label: string, value: string, cls = ''): string {
-  return `<span class="chip${cls ? ' ' + cls : ''}"><span class="chip-label">${label}</span><span class="chip-value">${value}</span></span>`
+  return `<span class="chip${cls ? ' ' + cls : ''}"${cls.split(' ').includes('lit') ? ' title="Boosted · see Combat details"' : ''}><span class="chip-label">${label}</span><span class="chip-value">${value}</span></span>`
 }
 
 const TOWER_ICONS: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm', beacon: 'flame', ballista: 'target', seraph: 'seraph' }
@@ -437,7 +438,16 @@ export class HUD {
     if (boss) { hp.value = Math.max(0, boss.hp / boss.maxHp); hp.setAttribute('aria-valuetext', `${Math.ceil(Math.max(0, boss.hp))} of ${boss.maxHp} health`) }
   }
 
+  private lastTowerLevel = -1
   refresh(game: Game): void {
+    const towerLevel = levelForXp(game.towerXp)
+    if (towerLevel !== this.lastTowerLevel) {
+      this.lastTowerLevel = towerLevel
+      if (game.selectedPlot && !this.buildMenu.classList.contains('hidden')) {
+        const rect = this.buildMenu.getBoundingClientRect()
+        this.openBuildMenu(game.selectedPlot, rect.left + rect.width / 2, rect.bottom + 24)
+      }
+    }
     this.coopSwitchBtn.disabled = !game.canSwitchCoop
     this.coopSwitchBtn.title = game.coop && !game.canSwitchCoop ? 'Waiting for the shared board to finish pending orders.' : ''
     this.refreshHunt(game)
@@ -447,15 +457,15 @@ export class HUD {
     if (game.phase === 'idle') return
     if (game.gold !== this.lastGold) {
       this.lastGold = game.gold
-      this.goldEl.querySelector('b')!.textContent = `${game.gold}`
+      this.goldEl.querySelector('b')!.textContent = game.isSandbox ? '∞' : `${game.gold}`
     }
     if (game.shards !== this.lastShards) {
       this.lastShards = game.shards
-      this.shardsEl.querySelector('b')!.textContent = `${game.shards}`
+      this.shardsEl.querySelector('b')!.textContent = game.isSandbox ? '∞' : `${game.shards}`
     }
     if (game.lives !== this.lastLives) {
       this.lastLives = game.lives
-      this.livesEl.querySelector('b')!.textContent = `${game.lives}`
+      this.livesEl.querySelector('b')!.textContent = game.isSandbox ? '∞' : `${game.lives}`
       // the three-star line, beside the number it is measured against
       const target = game.starTarget()
       const tEl = this.livesEl.querySelector('.star-target') as HTMLElement
@@ -483,7 +493,7 @@ export class HUD {
       bar.setAttribute('aria-valuenow', `${percent}`)
       bar.setAttribute('aria-valuetext', maxed ? remaining : `${into.toLocaleString()} of ${span.toLocaleString()} XP; ${remaining}`)
       ;(this.xpEl.querySelector('.xp-bar i') as HTMLElement).style.width = `${percent}%`
-      this.xpEl.title = maxed ? 'Maximum account level reached' : `${into.toLocaleString()} / ${span.toLocaleString()} XP · ${remaining}`
+      this.xpEl.title = game.coop ? 'Shared arsenal experience: the host’s starting level plus experience earned together.' : maxed ? 'Maximum account level reached' : `${into.toLocaleString()} / ${span.toLocaleString()} XP · ${remaining}`
       this.xpEl.classList.remove('pulse'); void this.xpEl.offsetWidth; this.xpEl.classList.add('pulse')
     }
     // the gain readout batches a burst of kills into one number and fades
@@ -497,7 +507,7 @@ export class HUD {
     }
     const w = game.waves
     if (w) {
-      const waveText = game.isEndless
+      const waveText = game.isSandbox ? 'Sandbox' : game.isEndless
         ? `${Math.max(1, w.waveIndex + 1)}/∞`
         // past the authored end the count is "held past the end", not a
         // fraction of a chunk whose size means nothing to the player
@@ -511,7 +521,7 @@ export class HUD {
       // wave call button
       let btnText = ''
       const noCall = !!game.trial && !game.trial.earlyCall && w.waveIndex >= 0
-      if (game.phase === 'playing' && w.phase === 'countdown' && !w.isLastWaveStarted && !noCall) {
+      if (!game.isSandbox && game.phase === 'playing' && w.phase === 'countdown' && !w.isLastWaveStarted && !noCall) {
         const bonus = w.earlyCallBonus()
         const secs = Math.ceil(w.countdown)
         // the whole bargain: the gold, the shard a defied surge pays, and what is still out there
@@ -586,11 +596,11 @@ export class HUD {
     this.expansionBtn.classList.toggle('hidden', credits <= 0)
     this.expansionBtn.classList.toggle('active', game.targetMode === 'expand')
     this.expansionBtn.disabled = game.paused
-    const expansionText = `Place plot · ${credits} available`
+    const expansionText = game.isSandbox ? 'Place plot · unlimited' : `Place plot · ${credits} available`
     if (this.expansionBtn.getAttribute('aria-label') !== expansionText) {
       this.expansionBtn.setAttribute('aria-label', expansionText)
-      this.expansionBtn.innerHTML = `${icon('castle')}<span>Plot · ${credits}</span>`
-      this.expansionBtn.title = 'Place a new foundation on clear ground. Earn one every 15 endless waves cleared.'
+      this.expansionBtn.innerHTML = `${icon('castle')}<span>Plot · ${game.isSandbox ? '∞' : credits}</span>`
+      this.expansionBtn.title = game.isSandbox ? 'Place a new foundation on clear ground.' : 'Place a new foundation on clear ground. Earn one every 15 endless waves cleared.'
     }
     const chargeCost = game.overchargeAllCost
     this.overchargeAllBtn.classList.toggle('hidden', game.towers.every(t => t.isBarracks || t.isBeacon || t.isGhost))
@@ -657,8 +667,14 @@ export class HUD {
         if (dmgEl.textContent !== text) dmgEl.textContent = text
       }
     }
+    this.refreshMasteryProgress()
     // tower panel gold/shard-dependent button states
     if (this.currentTower && !this.towerPanel.classList.contains('hidden')) {
+      const stats = this.towerPanel.querySelector<HTMLElement>('.tp-combat-stats')
+      if (stats) {
+        const html = this.combatStats(this.currentTower)
+        if (stats.dataset.readout !== html) { stats.innerHTML = html; stats.dataset.readout = html }
+      }
       const setNeed = (b: HTMLButtonElement, text: string) => {
         const n = b.querySelector('.u-need')
         if (n && n.textContent !== text) n.textContent = text
@@ -728,7 +744,7 @@ export class HUD {
       // a tower the account has not reached stays on the menu, greyed and
       // labelled with its level, so the player knows the roster is bigger
       // than what they can build today and what it takes to grow it
-      if (!isUnlocked(this.game.roster, 'tower', kind)) {
+      if (!this.game.towerUnlocked(kind)) {
         const lockBtn = el('button', 'build-option locked', this.buildMenu) as HTMLButtonElement
         lockBtn.innerHTML = `<span class="b-icon">${icon('lock')}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">Lv ${unlockLevel('tower', kind)}</span>`
         lockBtn.disabled = true
@@ -1058,6 +1074,49 @@ export class HUD {
 
   // ---------------- tower panel ----------------
 
+  private combatStats(tower: Tower): string {
+    const m = this.mults(tower.kind), def = tower.def
+    const [lo, hi] = tower.effectiveDamage()!.map(v => Math.round(v * m.dmg)) as [number, number]
+    const interval = tower.effectiveInterval()!
+    const typeIco = def.damageType === 'magic' ? 'sparkle' : def.splash ? 'blast' : 'sword'
+    const boosted = tower.damageMult > 1 || tower.rateMult > 1
+    return (
+      chip('Damage', `${icon(typeIco)} ${lo}–${hi}`, tower.damageMult > 1 ? 'lit' : '') +
+      chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`, tower.rateMult > 1 ? 'lit' : '') +
+      chip('Range', `${icon('range')} ${fmtNum(tower.range)}`, tower.range > def.range ? 'lit' : '') +
+      chip(def.beamTargets ? 'DPS / target' : 'DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : '') +
+      (def.beamTargets ? chip('Targets', `${def.beamTargets}`) : ''))
+  }
+
+  private refreshMasteryProgress(): void {
+    const tower = this.currentTower
+    const target = this.towerPanel.querySelector('.tp-mastery-body')
+    if (!tower || !target) return
+    const game = this.game, save = game.roster
+    const earned = (id: string) => save.honors?.includes(`mastery:${tower.kind}:${id}`)
+    const stamps = HUNTS.map(h => `<div>${earned(h.id) ? '✓' : '○'} ${h.name}</div>`).join('')
+    let status: string
+    if (game.isSandbox) status = 'All Mythics available · sandbox earns no mastery.'
+    else if (game.hasSharedMythic(tower.kind) && !masteryReady(save, tower.kind)) status = 'Available for this defense · shared by a player who earned mastery.'
+    else if (masteryReady(save, tower.kind)) status = 'Unlocked permanently · upgrade from tier five with battle gold.'
+    else if (!game.hunt) status = 'Earn stamps in Boss hunts on Normal or Veteran. Campaign battles do not count.'
+    else if (game.difficulty === 'casual') status = 'Play this hunt on Normal or Veteran to earn mastery.'
+    else if (earned(game.hunt.id)) status = 'This hunt stamp is already earned for this family.'
+    else {
+      const damage = tower.isBeacon ? tower.supportedDamage : tower.damage
+      const ready = tower.level >= 5 && damage >= 4000
+      status = `<div>${tower.level >= 5 ? '✓' : '○'} Tier five · currently ${tower.level}</div>`
+        + `<div>${damage >= 4000 ? '✓' : '○'} ${Math.floor(damage).toLocaleString()} / 4,000 ${tower.isBeacon ? 'supported damage' : 'damage'}</div>`
+        + `<progress max="4000" value="${Math.min(4000, damage)}" aria-label="${tower.isBeacon ? 'Supported damage' : 'Damage'} toward mastery"></progress>`
+        + `<div>${ready ? 'Ready — win' : 'Then win'} ${game.hunt.name} with this tower still standing.</div>`
+    }
+    const html = `<div>Level ${Math.min(30, levelForXp(save.xp))} / 30${game.coop ? ' · shared arsenal' : ''}</div>${stamps}<div class="tp-mastery-status">${status}</div>`
+    if (target.getAttribute('data-progress') !== html) {
+      target.innerHTML = html
+      target.setAttribute('data-progress', html)
+    }
+  }
+
   openTowerPanel(tower: Tower): void {
     if (this.currentTower !== tower) this.towerPanel.scrollTop = 0
     this.currentTower = tower
@@ -1071,7 +1130,7 @@ export class HUD {
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, tower.def.name)
     el('div', 'tp-level', title, (tower.level === 6 ? 'Mythic · ' : tower.level === 5 ? '✦ ' : tower.level === 4 ? '★ ' : '')
-      + `Tier ${tower.level}/5`
+      + `Tier ${tower.level}/6`
       + `<span class="tp-kills" title="Enemies slain by this building, and the health it has taken from them"> · ${icon('skull')} <span class="tp-kill-n">${tower.kills}</span> · ${icon('swords')} <span class="tp-dmg-n">${fmtDamage(tower.damage)}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
     close.setAttribute('aria-label', 'Close')
@@ -1111,30 +1170,22 @@ export class HUD {
         const [lo, hi] = tower.effectiveDamage()!
         const interval = tower.effectiveInterval()!
         el('div', 'stat-chips', p,
-          chip('Axes vs air', `${icon('feather')} ${lo}–${hi}`, 'wide lit') +
+          chip('Axes vs air', `${icon('feather')} ${lo}–${hi}`, 'wide') +
           chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`) +
           chip('Reach', `${icon('range')} ${fmtNum(tower.range)}`))
         el('div', 'tp-traits', p, `${icon('feather')} The camp hurls axes at anything airborne within its reach - the only barracks that can`)
       }
     } else {
-      // the numbers this tower fights with, not the ones in its definition
-      const [lo, hi] = tower.effectiveDamage()!.map(v => Math.round(v * m.dmg)) as [number, number]
-      const interval = tower.effectiveInterval()!
-      const typeIco = def.damageType === 'magic' ? 'sparkle' : def.splash ? 'blast' : 'sword'
-      const boosted = tower.damageMult !== 1 || tower.rateMult !== 1 || tower.range !== def.range
-      el('div', 'stat-chips', p,
-        chip('Damage', `${icon(typeIco)} ${lo}–${hi}`, tower.damageMult > 1 ? 'lit' : '') +
-        chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`, tower.rateMult > 1 ? 'lit' : '') +
-        chip('Range', `${icon('range')} ${fmtNum(tower.range)}`, tower.range > def.range ? 'lit' : '') +
-        chip(def.beamTargets ? 'DPS / target' : 'DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : '') +
-        (def.beamTargets ? chip('Targets', `${def.beamTargets}`) : ''))
+      el('div', 'stat-chips tp-combat-stats', p, this.combatStats(tower))
       const traits: string[] = []
       for (const note of tower.modifierNotes()) traits.push(`${icon('flame')} ${note}`)
       if (def.beamTargets) traits.push('independent beams from the idol; full damage to each target')
       if (def.splash) traits.push(`${icon('blast')} blast r${Math.round(def.splash * m.splash * 100) / 100}`)
       if (def.damageType === 'magic') traits.push(`${icon('sparkle')} ignores armor`)
       traits.push(def.flying ? `${icon('feather')} hits flyers` : 'no flyers')
-      el('div', 'tp-traits', p, traits.join(' · '))
+      const details = el('details', 'tp-details', p)
+      el('summary', '', details, 'Combat details')
+      el('div', 'tp-traits', details, traits.join(' · '))
     }
     // the special attack's counter, live (refresh() keeps it current)
     this.sigEl = null
@@ -1147,9 +1198,17 @@ export class HUD {
       const steps: string[] = tree.levels.slice(0, Math.min(tower.level, 3)).map(l => l.name)
       if (tower.level >= 4 && tower.branch !== null) steps.push(`★ ${tree.branches[tower.branch].name}`)
       if (tower.level >= 5 && tower.branch !== null) steps.push(`✦ ${tree.capstones[tower.branch].name}`)
+      if (tower.level === 6) steps.push(tower.def.name)
       if (tower.perk) steps.push(`${icon(tower.perk.icon)} ${tower.perk.name}`)
-      el('div', 'tp-lineage', p, steps.join(' <span class="dim">→</span> '))
+      const lineage = el('div', 'tp-lineage', p, steps.join(' <span class="dim">→</span> '))
+      const details = p.querySelector('.tp-details')
+      if (details) details.before(lineage)
     }
+
+    const mastery = el('details', 'tp-mastery tp-details', p)
+    el('summary', '', mastery, 'Mythic progress')
+    el('div', 'tp-mastery-body', mastery)
+    this.refreshMasteryProgress()
 
     const extras: string[] = []
     for (const r of REACTIONS) {
@@ -1167,7 +1226,7 @@ export class HUD {
     // when the only thing between the player and either was gold. Say what
     // the step is, and (below, live) exactly how much gold is missing.
     if (!capped && tower.level === 3) {
-      el('div', 'tp-choice', actions, `${icon('sparkle')} Tier 4 is a choice: one of two specializations, permanent. Nothing else is needed - only the gold.`)
+      el('div', 'tp-choice', actions, `Choose a specialization · permanent`)
     }
     if (!capped) tower.upgradeOptions.forEach((opt, i) => {
       const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, primary) as HTMLButtonElement
@@ -1661,7 +1720,8 @@ export class HUD {
     this.pauseOverlay.classList.add('hidden')
     this.waveBtn.classList.add('hidden')
     this.waveDetails.classList.add('hidden'); this.waveDetails.open = false; this.lastWavePreviewHtml = ''
-    this.lastGold = this.lastLives = this.lastXp = -1
+    this.lastGold = this.lastShards = this.lastLives = this.lastXp = this.lastTowerLevel = -1
+    this.root.querySelector('.sandbox-tools')?.remove()
     this.lastWaveText = this.lastWaveBtnText = ''
   }
 }

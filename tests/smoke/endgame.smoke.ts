@@ -63,7 +63,7 @@ test('earned hero paths equip and carry into a hunt', async ({ page, consoleErro
   expect(consoleErrors).toEqual([])
 })
 
-test('Mythics require earned mastery and only one can stand', async ({ page, consoleErrors }) => {
+test('Mythics require earned mastery and multiple can stand', async ({ page, consoleErrors }) => {
   await bootToMenu(page)
   const result = await page.evaluate(() => {
     const g = window.vg.game as unknown as Game
@@ -86,8 +86,8 @@ test('Mythics require earned mastery and only one can stand', async ({ page, con
     g.paused = true
     return { locked, tier: t.level, second: second.level, charged: remaining - g.gold, message: g.mythicLock(second) }
   })
-  expect(result).toMatchObject({ locked: true, tier: 6, second: 5, charged: 0 })
-  expect(result.message).toContain('One Mythic')
+  expect(result).toMatchObject({ locked: true, tier: 6, second: 6, charged: 14000 })
+  expect(result.message).toBeNull()
   expect(consoleErrors).toEqual([])
 })
 

@@ -22,7 +22,7 @@ import { isUnlocked, levelProgress, nextUnlock, unlockLevel, xpForLevel, MAX_LEV
 import { cloud } from '../core/cloud.ts'
 import { dailyShareText, challengeUrl, runChallengeUrl, runShareText, type DailyResult } from '../game/share.ts'
 
-export type ScreenName = 'menu' | 'levels' | 'victory' | 'defeat' | 'coop' | 'hunts' | 'none'
+export type ScreenName = 'menu' | 'sandbox' | 'levels' | 'victory' | 'defeat' | 'coop' | 'hunts' | 'none'
 
 const THEME_ART: Record<string, string> = {
   forest: 'linear-gradient(160deg, #79c057 0%, #4e9a3d 55%, #2e7a52 100%)',
@@ -57,7 +57,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
   return e
 }
 
-export type GameMode = 'campaign' | 'endless'
+export type GameMode = 'campaign' | 'endless' | 'sandbox'
 
 export interface BattleStats {
   kills: number, gold: number, shards: number, wavesReached: number, wavesCleared: number, totalWaves: number,
@@ -182,6 +182,7 @@ export class Screens {
     switch (name) {
       case 'menu': this.renderMenu(); break
       case 'levels': this.renderLevels(); break
+      case 'sandbox': this.renderLevels(true); break
       case 'hunts': void import('./endgame.ts').then(({ renderEndgame }) => { if (this.current === 'hunts') renderEndgame(this.root, this.save(), this.onPlayHunt, () => this.show('menu')) }); break
       case 'coop': this.renderCoop(opts.coopCode); break
       case 'victory': this.renderEnd(true, opts.stars ?? 1, opts.levelId!, opts.stats); break
@@ -232,6 +233,8 @@ export class Screens {
         : `${icon('respawn')} Resume ${cpLevel.name} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
     }
+    const sandbox = el('button', 'btn ghost', card, `${icon('castle')} Sandbox`) as HTMLButtonElement
+    sandbox.onclick = () => this.show('sandbox')
     const hunts = el('button', 'btn ghost', card, `${icon('crown')} Boss hunts & hero paths`) as HTMLButtonElement
     hunts.onclick = () => this.show('hunts')
     // one battle, the same one for everyone in the world today
@@ -394,13 +397,13 @@ export class Screens {
     })
   }
 
-  private renderLevels(): void {
+  private renderLevels(sandbox = false): void {
     const save = this.save()
     const wrap = el('div', 'screen levels-screen', this.root)
     const head = el('div', 'levels-head', wrap)
     const back = el('button', 'btn ghost small', head, '← Back') as HTMLButtonElement
     back.onclick = () => this.show('menu')
-    el('h2', 'levels-title', head, 'Choose your battlefield')
+    el('h2', 'levels-title', head, sandbox ? 'Sandbox · choose a map' : 'Choose your battlefield')
     const armoryBtn = el('button', 'btn ghost small', head, `${icon('swords')} Armory · ${starsAvailable(save)}★`) as HTMLButtonElement
     armoryBtn.onclick = () => this.renderArmory()
     const cardsBtn = el('button', 'btn ghost small', head, `${icon('crown')} Cards · ${(save.capstones ?? []).length}/14`) as HTMLButtonElement
@@ -408,7 +411,7 @@ export class Screens {
     cardsBtn.onclick = async () => { const { renderCapstoneCards } = await import('./capstoneCards.ts'); renderCapstoneCards(this.root, save.capstones ?? [], () => {}) }
     const grid = el('div', 'levels-grid', wrap)
     levels.forEach((lvl, i) => {
-      const locked = i >= save.unlocked
+      const locked = !sandbox && i >= save.unlocked
       const stars = save.stars[lvl.id] ?? 0
       const card = el('button', `level-card${locked ? ' locked' : ''}`, grid) as HTMLButtonElement
       const art = el('div', 'level-art', card, locked ? icon('lock', 'plain') : '')
@@ -416,11 +419,11 @@ export class Screens {
       art.style.background = `url(art/card-${lvl.id}.webp) center / cover, ${THEME_ART[lvl.theme]}`
       el('div', 'level-name', card, `${i + 1}. ${lvl.name}`)
       el('div', 'level-sub', card, lvl.subtitle)
-      el('div', 'level-meta', card, `${lvl.waves.length} waves · ${lvl.lanes.length === 1 ? 'single road' : `${lvl.lanes.length} roads`}`)
+      el('div', 'level-meta', card, `${sandbox ? 'Free building' : `${lvl.waves.length} waves`} · ${lvl.lanes.length === 1 ? 'single road' : `${lvl.lanes.length} roads`}`)
       const best = save.bestEndless[lvl.id] ?? 0
       const held = Math.max(...(['casual', 'normal', 'veteran'] as const).map(d => save.bestFreeplay?.[`${lvl.id}:${d}`] ?? 0))
       const medals = save.medals[lvl.id] ?? []
-      el('div', 'level-stars', card, '★'.repeat(stars) + '<span class="dim">' + '★'.repeat(3 - stars) + '</span>' +
+      if (!sandbox) el('div', 'level-stars', card, '★'.repeat(stars) + '<span class="dim">' + '★'.repeat(3 - stars) + '</span>' +
         (medals.includes('noleak') ? `<span class="level-medal" title="Flawless: won without a single leak"> ${icon('medal')}</span>` : '') +
         (medals.includes('veteran') ? `<span class="level-medal" title="Conquered on Veteran"> ${icon('medal', 'vet')}</span>` : '') +
         (trialsWon(save.trials, lvl.id).length ? `<span class="level-medal" title="Trials won"> ${icon('flag')}${trialsWon(save.trials, lvl.id).length}</span>` : '') +
@@ -428,7 +431,7 @@ export class Screens {
         (held > 0 ? `<span class="level-endless" title="Waves held past the end"> ${icon('castle')}+${held}</span>` : ''))
       // the goal ladder: always show the next rung
       if (!locked) {
-        const goal = stars === 0 ? 'Clear the map'
+        const goal = sandbox ? 'Open sandbox' : stars === 0 ? 'Clear the map'
           : stars < 3 ? 'Earn three stars'
           : !medals.includes('noleak') ? 'Win without a single leak'
           : !medals.includes('veteran') ? 'Conquer it on Veteran'
@@ -436,7 +439,7 @@ export class Screens {
           : `Survive past wave ${best} in the Long Night`
         el('div', 'level-goal', card, `➤ ${goal}`)
       }
-      if (!locked) card.onclick = () => this.showDifficultyPicker(lvl.id, lvl.name)
+      if (!locked) card.onclick = () => this.showDifficultyPicker(lvl.id, lvl.name, sandbox)
     })
   }
 
@@ -606,15 +609,16 @@ export class Screens {
     setTimeout(() => { btn.innerHTML = label }, 2500)
   }
 
-  private showDifficultyPicker(levelId: string, levelName: string): void {
+  private showDifficultyPicker(levelId: string, levelName: string, sandbox = false): void {
     const save = this.save()
     let hero: HeroId = (save.lastHero in HERO_DEFS ? save.lastHero : 'aldric') as HeroId
-    let mode: GameMode = 'campaign'
-    const beaten = (save.stars[levelId] ?? 0) > 0
+    let mode: GameMode = sandbox ? 'sandbox' : 'campaign'
+    const beaten = !sandbox && (save.stars[levelId] ?? 0) > 0
     const best = save.bestEndless[levelId] ?? 0
     const overlay = el('div', 'help-overlay', this.root)
     const card = el('div', 'help-card difficulty-card', overlay)
     el('h2', '', card, levelName)
+    if (sandbox) el('p', 'diff-sub', card, 'Free building. All towers and heroes. Send enemies when you choose. No account rewards.')
 
     if (beaten) {
       const modeRow = el('div', 'mode-row', card)
@@ -652,9 +656,9 @@ export class Screens {
     const heroBtns = new Map<HeroId, HTMLButtonElement>()
     // a hero the account has not reached is shown, named and priced in levels,
     // rather than hidden: the ladder only pulls if the rungs can be seen
-    if (!isUnlocked(save, 'hero', hero)) hero = 'aldric'
+    if (!sandbox && !isUnlocked(save, 'hero', hero)) hero = 'aldric'
     for (const def of Object.values(HERO_DEFS)) {
-      const locked = !isUnlocked(save, 'hero', def.id)
+      const locked = !sandbox && !isUnlocked(save, 'hero', def.id)
       const btn = el('button', `hero-option${locked ? ' locked' : ''}`, heroRow) as HTMLButtonElement
       if (locked) {
         btn.innerHTML = `<img class="hero-portrait" src="art/hero-${def.id}.webp" alt="">` +

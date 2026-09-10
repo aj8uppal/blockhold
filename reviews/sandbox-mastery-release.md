@@ -1,0 +1,15 @@
+# Sandbox, shared mastery and Seraph refinement
+
+Ruleset 10 expands Mythics to both branches of all seven tower families, removes the shared-defense quantity cap, and carries a joining player's earned Mythic access into the current defense through an ordered command. Shared access survives rejoin and solo continuation but does not grant permanent honors to another account. Host Armory and ordinary roster rules remain shared; battle XP now unlocks towers immediately, including Ballista at level 15.
+
+Sandbox is available from the menu and co-op lobby. All maps, towers and heroes are available with free building, custom enemy groups, health multipliers, clear-enemy and ability-reset controls. Enemy requests are bounded to 25 per command and 200 live/queued enemies. Ordinary campaign commands cannot invoke sandbox tools. Sandbox isolates account progress and saves through the same deterministic journal as ordinary battles.
+
+Solar Seraph covers seven/eight targets at tiers four/five; Void focuses three/four heavier magic beams. Full-group basic DPS falls approximately 25–37% at tier four and 29–30% at tier five, before armor, support and signature effects. Void retains stronger damage per target. Eclipse affects the four strongest visible targets. Late models have one halo and a simpler wing silhouette; the tier-one through tier-three model hashes are unchanged.
+
+Tower panels keep lineage visible and place combat explanations and live Mythic progress behind separate disclosures. Gold stat backgrounds are removed; small arrows mark boosted values, which refresh as buffs expire. The hunt overview names both required hunts, makes clear either Normal or Veteran counts, and tracks every family. Beacons qualify through actual damage dealt by supported towers, crediting only the strongest active aura and excluding overkill.
+
+Validation: 354 game tests and 51 server tests passed; typecheck, lint, production build and bundle budget passed. Two real Chromium seats passed late-join mastery sharing, reload/rejoin, sandbox synchronization, shared-to-solo conversion and exact saved-state reconstruction. The browser suite covers mobile controls, campaign/save flows, sandbox and live mastery UI. These are functional checks using software rendering, not a mobile FPS benchmark.
+
+Compatibility: account progress is retained. Old ruleset-eight/nine journals are accepted only when they reproduce their recorded state exactly. Changed Seraph combat can prevent an older battle journal from restoring; its saved bytes are retained rather than silently loading a different result. Keep an existing solo battle's tab open to finish it on its original rules. Updating the in-memory co-op server ends existing rooms; players can continue the current tab solo and create a new room after refreshing to matching rules.
+
+Download budget: ~157.6 KiB app and ~293.9 KiB total gzip. The explicit budget increases to 159/295 KiB for sandbox, eleven additional Mythic branches, live progress and shared unlock commands; sandbox UI remains lazy loaded.

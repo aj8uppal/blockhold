@@ -82,12 +82,15 @@ export class Game implements World {
   private recovering = false
   private legacyCheckpointRun = false
 
-  private get battleSave(): SaveData { return this.recoverySave ?? this.save }
+  isSandbox = false
+  private sandboxSave: SaveData | null = null
+  private sandboxQueue: { enemy: string, count: number, lane: number, hp: number, at: number }[] = []
+  private get battleSave(): SaveData { return this.recoverySave ?? this.sandboxSave ?? this.save }
 
-  private persistProgress(): boolean { return this.recovering || writeSave(this.save) }
+  private persistProgress(): boolean { return this.isSandbox || this.recovering || writeSave(this.save) }
 
   private track(event: Parameters<typeof telemetry.track>[0]): void {
-    if (!this.recovering) telemetry.track(event)
+    if (!this.recovering && !this.isSandbox) telemetry.track(event)
   }
 
   get isRecovering(): boolean { return this.recovering }
@@ -98,7 +101,7 @@ export class Game implements World {
       && this.sessionTick <= SESSION_MAX_TICKS && this.journal.commands.length <= SESSION_MAX_COMMANDS
   }
 
-  private sessionStateHash(legacy = false): number {
+  private sessionStateHash(ruleset = RULESET_VERSION): number {
     const values = [this.sessionTick, this.gold, this.lives, this.shards, this.time, this.killCount,
       this.goldEarned, this.shardsEarned, this.liveXp, this.perfectWaves, this.leaks,
       this.waves?.waveIndex ?? -1, this.waves?.totalWaves ?? 0, this.isFreeplay ? 1 : 0,
@@ -108,7 +111,12 @@ export class Game implements World {
     for (const t of this.towers) values.push(t.plot.index, t.level, t.branch ?? -1, t.damage, t.kills, t.soldiers.length)
     for (const s of this.soldiers) values.push(s.hp, s.maxHp, s.group.position.x, s.group.position.y, s.group.position.z, s.dead ? 1 : 0)
     if (this.hero) values.push(this.hero.level, this.hero.xp, this.hero.signatureRank, this.hero.abilityCooldown, this.hero.respawnCountdown)
-    if (!legacy) values.push(this.completedEndlessWaves, this.terrain?.plots.length ?? 0)
+    if (ruleset >= 9) values.push(this.completedEndlessWaves, this.terrain?.plots.length ?? 0)
+    if (ruleset >= 10) {
+      values.push(this.bankedUnlockXp, ...Object.keys(towerTrees).map(k => this.sharedMythics.has(k as TowerKind) ? 1 : 0))
+      for (const t of this.towers) values.push(t.supportedDamage)
+      for (const g of this.sandboxQueue) values.push(g.count, g.hp, g.lane, g.at)
+    }
     return stateHash(values)
   }
 
@@ -171,7 +179,7 @@ export class Game implements World {
       }
       if (next !== session.commands.length || this.phase !== 'playing'
         || (this.waves?.waveIndex ?? -1) + 1 !== session.wave
-        || (session.stateHash !== undefined && this.sessionStateHash(session.ruleset === 8) !== session.stateHash)) {
+        || (session.stateHash !== undefined && this.sessionStateHash(session.ruleset) !== session.stateHash)) {
         throw new Error('Saved battle did not reproduce its recorded state')
       }
       this.journal = { ...session, ruleset: RULESET_VERSION, commands: session.commands.map(entry => ({ tick: entry.tick, cmd: { ...entry.cmd } })) }
@@ -458,11 +466,12 @@ export class Game implements World {
 
   /** lives to keep for three stars on this board, or null where stars are not at stake */
   starTarget(): number | null {
-    if (!this.level || this.isEndless || this.isDaily || this.isFreeplay || this.trial) return null
+    if (!this.level || this.isSandbox || this.isEndless || this.isDaily || this.isFreeplay || this.trial) return null
     return starThresholds(this.mods().lives).three
   }
 
   onEnemyLeaked(e: Enemy): void {
+    if (this.isSandbox) return
     this.leaks++
     // a boss reaching the gate ends the defense outright
     // Gate Ward absorbs the first leak of a battle outright (never a boss)
@@ -568,7 +577,7 @@ export class Game implements World {
     // First meeting with anything notable: stop, explain it, and never
     // interrupt for that enemy again. A boss camera move is arresting once and
     // irritating by the fourth Juggernaut.
-    const firstMeeting = isNotable(def) && !this.battleSave.seenEnemies.includes(id)
+    const firstMeeting = !this.isSandbox && isNotable(def) && !this.battleSave.seenEnemies.includes(id)
     // a boss's entrance camera waits for the dossier to close: it used to run
     // behind the modal, and the player came back to a camera already settling
     let dossierShown = false
@@ -1058,6 +1067,12 @@ export class Game implements World {
   /** the save unlocks and the Armory are read from: the host's in co-op */
   get roster(): SaveData { return this.coopLoadout ?? this.frozenLoadout ?? this.battleSave }
 
+  get towerXp(): number { return this.roster.xp + this.bankedUnlockXp + Math.round(this.liveXp) }
+
+  towerUnlocked(kind: TowerKind): boolean {
+    return this.isSandbox || isUnlocked({ xp: this.towerXp }, 'tower', kind)
+  }
+
   /** true when this client is the author of what is being applied (or nothing is) */
   private get localAction(): boolean {
     return !this.recovering && (!this.applying || this.applyingSeat === (this.coop?.seat ?? -1))
@@ -1069,6 +1084,7 @@ export class Game implements World {
    * co-op, or the command is arriving back from the room to be applied.
    */
   private route(cmd: CoopCommand): boolean {
+    if (this.isSandbox && (this.applying || !this.coop)) this.gold = this.shards = 1_000_000_000
     if (this.applying) return false
     if (this.recovering) return true
     if (!this.coop) {
@@ -1134,6 +1150,9 @@ export class Game implements World {
         for (const k of this.coopHashes.keys()) if (k < turn - 200) this.coopHashes.delete(k)
         break
       }
+      case 'connection':
+        if (!e.connected && this.coop?.lost) this.hud.showToast('This room has ended. Pause and continue solo to keep this board.', 8)
+        break
       case 'end':
         if (this.phase === 'playing') this.hud.showToast('The room was closed', 3)
         break
@@ -1149,7 +1168,7 @@ export class Game implements World {
   }
 
   private applyCoopCommand(cmd: CoopCommand, seat: number): void {
-    if (this.coop && this.paused && cmd.kind !== 'hold') return
+    if (this.coop && this.paused && cmd.kind !== 'hold' && cmd.kind !== 'shareMastery') return
     if (this.coop && (cmd.kind === 'meteor' || cmd.kind === 'reinforce') && this.abilities[cmd.kind].cooldown > 0) return
     if (this.coop) this.recordCommand(cmd)
     this.applying = true
@@ -1159,6 +1178,10 @@ export class Game implements World {
       const plot = 'plot' in cmd && this.terrain ? this.terrain.plots[cmd.plot] : null
       const spot = 'spot' in cmd && this.terrain ? this.terrain.trapSpots[cmd.spot] : null
       switch (cmd.kind) {
+        case 'shareMastery':
+          for (const family of cmd.families) this.sharedMythics.add(family)
+          if (this.selectedTower) this.hud.openTowerPanel(this.selectedTower)
+          break
         case 'build': if (plot) this.buildTower(cmd.tower, plot); break
         case 'upgrade': if (t) this.upgradeTower(t, cmd.opt); break
         case 'sell': if (t) this.sellTower(t); break
@@ -1181,6 +1204,9 @@ export class Game implements World {
         case 'heroRank': this.upgradeHeroSignature(); break
         case 'meteor': this.performTarget('meteor', cmd.x, cmd.z, null); break
         case 'reinforce': this.performTarget('reinforce', cmd.x, cmd.z, null); break
+        case 'sandboxSpawn':
+        case 'sandboxClear':
+        case 'sandboxReset': this.sandboxOrder(cmd); break
         case 'hold': this.holdTheLine(); break
       }
       // the ally's hand, shown where it landed
@@ -1353,8 +1379,42 @@ export class Game implements World {
     this.hud.showToast(session.paced && this.paused && !setup.battle && !setup.startPaused
       ? 'Waiting for the other battlefield to finish loading…'
       : `Co-op ${session.code} · invite a friend or resume when ready`, 5)
+    // As with the host loadout, clients contribute their earned account unlocks.
+    // The ordered room command makes late joins and saved replays agree.
+    const families = (Object.keys(towerTrees) as TowerKind[]).filter(f => masteryReady(this.save, f))
+    if (families.length && !await session.send('cmd', { kind: 'shareMastery', families }))
+      this.hud.showToast('Could not share your Mythic unlocks. Rejoin to try again.', 5)
     if (session.paced && !await session.send('ready')) this.hud.showToast('Could not confirm readiness. Rejoin the room to try again.', 5)
     return true
+  }
+
+  /** Sandbox controls use the same ordered command journal as building. */
+  sandboxOrder(input: Extract<CoopCommand, { kind: 'sandboxSpawn' | 'sandboxClear' | 'sandboxReset' }>): void {
+    const cmd = parseBattleCommand(input)
+    if (!this.isSandbox || !cmd || this.phase !== 'playing') return
+    if (this.paused) { this.hud.showToast('Resume the sandbox to use its tools.', 2); return }
+    if (this.route(cmd)) return
+    if (cmd.kind === 'sandboxSpawn') {
+      if (cmd.lane >= this.lanes.length) return
+      if (this.enemies.length + this.sandboxQueue.reduce((n, group) => n + group.count, 0) + cmd.count > 200) {
+        if (this.localAction) this.hud.showToast('The field is full. Clear enemies before sending more.', 3)
+        return
+      }
+      this.sandboxQueue.push({ ...cmd, at: this.time })
+    } else if (cmd.kind === 'sandboxClear') {
+      this.sandboxQueue = []; this.pendingSim = []; this.pendingCasts = []
+      for (const e of this.enemies) {
+        e.state = 'gone'
+        for (const s of e.blockers) s.target = null
+        e.blockers = []
+      }
+      for (const p of this.projectiles) { this.dynamic.remove(p.mesh); p.dispose?.() }
+      this.projectiles = []
+      clearBurnZones(this); clearMines(this); clearRunes(this)
+    } else if (cmd.kind === 'sandboxReset') {
+      this.abilities.meteor.cooldown = this.abilities.reinforce.cooldown = 0
+      if (this.hero) this.hero.abilityCooldown = 0
+    }
   }
 
   /** leave the room: the session closes, and the next battle is a solo one */
@@ -1455,11 +1515,14 @@ export class Game implements World {
     level: LevelDef,
     difficulty: Difficulty = 'normal',
     heroId: HeroId = 'aldric',
-    mode: 'campaign' | 'endless' = 'campaign',
-    opts: { hunt?: HuntId, seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean, trial?: TrialDef, coop?: { session: CoopSession, loadout: { armory: Record<string, number>, xp: number, honors?: string[], heroPaths?: Record<string, string> } } } = {},
+    mode: 'campaign' | 'endless' | 'sandbox' = 'campaign',
+    opts: { hunt?: HuntId, seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean, trial?: TrialDef, coop?: { session: CoopSession, loadout: { armory: Record<string, number>, xp: number, honors?: string[], heroPaths?: Record<string, string>, stars?: Record<string, number> } } } = {},
   ): void {
     if (!Object.hasOwn(HERO_DEFS, heroId)) heroId = 'aldric'
     this.disposeLevel()
+    this.isSandbox = mode === 'sandbox'
+    this.sandboxSave = this.isSandbox ? JSON.parse(JSON.stringify(this.recoverySave ?? this.save)) as SaveData : null
+    this.sandboxQueue = []
     if (!this.recovering) { clearSession(); if (!opts.resume) clearCheckpoint() }
     this.sessionTick = 0
     this.completedEndlessWaves = 0
@@ -1471,7 +1534,7 @@ export class Game implements World {
     if (opts.coop) {
       if (this.coop && this.coop !== opts.coop.session) this.leaveCoop()
       this.coop = opts.coop.session
-      this.coopLoadout = { ...this.save, armory: { ...opts.coop.loadout.armory }, xp: opts.coop.loadout.xp, honors: [...(opts.coop.loadout.honors ?? [])], heroPaths: { ...opts.coop.loadout.heroPaths } }
+      this.coopLoadout = { ...this.save, armory: { ...opts.coop.loadout.armory }, xp: opts.coop.loadout.xp, stars: { ...opts.coop.loadout.stars }, honors: [...(opts.coop.loadout.honors ?? [])], heroPaths: { ...opts.coop.loadout.heroPaths } }
       this.coopUnsub?.()
       this.coopUnsub = this.coop.on(e => this.onCoopEvent(e))
       this.coopMarkers = []
@@ -1496,6 +1559,8 @@ export class Game implements World {
     this.isDaily = opts.daily !== undefined
     this.dailyDay = opts.daily ?? 0
     this.isFreeplay = false
+    this.bankedUnlockXp = 0
+    this.sharedMythics.clear()
     this.liveXp = 0
     this.isEndless = mode === 'endless'
     this.trial = opts.trial ?? null
@@ -1537,6 +1602,7 @@ export class Game implements World {
 
     this.gold = level.startGold + 40 * armoryTier(this.loadout, 'coffers')
     this.shards = (level.startShards ?? 2) + 3 * armoryTier(this.loadout, 'prospector')
+    if (this.isSandbox) this.gold = this.shards = 1_000_000_000
     this.lives = this.trial ? this.trial.lives : difficultyMods(level.id, difficulty, this.isEndless ? 'endless' : 'campaign').lives
     this.speed = 1
     this.paused = false
@@ -1622,11 +1688,12 @@ export class Game implements World {
     this.firstBuildAt = -1
     this.heroHasMoved = false
     // the guided opening runs once, on a player's very first battle
-    this.onboarding = (!this.recovering && !this.battleSave.taughtBasics && !this.isDaily && !this.isWatches && !this.trial && !this.hunt && !this.coop)
+    this.onboarding = (!this.recovering && !this.battleSave.taughtBasics && !this.isSandbox && !this.isDaily && !this.isWatches && !this.trial && !this.hunt && !this.coop)
       ? new OnboardingDirector() : null
     if (this.isWatches) this.raiseGhosts()
     if (resume) this.applyCheckpoint(resume)
     else if (this.trial) this.hud.showToast(this.trial.rules, 7)
+    else if (this.isSandbox) this.hud.showToast('Sandbox · free building, no lives lost, no account rewards. Open Sandbox tools to send enemies.', 6)
     else if (level.intro) this.hud.showToast(level.intro, 5)
     if (!resume && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial) {
       this.journal = {
@@ -1653,6 +1720,7 @@ export class Game implements World {
     if (this.phase !== 'victory' || !this.level || !this.waves || this.isEndless || this.isDaily || this.isWatches || this.isBellfoundry || this.trial || this.hunt) return
     if (this.route({ kind: 'hold' })) { this.hud.showToast('Holding the line together: waiting for the room', 2); return }
     this.isFreeplay = true
+    this.bankedUnlockXp += battleXp({ mode: 'campaign', difficulty: this.difficulty, wavesHeld: this.waves.authoredWaves, won: true, firstClear: !(this.roster.stars[this.level.id] > 0) })
     this.liveXp = 0
     this.phase = 'playing'
     this.paused = false
@@ -1914,6 +1982,7 @@ export class Game implements World {
   }
 
   private endGame(won: boolean): void {
+    if (this.isSandbox) return
     if (this.phase !== 'playing') return
     // Keep the in-memory journal for a later Hold the Line command.
     if (!this.recovering) { clearCheckpoint(); clearSession() }
@@ -1954,7 +2023,7 @@ export class Game implements World {
       let huntBonus = 0
       if (this.hunt) {
         if (won && this.hero) {
-          const qualified = [...new Set(this.towers.filter(t => !t.isGhost && t.level >= 5 && t.damage >= 4000).map(t => t.kind))]
+          const qualified = [...new Set(this.towers.filter(t => !t.isGhost && t.level >= 5 && (t.isBeacon ? t.supportedDamage : t.damage) >= 4000).map(t => t.kind))]
           const reward = awardHunt(this.battleSave, this.hunt.id, this.difficulty, this.hero.heroDef.id, qualified)
           this.huntHonors = reward.honors
           huntBonus = reward.bonusXp
@@ -2062,13 +2131,17 @@ export class Game implements World {
    * the payment agree at the end by construction.
    */
   private liveXp = 0
+  private bankedUnlockXp = 0
+  private sharedMythics = new Set<TowerKind>()
+  hasSharedMythic(kind: TowerKind): boolean { return this.sharedMythics.has(kind) }
   /** what the account will read once this battle is paid: the bar's value */
-  xpPreview(): number { return this.save.xp + Math.round(this.liveXp) }
+  xpPreview(): number { return this.isSandbox ? this.save.xp : this.coop ? this.towerXp : this.save.xp + Math.round(this.liveXp) }
   /** experience previewed so far this battle */
   get liveXpEarned(): number { return Math.round(this.liveXp) }
 
   /** one wave's experience in this mode, before win bonuses */
   private waveXpValue(): number {
+    if (this.isSandbox) return 0
     const mult = { casual: 0.75, normal: 1, veteran: 1.4 }[this.difficulty]
     if (this.hunt) return 30 * mult
     if (this.isDaily) return 10
@@ -2433,6 +2506,7 @@ export class Game implements World {
   }
 
   get expansionCredits(): number {
+    if (this.isSandbox) return 1
     return this.terrain && (this.isEndless || this.isFreeplay) && !this.hunt && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial
       ? availableExpansionPlots(this.completedEndlessWaves, this.terrain) : 0
   }
@@ -2442,7 +2516,7 @@ export class Game implements World {
     const reason = this.terrain.expansionBlockReason(c, r)
     if (reason) { if (this.localAction) this.hud.showToast(reason, 2); this.sfx('error'); return }
     if (this.route({ kind: 'expand', c, r })) return
-    const plot = placeExpansionPlot(this.terrain, this.completedEndlessWaves, c, r)
+    const plot = this.isSandbox ? this.terrain.addExpansionPlot(c, r) : placeExpansionPlot(this.terrain, this.completedEndlessWaves, c, r)
     if (!plot) return
     this.particles.buildDust(plot.pos.x, plot.pos.y, plot.pos.z)
     this.sfx('build')
@@ -2772,7 +2846,7 @@ export class Game implements World {
     if (this.route({ kind: 'build', plot: plot.index, tower: kind })) { this.hud.closeBuildMenu(); return }
     // the ladder is enforced here, not only in the menu, so a stale button or a
     // scripted call cannot build what the account has not earned
-    if (!isUnlocked(this.roster, 'tower', kind)) { this.sfx('error'); return }
+    if (!this.towerUnlocked(kind)) { this.sfx('error'); return }
     if (this.trial && !this.trial.kinds.includes(kind)) { this.sfx('error'); this.hud.showToast(`${this.trial.name}: that family is not on this board`, 2.4); return }
     const cost = towerTrees[kind].levels[0].cost
     if (this.gold < cost) { this.sfx('error'); this.hud.flashGold(); return }
@@ -3084,6 +3158,7 @@ export class Game implements World {
     const beacons = this.towers.filter(t => t.isBeacon && t.def.aura)
     for (const t of this.towers) {
       t.auraDamage = t.auraRange = t.auraRate = 0
+      t.support = null
       if (t.isBeacon) continue
       let best = -1
       for (const b of beacons) {
@@ -3093,6 +3168,7 @@ export class Game implements World {
         const strength = (1 + dmg) * (1 + a.rate)
         if (strength > best) {
           best = strength
+          t.support = b
           t.auraDamage = dmg
           t.auraRange = a.range
           t.auraRate = a.rate
@@ -3127,10 +3203,10 @@ export class Game implements World {
   private titheKills = 0
 
   mythicLock(tower: Tower): string | null {
+    if (this.isSandbox) return null
     if (tower.level !== 5) return null
     if (this.isDaily || this.isWatches || this.isBellfoundry || this.trial) return 'Mythics are available in campaign, hunts and endless play.'
-    if (this.towers.some(t => t !== tower && t.level === 6 && !t.isGhost)) return 'One Mythic may stand in a defense at a time.'
-    if (!masteryReady(this.roster, tower.kind)) return masteryHint(this.roster, tower.kind)
+    if (!this.hasSharedMythic(tower.kind) && !masteryReady(this.roster, tower.kind)) return masteryHint(this.roster, tower.kind)
     return null
   }
 
@@ -3231,7 +3307,7 @@ export class Game implements World {
   }
 
   callWave(): void {
-    if (!this.waves || this.phase !== 'playing' || this.paused) return
+    if (!this.waves || this.isSandbox || this.phase !== 'playing' || this.paused) return
     if (this.route({ kind: 'wave' })) return
     // Silent Guns: the siege is one wave and it is not called in early
     if (this.trial && !this.trial.earlyCall && this.waves.waveIndex >= 0) { this.sfx('error'); return }
@@ -3441,7 +3517,15 @@ export class Game implements World {
       }
     }
     this.time += dt
-    this.waves!.update(dt)
+    if (!this.isSandbox) this.waves!.update(dt)
+    else {
+      const next = this.sandboxQueue[0]
+      if (next && this.time >= next.at) {
+        this.spawnEnemyAt(next.enemy, next.lane, 0, { hpMult: next.hp, noReward: true })
+        next.at = this.time + 0.15
+        if (--next.count === 0) this.sandboxQueue.shift()
+      }
+    }
 
     for (const e of this.enemies) {
       e.update(dt, this)

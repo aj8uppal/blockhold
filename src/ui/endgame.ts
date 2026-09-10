@@ -1,3 +1,6 @@
+import { towerTrees } from '../game/towerDefs.ts'
+import { mythicFor } from '../game/mythics.ts'
+import type { TowerKind } from '../game/types.ts'
 import type { SaveData } from '../core/save.ts'
 import { writeSave } from '../core/save.ts'
 import type { Difficulty, HeroId } from '../game/types.ts'
@@ -80,11 +83,12 @@ export function renderEndgame(root: HTMLElement, save: SaveData,
   paint()
 
   const mastery = wrap.querySelector<HTMLDivElement>('.endgame-mastery .endgame-detail-body')!
-  mastery.innerHTML = '<p>Earn a permanent tier-six upgrade for a tower family. These are goals after your first hunt wins.</p><ol><li>Reach account level 30.</li><li>Win both hunts on Normal or Veteran. In each win, finish with one tier-five tower of that family still standing and at least 4,000 damage dealt by that tower.</li><li>Buy its Mythic upgrade with battle gold. Only one Mythic can stand in the shared defense.</li></ol>'
-  for (const family of ['barracks', 'seraph'] as const) {
+  mastery.innerHTML = '<p>Earn a permanent tier-six upgrade for a tower family. These are goals after your first hunt wins.</p><ol><li>Reach account level 30.</li><li>Win <b>The Bone Procession</b> and <b>The Fallen Crown</b>, each on either Normal or Veteran (one difficulty per hunt is enough). These are separate ten-wave Boss Hunts, not campaign maps. In each win, finish with one tier-five tower of that family still standing and at least 4,000 damage dealt by that tower (or supported damage for a Beacon).</li><li>The unlock is permanent for both branches. Buy a Mythic upgrade from tier five with battle gold in later battles, including Hold the Line. Build as many as you can afford, including in co-op.</li></ol>'
+  for (const family of Object.keys(towerTrees) as TowerKind[]) {
     const item = document.createElement('div'); item.className = 'endgame-card'
-    const progress = HUNTS.map(h => `${save.honors?.includes(`mastery:${family}:${h.id}`) ? '✓' : '○'} ${h.name}`).join(' · ')
-    item.innerHTML = `<h3>${family === 'seraph' ? 'Seraph · Helios Engine / Event Horizon' : 'Barracks · Last Legion'}</h3><p>${family === 'seraph' ? 'Charge a solar strike or open a field that exposes enemies. Additional cost: 15,000 / 16,000 gold; save for these during extended play.' : 'Recall and restore an elite squad at your rally point. Additional cost: 14,000 gold, from Oathgate Citadel.'}</p><b>${masteryReady(save, family) ? 'Unlocked · available at tier five' : `Level ${Math.min(30, levelForXp(save.xp))}/30 · ${progress}`}</b>`
+    const progress = HUNTS.map(h => `${save.honors?.includes(`mastery:${family}:${h.id}`) ? '✓' : '○'} ${h.name}`).join('<br>')
+    const branches = [mythicFor(family, 0)!, mythicFor(family, 1)!]
+    item.innerHTML = `<h3>${family[0].toUpperCase() + family.slice(1)}</h3><b>${masteryReady(save, family) ? 'Unlocked · available at tier five' : `Level ${Math.min(30, levelForXp(save.xp))}/30`}</b><p>${progress}</p><details class="tp-details"><summary>View upgrades</summary>${branches.map(def => `<p><b>${def.name} · ${def.cost.toLocaleString()} gold</b><br>${def.description}</p>`).join('')}</details>`
     mastery.append(item)
   }
 }

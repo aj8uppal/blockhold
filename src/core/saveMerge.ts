@@ -66,7 +66,7 @@ function numberMap(v: unknown, max: number): Record<string, number> {
 export function sanitizeHonors(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [...new Set(value.filter((x): x is string => typeof x === 'string' &&
-    /^(hunt:(ossuary|empress):(casual|normal|veteran)|hero:(aldric|liora|zephyra):(ossuary|empress)|mastery:(seraph|barracks):(ossuary|empress))$/.test(x)))].slice(0, 32)
+    /^(hunt:(ossuary|empress):(casual|normal|veteran)|hero:(aldric|liora|zephyra):(ossuary|empress)|mastery:(arrow|mage|cannon|barracks|beacon|ballista|seraph):(ossuary|empress))$/.test(x)))].slice(0, 32)
 }
 export function sanitizeHeroPaths(value: unknown): Record<string, string> {
   const out: Record<string, string> = {}

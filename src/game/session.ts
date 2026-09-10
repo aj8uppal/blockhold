@@ -1,3 +1,4 @@
+import { enemyDefs } from './enemyDefs.ts'
 import { parseSave, type SaveData } from '../core/save.ts'
 import type { CoopCommand } from './coopCommands.ts'
 import { RULESET_VERSION } from './ruleset.ts'
@@ -10,7 +11,7 @@ export interface BattleSession {
   hunt?: 'ossuary' | 'empress'
   difficulty: Difficulty
   heroId: HeroId
-  mode: 'campaign' | 'endless'
+  mode: 'campaign' | 'endless' | 'sandbox'
   seed: number
   /** Completed simulation ticks; inputs at this tick precede the next step. */
   tick: number
@@ -54,6 +55,10 @@ export function parseBattleCommand(value: unknown): CoopCommand | null {
   if (!record(value)) return null
   const { kind, plot, spot, x, z } = value
   switch (kind) {
+    case 'shareMastery':
+      return Array.isArray(value.families) && value.families.length <= TOWERS.length
+        && value.families.every(f => TOWERS.includes(f as TowerKind))
+        ? { kind, families: TOWERS.filter(f => (value.families as unknown[]).includes(f)) } : null
     case 'build':
       return integer(plot, 4095) && TOWERS.includes(value.tower as TowerKind) ? { kind, plot, tower: value.tower as TowerKind } : null
     case 'upgrade':
@@ -79,6 +84,12 @@ export function parseBattleCommand(value: unknown): CoopCommand | null {
     case 'meteor':
     case 'reinforce':
       return coordinate(x) && coordinate(z) ? { kind, x, z } : null
+    case 'sandboxSpawn':
+      return typeof value.enemy === 'string' && enemyDefs.has(value.enemy) && integer(value.count, 25, 1)
+        && integer(value.lane, 3) && integer(value.hp, 100, 1)
+        ? { kind, enemy: value.enemy, count: value.count, lane: value.lane, hp: value.hp } : null
+    case 'sandboxClear':
+    case 'sandboxReset':
     case 'wave':
     case 'overchargeAll':
     case 'heroSig':
@@ -93,12 +104,12 @@ export function parseBattleCommand(value: unknown): CoopCommand | null {
 }
 
 function validate(value: unknown): BattleSession | null {
-  if (!record(value) || value.ruleset !== RULESET_VERSION && value.ruleset !== 8) return null
+  if (!record(value) || value.ruleset !== RULESET_VERSION && value.ruleset !== 9 && value.ruleset !== 8) return null
   if (typeof value.levelId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(value.levelId)) return null
   if (value.hunt !== undefined && value.hunt !== 'ossuary' && value.hunt !== 'empress') return null
   if (value.difficulty !== 'casual' && value.difficulty !== 'normal' && value.difficulty !== 'veteran') return null
   if (value.heroId !== 'aldric' && value.heroId !== 'liora' && value.heroId !== 'zephyra') return null
-  if (value.mode !== 'campaign' && value.mode !== 'endless') return null
+  if (value.mode !== 'campaign' && value.mode !== 'endless' && value.mode !== 'sandbox') return null
   if (value.hunt !== undefined && value.mode !== 'campaign') return null
   if (!integer(value.seed, 0xffffffff) || !integer(value.tick, SESSION_MAX_TICKS)) return null
   if (!integer(value.savedAt, Number.MAX_SAFE_INTEGER) || !integer(value.wave, 9999)) return null
@@ -164,7 +175,7 @@ export function readSession(): BattleSession | null {
   try {
     if (raw.length > MAX_BYTES) { lastReadIssue = { kind: 'invalid' }; return null }
     const value: unknown = JSON.parse(raw)
-    if (record(value) && integer(value.ruleset, Number.MAX_SAFE_INTEGER) && value.ruleset !== RULESET_VERSION && value.ruleset !== 8) {
+    if (record(value) && integer(value.ruleset, Number.MAX_SAFE_INTEGER) && value.ruleset !== RULESET_VERSION && value.ruleset !== 9 && value.ruleset !== 8) {
       lastReadIssue = { kind: 'incompatible', savedRuleset: value.ruleset, currentRuleset: RULESET_VERSION }
       return null
     }

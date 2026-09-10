@@ -147,7 +147,7 @@ hud.onCoopSwitch = () => {
       const roster = battle.initialSave
       const setup = { levelId: battle.levelId, difficulty: battle.difficulty, hero: battle.heroId,
         mode: battle.mode, seed: battle.seed, battle, startPaused: true,
-        loadout: { xp: roster.xp, armory: roster.armory, honors: roster.honors, heroPaths: roster.heroPaths } }
+        loadout: { xp: roster.xp, stars: roster.stars, armory: roster.armory, honors: roster.honors, heroPaths: roster.heroPaths } }
       if (!await session.send('start', setup)) { session.close(true); throw new Error('Could not open the shared battle. Your solo battle is still saved.') }
       // The adopting host starts at the journal's exact moment. The server starts paused.
       session.paused = true
@@ -319,6 +319,12 @@ hud.onHome = () => {
   screens.show('menu')
 }
 game.onPhaseChange = (phase, stars) => {
+  if (phase === 'playing' && game.isSandbox) {
+    const board = game.level
+    void import('./ui/sandbox.ts').then(({ mountSandbox }) => {
+      if (game.phase === 'playing' && game.isSandbox && game.level === board) mountSandbox(hud.root, game)
+    })
+  }
   // a finished run is exactly when progress is worth getting off this device
   if (phase === 'victory' || phase === 'defeat') syncNow()
   // the seed that produced this board, so the result card can hand it on

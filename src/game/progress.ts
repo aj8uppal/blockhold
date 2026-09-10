@@ -49,7 +49,7 @@ export const UNLOCKS: UnlockDef[] = [
   { level: 10, kind: 'hero', id: 'zephyra', name: 'Zephyra the Stormcaller', blurb: 'Armor-ignoring bolts and a slowing Static Nova.' },
   { level: 15, kind: 'tower', id: 'ballista', name: 'The Ballista', blurb: 'A bolt that flies in a line and strikes everything along it.' },
   { level: 20, kind: 'tower', id: 'beacon', name: 'The Beacon', blurb: 'Never attacks. Makes every tower in its light stronger.' },
-  { level: 25, kind: 'tower', id: 'seraph', name: 'The Seraph', blurb: 'Three beams per volley. A winged idol that upgrades to seven targets.' },
+  { level: 25, kind: 'tower', id: 'seraph', name: 'The Seraph', blurb: 'Three beams per volley. Choose wide solar volleys or concentrated void beams.' },
 ]
 
 export const MAX_LEVEL = 40

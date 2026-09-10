@@ -41,8 +41,10 @@ const assets = join(root, 'dist', 'assets')
 // Rejoin/transfer journals, endless plots and mobile controls add ~6 KiB.
 // Room transport and chat now load on demand; initial app growth is ~2 KiB.
 // Touch selection, target cancellation and safe rotation add ~1 KiB gzip.
-const APP_CHUNK_LIMIT = 154 * 1024
-const TOTAL_JS_LIMIT = 290 * 1024
+// Sandbox, eleven further Mythic branches, live mastery tracking and co-op
+// unlock contributions add ~4.6 KiB total; sandbox controls remain lazy loaded.
+const APP_CHUNK_LIMIT = 159 * 1024
+const TOTAL_JS_LIMIT = 295 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

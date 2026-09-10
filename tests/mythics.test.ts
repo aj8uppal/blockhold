@@ -47,18 +47,17 @@ const mechanics = (tower: Tower) => tower as unknown as {
   mythicUntil: number
 }
 
-describe('bounded Mythic roster', () => {
-  it('only transforms the three selected branches and includes their additional investment', () => {
+describe('all-family Mythic roster', () => {
+  it('transforms both branches of every family and includes their additional investment', () => {
     const roster = []
     for (const kind of Object.keys(towerTrees) as TowerKind[]) for (const branch of [0, 1] as const) {
       const mythic = mythicFor(kind, branch)
+      expect(mythic).not.toBeNull()
       if (!mythic) continue
       roster.push(mythic.name)
       const cap = towerTrees[kind].capstones[branch]
-      expect(mythic.damage).toEqual(cap.damage)
-      expect(mythic.attackInterval).toEqual(cap.attackInterval)
       expect(investedGold(kind, 6, branch) - investedGold(kind, 5, branch)).toBe(mythic.cost)
-      expect(mythic.signature).not.toBe(cap.signature)
+      expect(mythic.cost).toBeGreaterThan(cap.cost)
       const { tower } = fixture(kind, branch)
       expect(tower.level).toBe(6)
       expect(tower.def.name).toBe(mythic.name)
@@ -73,17 +72,17 @@ describe('bounded Mythic roster', () => {
       tower.update(0.4, (tower as unknown as { world: World }).world)
       expect(tower.model.scale.toArray().every(Number.isFinite)).toBe(true)
     }
-    expect(roster.sort()).toEqual(['Event Horizon', 'Helios Engine', 'Last Legion'])
+    expect(new Set(roster).size).toBe(14)
   })
 
-  it('rejects unsupported branches and invalid option indices', () => {
+  it('rejects tier seven and invalid option indices', () => {
     const { tower, world } = fixture('barracks', 1)
-    expect(tower.level).toBe(5)
+    expect(tower.level).toBe(6)
     expect(tower.upgradeOptions).toEqual([])
     tower.upgrade(0, world)
     tower.upgrade(-1, world)
     tower.upgrade(99, world)
-    expect(tower.level).toBe(5)
+    expect(tower.level).toBe(6)
   })
 })
 

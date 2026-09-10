@@ -29,11 +29,11 @@ export interface CoopSetup {
   difficulty: Difficulty
   hero: HeroId
   seed: number
-  mode?: 'campaign' | 'endless'
+  mode?: 'campaign' | 'endless' | 'sandbox'
   battle?: BattleSession
   startPaused?: boolean
   /** the host's Armory and ladder, so both boards play by the same loadout */
-  loadout: { armory: Record<string, number>, xp: number, honors?: string[], heroPaths?: Record<string, string> }
+  loadout: { armory: Record<string, number>, xp: number, honors?: string[], heroPaths?: Record<string, string>, stars?: Record<string, number> }
 }
 
 export type CoopEvent =

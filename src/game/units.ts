@@ -366,7 +366,11 @@ export class Enemy {
     if (world.time < this.mythicExposedUntil) mult *= 1.3
     if (this.inCutting) mult *= 1 + CUTTING_VULN
     const dealt = Math.max(0, amount * mult)
-    if (opts.credit) opts.credit.damage += Math.min(dealt, Math.max(0, this.hp))
+    if (opts.credit) {
+      const actual = Math.min(dealt, Math.max(0, this.hp))
+      opts.credit.damage += actual
+      if (opts.credit.support) opts.credit.support.supportedDamage += actual
+    }
     this.hp -= dealt
     this.lastHitType = type
     this.lastHitFlavor = opts.flavor ?? null

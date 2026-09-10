@@ -15,7 +15,7 @@ import type { SfxName } from '../core/audio.ts'
  * health removed, capped at what the target had, so overkill counts for
  * nothing and a poison tick counts for what it took.
  */
-export interface KillCredit { kills: number, damage: number }
+export interface KillCredit { kills: number, damage: number, support?: { supportedDamage: number } | null }
 
 /** Faultline Arsenal: a shell buries an armed charge at its impact point */
 export interface MineSpec {

@@ -134,16 +134,25 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
     const setup = coopSetup ?? defaultCoopSetup(save)
     coopSetup = setup
     const sendSetup = () => { coopSetup = setup; void session.send('setup', setup) }
+    el('div', 'diff-sub', card, 'Battle mode')
+    const mode = el('select', 'coop-select', card) as HTMLSelectElement
+    mode.setAttribute('aria-label', 'Co-op battle mode')
+    for (const [value, label] of [['campaign', 'Campaign'], ['sandbox', 'Sandbox · free building, no rewards']]) {
+      const option = document.createElement('option'); option.value = value; option.textContent = label
+      option.selected = value === (setup.mode ?? 'campaign'); mode.append(option)
+    }
+    mode.onchange = () => { setup.mode = mode.value === 'sandbox' ? 'sandbox' : 'campaign'; setup.levelId = levels[0].id; setup.hero = 'aldric'; sendSetup(); api.show('coop') }
     el('div', 'diff-sub', card, 'Choose the battlefield')
     const sel = el('select', 'coop-select', card) as HTMLSelectElement
+    sel.setAttribute('aria-label', 'Co-op battlefield')
     levels.forEach((lvl, i) => {
-      if (i >= save.unlocked) return
+      if (setup.mode !== 'sandbox' && i >= save.unlocked) return
       const o = document.createElement('option')
       o.value = lvl.id; o.textContent = `${i + 1}. ${lvl.name}`
       if (lvl.id === setup.levelId) o.selected = true
       sel.appendChild(o)
     })
-    if (huntAccess(save)) for (const hunt of HUNTS) {
+    if (setup.mode !== 'sandbox' && huntAccess(save)) for (const hunt of HUNTS) {
       const o = document.createElement('option')
       o.value = `hunt-${hunt.id}`; o.textContent = `Hunt · ${hunt.name}`
       o.selected = o.value === setup.levelId; sel.append(o)
@@ -152,7 +161,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
     el('div', 'diff-sub', card, 'Champion')
     const heroRow = el('div', 'mode-row', card)
     for (const def of Object.values(HERO_DEFS)) {
-      if (!isUnlocked(save, 'hero', def.id)) continue
+      if (setup.mode !== 'sandbox' && !isUnlocked(save, 'hero', def.id)) continue
       const b = el('button', `mode-option${setup.hero === def.id ? ' picked' : ''}`, heroRow, def.name) as HTMLButtonElement
       b.onclick = () => { setup.hero = def.id; heroRow.querySelectorAll('.mode-option').forEach(x => x.classList.toggle('picked', x === b)); sendSetup() }
     }
@@ -168,7 +177,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
     paintStart()
     start.onclick = () => {
       setup.seed = newRunSeed()
-      setup.loadout = { armory: { ...save.armory }, xp: save.xp, honors: [...(save.honors ?? [])], heroPaths: { ...save.heroPaths } }
+      setup.loadout = { armory: { ...save.armory }, xp: save.xp, stars: { ...save.stars }, honors: [...(save.honors ?? [])], heroPaths: { ...save.heroPaths } }
       void session.send('start', setup)
     }
     // the first setup goes out as soon as the room has a picture to send
@@ -180,7 +189,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
       const st = session.setup
       if (!st) { plan.textContent = 'The host is choosing…'; return }
       const lvl = levels.find(l => l.id === st.levelId) ?? HUNTS.find(h => `hunt-${h.id}` === st.levelId)
-      plan.textContent = `${lvl?.name ?? st.levelId} · ${difficultyMods(st.levelId, st.difficulty).name} · ${HERO_DEFS[st.hero]?.name ?? st.hero}`
+      plan.textContent = `${st.mode === 'sandbox' ? 'Sandbox · ' : ''}${lvl?.name ?? st.levelId} · ${difficultyMods(st.levelId, st.difficulty).name} · ${HERO_DEFS[st.hero]?.name ?? st.hero}`
     }
     paintPlan()
     el('div', 'coop-sub dim', card, 'Waiting for the host to start…')
@@ -195,7 +204,7 @@ let coopPaint: () => void = () => {}
 function defaultCoopSetup(save: SaveData): CoopSetup {
   const last = levels[Math.max(0, Math.min(save.unlocked, levels.length) - 1)]
   const hero = (Object.hasOwn(HERO_DEFS, save.lastHero) && isUnlocked(save, 'hero', save.lastHero as HeroId) ? save.lastHero : 'aldric') as HeroId
-  return { levelId: last.id, difficulty: 'normal', hero, seed: 0, loadout: { armory: { ...save.armory }, xp: save.xp, honors: [...(save.honors ?? [])], heroPaths: { ...save.heroPaths } } }
+  return { levelId: last.id, difficulty: 'normal', hero, seed: 0, loadout: { armory: { ...save.armory }, xp: save.xp, stars: { ...save.stars }, honors: [...(save.honors ?? [])], heroPaths: { ...save.heroPaths } } }
 }
 
 function attachCoop(api: LobbyApi): void {

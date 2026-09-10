@@ -107,12 +107,12 @@ describe('endgame progress migration between devices', () => {
     for (const hunt of ['ossuary', 'empress']) {
       for (const difficulty of ['casual', 'normal', 'veteran']) all.push(`hunt:${hunt}:${difficulty}`)
       for (const hero of ['aldric', 'liora', 'zephyra']) all.push(`hero:${hero}:${hunt}`)
-      for (const tower of ['seraph', 'barracks']) all.push(`mastery:${tower}:${hunt}`)
+      for (const tower of ['arrow', 'mage', 'cannon', 'barracks', 'beacon', 'ballista', 'seraph']) all.push(`mastery:${tower}:${hunt}`)
     }
-    const input = [...Array(100).fill(all).flat(), 'hunt:unknown:normal', 'hero:fake:ossuary', 'mastery:arrow:empress', '<script>', null, 5]
+    const input = [...Array(100).fill(all).flat(), 'hunt:unknown:normal', 'hero:fake:ossuary', 'mastery:invented:empress', '<script>', null, 5]
     const clean = sanitizeCloudSave({ honors: input }).honors!
     expect(new Set(clean)).toEqual(new Set(all))
-    expect(clean).toHaveLength(16)
+    expect(clean).toHaveLength(26)
     expect(clean.length).toBeLessThanOrEqual(32)
     for (const bad of [null, {}, 'hunt:ossuary:normal', 42]) expect(sanitizeCloudSave({ honors: bad }).honors).toEqual([])
   })

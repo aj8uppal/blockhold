@@ -65,7 +65,7 @@ export function masteryReady(save: Pick<SaveData, 'xp' | 'honors'>, family: Towe
 }
 export function masteryHint(save: Pick<SaveData, 'xp' | 'honors'>, family: TowerKind): string {
   const count = HUNTS.filter(h => save.honors?.includes(`mastery:${family}:${h.id}`)).length
-  return `Level 30 · ${count}/2 Normal or Veteran hunts mastered with ${family === 'seraph' ? 'Seraph' : 'Barracks'}`
+  return `Level 30 · ${count}/2 Normal or Veteran hunts mastered with ${family[0].toUpperCase() + family.slice(1)}`
 }
 
 /** Awards are completion stamps, never kill farming. All bonuses are once per distinct stamp. */
@@ -73,7 +73,7 @@ export function awardHunt(save: SaveData, id: HuntId, difficulty: Difficulty, he
   qualified: TowerKind[]): { honors: string[], bonusXp: number } {
   const before = new Set(save.honors ?? [])
   const earned = [`hunt:${id}:${difficulty}`, `hero:${hero}:${id}`]
-  if (difficulty !== 'casual') for (const family of qualified) if (family === 'seraph' || family === 'barracks') earned.push(`mastery:${family}:${id}`)
+  if (difficulty !== 'casual') for (const family of qualified) earned.push(`mastery:${family}:${id}`)
   const honors = earned.filter(x => !before.has(x))
   save.honors = [...new Set([...before, ...earned])]
   return { honors, bonusXp: honors.reduce((n, x) => n + (x.startsWith('hunt:') ? 800 : x.startsWith('hero:') ? 400 : 600), 0) }

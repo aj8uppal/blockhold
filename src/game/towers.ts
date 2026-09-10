@@ -213,6 +213,8 @@ export class Tower {
    * stack: two next to each other light the same towers, they do not double
    * the light. Set by Game.recomputeResonance alongside the reactions.
    */
+  support: Tower | null = null
+  supportedDamage = 0
   auraDamage = 0
   auraRange = 0
   auraRate = 0
@@ -294,10 +296,10 @@ export class Tower {
     const halo = getPart(this.model, 'halo')
     if (halo) {
       if (this.branch === 0 && this.level >= 4) halo.rotation.z += dt * 0.22
-      else halo.rotation.y += dt * this.seraphSpeed * 0.65
+      else halo.rotation.y += dt * (this.level >= 4 ? 0.22 : this.seraphSpeed * 0.65)
       halo.position.y = (halo.userData.baseY ??= halo.position.y) + Math.sin(world.time * 1.4) * 0.03
     }
-    const beat = Math.sin(this.seraphT)
+    const beat = Math.sin(this.seraphT) * (this.level >= 4 ? 0.45 : 1)
     const wingL = getPart(this.model, 'wingL'), wingR = getPart(this.model, 'wingR')
     if (wingL) { wingL.rotation.z = -beat * 0.16; wingL.rotation.y = beat * 0.08 }
     if (wingR) { wingR.rotation.z = beat * 0.16; wingR.rotation.y = -beat * 0.08 }
@@ -446,11 +448,13 @@ export class Tower {
     world.sfx('dawnfall', 0.65)
   }
 
-  /** Eclipse: everything in reach stands stunned in the dark, and comes out of it less armored */
+  /** Eclipse concentrates the void branch on a small group of durable foes. */
   private eclipse(world: World): void {
     let hit = 0
-    for (const e of world.enemies) {
-      if (!e.targetable || Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) > this.range + e.radius) continue
+    const targets = world.enemies.filter(e => e.targetable && this.canSee(e, world)
+      && Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) <= this.range + e.radius)
+      .sort((a, b) => b.hp - a.hp).slice(0, this.def.beamTargets ?? 4)
+    for (const e of targets) {
       e.applyStun(1.5, world)
       e.shredArmor(0.2)
       e.shredResist(0.2)

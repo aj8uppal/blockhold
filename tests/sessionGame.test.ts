@@ -11,6 +11,7 @@ import { towerTrees } from '../src/game/towerDefs.ts'
 import type { TowerKind } from '../src/game/types.ts'
 import { OVERCHARGE_SHARD_COST } from '../src/game/types.ts'
 import type { CoopEvent, CoopSession, CoopSetup } from '../src/core/coop.ts'
+import { xpForLevel } from '../src/game/progress.ts'
 import { RULESET_VERSION } from '../src/game/ruleset.ts'
 
 vi.mock('../src/core/audio.ts', async importOriginal => ({
@@ -43,7 +44,7 @@ type Internals = {
   route(cmd: CoopCommand): boolean
   applyCoopCommand(cmd: CoopCommand, seat: number): void
   sessionTick: number
-  sessionStateHash(legacy?: boolean): number
+  sessionStateHash(ruleset?: number): number
   recovering: boolean
 }
 function makeGame(): Game {
@@ -100,7 +101,7 @@ describe('actual Game session recovery', () => {
     game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 871 })
     game.buildTower('arrow', game.terrain!.plots[0]); game.callWave(); ticks(game, 480)
     const original = game.exportBattleSession()!
-    const old: BattleSession = { ...original, ruleset: 8, stateHash: (game as unknown as Internals).sessionStateHash(true) }
+    const old: BattleSession = { ...original, ruleset: 8, stateHash: (game as unknown as Internals).sessionStateHash(8) }
     expect(old.stateHash).not.toBe(original.stateHash)
     const before = snapshot(game), account = JSON.stringify(game.save)
     expect(await game.resumeSession(old)).toBe(true)
@@ -744,4 +745,109 @@ describe('actual Game session recovery', () => {
     expect(game.overchargeAllCost).toBe(0)
     game.disposeLevel()
   })
+})
+
+
+describe('sandbox and live arsenal progression', () => {
+  it('replays free Mythics and queued sandbox spawns without paying account rewards', async () => {
+    const game = makeGame()
+    game.save.xp = 0
+    const account = JSON.stringify(game.save)
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 731 })
+    game.buildTower('seraph', game.terrain!.plots[0])
+    for (let i = 0; i < 5; i++) game.upgradeTower(game.towers[0], 0)
+    game.buildTower('ballista', game.terrain!.plots[1])
+    for (let i = 0; i < 5; i++) game.upgradeTower(game.towers[1], i === 2 ? 1 : 0)
+    expect(game.towers.map(t => t.level)).toEqual([6, 6])
+    game.sandboxOrder({ kind: 'sandboxSpawn', enemy: 'brute', count: 25, lane: 0, hp: 100 })
+    ticks(game, 30)
+    expect(game.enemies.length).toBeGreaterThan(0)
+    const before = snapshot(game)
+    expect(game.saveSession()).toBe(true)
+    const session = readSession()!
+    expect(session.mode).toBe('sandbox')
+    ticks(game, 120)
+    const future = snapshot(game)
+    expect(await game.resumeSession(session)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    ticks(game, 120)
+    expect(snapshot(game)).toEqual(future)
+    game.paused = false
+    game.sandboxOrder({ kind: 'sandboxClear' })
+    ticks(game, 240)
+    expect(game.enemies).toHaveLength(0)
+    expect(game.lives).toBe(20)
+    expect(game.liveXpEarned).toBe(0)
+    expect(JSON.stringify(game.save)).toBe(account)
+    game.disposeLevel()
+  })
+
+  it('ignores sandbox commands in campaign and bounds queued enemies in sandbox', () => {
+    const game = makeGame()
+    const send = () => game.sandboxOrder({ kind: 'sandboxSpawn', enemy: 'husk', count: 25, lane: 0, hp: 1 })
+    game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 732 })
+    send()
+    ticks(game, 30)
+    expect(game.enemies).toHaveLength(0)
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 733 })
+    for (let i = 0; i < 9; i++) send()
+    expect((game as unknown as { sandboxQueue: { count: number }[] }).sandboxQueue.reduce((n, g) => n + g.count, 0)).toBe(200)
+    game.sandboxOrder({ kind: 'sandboxClear' })
+    ticks(game, 60)
+    expect(game.enemies).toHaveLength(0)
+    expect(game.phase).toBe('playing')
+    game.disposeLevel()
+  })
+
+  it('unlocks Ballista on the kill that crosses level 15 and preserves the purchase after reload', async () => {
+    const game = makeGame()
+    game.save.xp = xpForLevel(15) - 1
+    game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 734 })
+    expect(game.towerUnlocked('ballista')).toBe(false)
+    game.buildTower('arrow', game.terrain!.plots[0])
+    game.callWave()
+    for (let i = 0; i < 3600 && !game.towerUnlocked('ballista'); i++) ticks(game, 1)
+    expect(game.towerUnlocked('ballista')).toBe(true)
+    expect(game.save.xp).toBe(xpForLevel(15) - 1)
+    game.buildTower('ballista', game.terrain!.plots[1])
+    expect(game.towers.map(t => t.kind)).toContain('ballista')
+    const before = snapshot(game)
+    game.saveSession()
+    expect(await game.resumeSession(readSession()!)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    expect(game.towerUnlocked('ballista')).toBe(true)
+    game.disposeLevel()
+  })
+})
+
+
+it('shares a late guest’s earned Mythics through paused room orders and retains them in solo recovery', async () => {
+  const host = makeGame(), guest = makeGame()
+  host.save.xp = guest.save.xp = 20000
+  host.save.honors = []
+  guest.save.honors = ['mastery:seraph:ossuary', 'mastery:seraph:empress']
+  const setup: CoopSetup = { levelId: 'greenhollow', difficulty: 'normal', hero: 'aldric', seed: 881,
+    mode: 'campaign', loadout: { xp: host.save.xp, armory: {}, honors: [], heroPaths: {} } }
+  const a = room([], true), b = room([], true)
+  await host.joinCoopBattle(a.session, setup)
+  await guest.joinCoopBattle(b.session, setup)
+  expect(b.fake.send).toHaveBeenCalledWith('cmd', { kind: 'shareMastery', families: ['seraph'] })
+  expect(a.fake.send).not.toHaveBeenCalledWith('cmd', expect.objectContaining({ kind: 'shareMastery' }))
+  const account = JSON.stringify(host.save)
+  const tower = { level: 5, kind: 'seraph' } as import('../src/game/towers.ts').Tower
+  expect(host.mythicLock(tower)).not.toBeNull()
+  for (const game of [host, guest]) {
+    ;(game as unknown as Internals).applyCoopCommand({ kind: 'shareMastery', families: ['seraph'] }, 1)
+    expect(game.mythicLock(tower)).toBeNull()
+    expect(game.hasSharedMythic('barracks')).toBe(false)
+  }
+  expect(host.exportBattleSession()!.stateHash).toBe(guest.exportBattleSession()!.stateHash)
+  expect(host.continueSolo()).toBe(true)
+  const session = readSession()!
+  expect(await host.resumeSession(session)).toBe(true)
+  expect(host.mythicLock(tower)).toBeNull()
+  expect(JSON.stringify(host.save)).toBe(account)
+  host.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 882 })
+  expect(host.mythicLock(tower)).not.toBeNull() // sharing does not grant permanent account honors
+  host.disposeLevel(); guest.disposeLevel()
 })

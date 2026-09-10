@@ -10,6 +10,7 @@ import type { TowerKind, TrapKind } from './types.ts'
  * carries exactly.
  */
 export type CoopCommand =
+  | { kind: 'shareMastery', families: TowerKind[] }
   | { kind: 'build', plot: number, tower: TowerKind }
   | { kind: 'upgrade', plot: number, opt: number }
   | { kind: 'sell', plot: number }
@@ -33,6 +34,8 @@ export type CoopCommand =
   | { kind: 'meteor', x: number, z: number }
   | { kind: 'reinforce', x: number, z: number }
   | { kind: 'hold' }
+  | { kind: 'sandboxSpawn', enemy: string, count: number, lane: number, hp: number }
+  | { kind: 'sandboxClear' | 'sandboxReset' }
 
 /** a cheap order-sensitive hash of a few numbers, for spotting a desync */
 export function stateHash(nums: number[]): number {

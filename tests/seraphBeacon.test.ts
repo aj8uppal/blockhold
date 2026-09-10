@@ -85,7 +85,7 @@ describe('Seraph independent beams', () => {
     e.takeDamage(1, 'true', world)
     expect(materials[0].emissiveIntensity).toBe(0.24)
   })
-  it('hits 3 through 7 distinct enemies as either branch upgrades, at full damage', () => {
+  it('widens Solar volleys and focuses Void volleys into fewer full-damage beams', () => {
     for (const branch of [0, 1]) for (let tier = 1; tier <= 5; tier++) {
       const enemies = Array.from({ length: 8 }, (_, i) => enemy(1 + i * 0.2))
       const { world, shots } = fixture(enemies)
@@ -97,10 +97,10 @@ describe('Seraph independent beams', () => {
       tower.update(1 / 60, world)
       expect(shots).toHaveLength(1)
       const damage = enemies.map(e => e.maxHp - e.hp).filter(d => d > 0)
-      expect(damage, `tier ${tier}, branch ${branch}`).toHaveLength(tier + 2)
+      expect(damage, `tier ${tier}, branch ${branch}`).toHaveLength((branch === 0 ? [3, 4, 5, 7, 8] : [3, 4, 5, 3, 4])[tier - 1])
       expect(damage.every(d => d === damage[0])).toBe(true)
       expect(tower.damage).toBeCloseTo(damage[0] * damage.length)
-      expect((shots[0].mesh.getObjectByName('ray-core') as THREE.InstancedMesh).count).toBe((tier + 2) * 3)
+      expect((shots[0].mesh.getObjectByName('ray-core') as THREE.InstancedMesh).count).toBe(damage.length * 3)
       shots[0].dispose?.()
     }
   })
@@ -287,4 +287,27 @@ describe('Beacon support combinations', () => {
     expect(barracks.isValidRally(2.3, 0, world)).toBe(true)
     expect(barracks.isValidRally(3, 0, world)).toBe(false)
   })
+})
+
+
+it('credits only the strongest Beacon with actual supported health damage, excluding overkill', () => {
+  const foe = enemy(1), { world } = fixture([foe])
+  const arrow = new Tower('arrow', plot(1), world)
+  const weak = new Tower('beacon', plot(0), world)
+  const strong = new Tower('beacon', plot(2), world)
+  strong.upgrade(0, world)
+  world.towers.push(arrow, weak, strong)
+  const game = Object.assign(Object.create(Game.prototype), world) as Game
+  game.recomputeAuras()
+  foe.hp = 100
+  foe.takeDamage(4000, 'true', world, { credit: arrow })
+  expect(arrow.damage).toBe(100)
+  expect(strong.supportedDamage).toBe(100)
+  expect(weak.supportedDamage).toBe(0)
+  game.towers.splice(game.towers.indexOf(strong), 1)
+  game.recomputeAuras()
+  const next = enemy(1)
+  next.takeDamage(75, 'true', world, { credit: arrow })
+  expect(weak.supportedDamage).toBe(75)
+  expect(strong.supportedDamage).toBe(100)
 })
