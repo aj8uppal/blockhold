@@ -44,7 +44,8 @@ const assets = join(root, 'dist', 'assets')
 // Sandbox, eleven further Mythic branches, live mastery tracking and co-op
 // unlock contributions add ~4.6 KiB total; sandbox controls remain lazy loaded.
 // Historical battle compatibility, full battle backups and XP receipts add ~1.4 KiB.
-const APP_CHUNK_LIMIT = 160 * 1024
+// Mode-aware retries and confirmed victory transitions add ~0.3 KiB gzip.
+const APP_CHUNK_LIMIT = 161 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 const TOTAL_JS_LIMIT = 297 * 1024
 

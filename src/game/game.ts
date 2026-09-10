@@ -1109,8 +1109,21 @@ export class Game implements World {
       return false
     }
     if (this.phase !== 'playing' && cmd.kind !== 'hold') return false
-    void this.coop.send('cmd', cmd)
+    if (cmd.kind === 'hold') void this.requestCoopHold(this.coop)
+    else void this.coop.send('cmd', cmd)
     return true
+  }
+
+  private async requestCoopHold(session: CoopSession): Promise<void> {
+    const failed = () => {
+      if (this.coop === session && this.phase === 'victory')
+        this.hud.showToast('Could not reach the room. Reconnect and try Hold the line again.', 8)
+    }
+    // A tab switch or an ally can have paused the room at victory. Resume its
+    // authoritative clock before asking it to start the next wave countdown.
+    if (session.paused && !await session.send('pause', false)) { failed(); return }
+    if (this.coop !== session || this.phase !== 'victory') return
+    if (!await session.send('cmd', { kind: 'hold' })) failed()
   }
 
   private recordCommand(cmd: CoopCommand): void {
@@ -1577,7 +1590,8 @@ export class Game implements World {
     this.runSeed = resume?.seed ?? opts.seed ?? newRunSeed()
     setSimSeed(this.runSeed)
     this.isBellfoundry = opts.bellfoundry ?? false
-    this.isWatches = opts.watches ?? this.isWatches
+    this.isWatches = opts.watches ?? false
+    if (!this.isWatches) this.resetWatches()
     this.hunt = opts.hunt ? huntById(opts.hunt) ?? null : null
     this.huntHonors = []
     this.isDaily = opts.daily !== undefined
@@ -1730,6 +1744,25 @@ export class Game implements World {
     }
   }
 
+  /** Restart the actual battle, including generated boards and special-mode rules. */
+  retryBattle(): void {
+    if (!this.level) return
+    const level = levels.find(l => l.id === this.level!.id) ?? this.level
+    this.startLevel(level, this.difficulty, this.hero?.heroDef.id ?? 'aldric',
+      this.isSandbox ? 'sandbox' : this.isEndless ? 'endless' : 'campaign', {
+        seed: this.runSeed, watches: this.isWatches, bellfoundry: this.isBellfoundry,
+        daily: this.isDaily ? this.dailyDay : undefined,
+        trial: this.trial ?? undefined, hunt: this.hunt?.id,
+      })
+  }
+
+  /** One eligibility rule for the victory button and the transition itself. */
+  get canHoldTheLine(): boolean {
+    return this.phase === 'victory' && !!this.level && !!this.waves
+      && !this.isFreeplay && !this.isEndless && !this.isDaily && !this.isWatches
+      && !this.isBellfoundry && !this.trial && !this.hunt
+  }
+
   /**
    * Hold the line: keep playing on the board the player built.
    *
@@ -1741,7 +1774,7 @@ export class Game implements World {
    * where the campaign left it rather than restarting.
    */
   holdTheLine(): void {
-    if (this.phase !== 'victory' || !this.level || !this.waves || this.isEndless || this.isDaily || this.isWatches || this.isBellfoundry || this.trial || this.hunt) return
+    if (!this.canHoldTheLine || !this.level || !this.waves) return
     if (this.route({ kind: 'hold' })) { this.hud.showToast('Holding the line together: waiting for the room', 2); return }
     this.isFreeplay = true
     this.bankedUnlockXp += battleXp({ mode: 'campaign', difficulty: this.difficulty, wavesHeld: this.waves.authoredWaves, won: true, firstClear: !(this.roster.stars[this.level.id] > 0) })
@@ -2256,6 +2289,7 @@ export class Game implements World {
     stamp: RunStamp,
     daily?: DailyResult,
     freeplay: boolean, freeplayDepth: number,
+    canHoldTheLine: boolean,
     xpEarned: number, levelBefore: number, levelAfter: number, newUnlocks: UnlockDef[],
     /** lives that would have kept three stars, and how many short the run was */
     starTarget: number | null, livesShort: number,
@@ -2305,6 +2339,7 @@ export class Game implements World {
       topKiller: this.topKiller(),
       heroKills: this.hero?.kills ?? 0,
       freeplay: this.isFreeplay,
+      canHoldTheLine: this.canHoldTheLine,
       freeplayDepth: this.waves ? this.waves.freeplayDepth : 0,
       xpEarned: this.lastXpEarned,
       levelBefore: levelForXp(this.lastXpBefore),

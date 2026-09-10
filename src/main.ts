@@ -169,10 +169,11 @@ screens.onPlayTrial = (id, kind) => {
 }
 
 screens.onPlayLevel = (id, difficulty, hero, mode) => {
+  const level = levelById(id)
   enterBattle()
   // end-screen replays reuse the difficulty/hero/mode of the run that just ended
   game.startLevel(
-    levelById(id),
+    level,
     difficulty ?? game.difficulty,
     hero ?? (game.save.lastHero as never) ?? 'aldric',
     mode ?? (game.isEndless ? 'endless' : 'campaign'),
@@ -259,7 +260,6 @@ screens.onPlayWatches = () => {
   hud.reset()
   hud.setChrome(true)
   screens.show('none')
-  screens.watchesRemaining = 2
   game.startLevel(dailyLevel(seed), 'normal', (game.save.lastHero as never) ?? 'aldric', 'campaign',
     { seed, watches: true })
   watchSeed = seed
@@ -270,14 +270,15 @@ screens.onNextWatch = () => {
   hud.reset()
   hud.setChrome(true)
   screens.show('none')
-  screens.watchesRemaining = 2 - game.watchIndex
   game.startLevel(dailyLevel(watchSeed), 'normal', (game.save.lastHero as never) ?? 'aldric', 'campaign',
     { seed: watchSeed, watches: true })
 }
 screens.onHoldTheLine = () => {
-  screens.show('none')
-  hud.reset()
   game.holdTheLine()
+}
+screens.onRetry = () => {
+  enterBattle()
+  game.retryBattle()
 }
 screens.onResume = () => {
   const session = readSession()
@@ -319,6 +320,13 @@ hud.onHome = () => {
   screens.show('menu')
 }
 game.onPhaseChange = (phase, stars) => {
+  screens.watchesRemaining = game.isWatches ? 2 - game.watchIndex : 0
+  // In co-op either ally can continue. Keep the result card until the room
+  // actually applies the command, then dismiss it on every player's screen.
+  if (phase === 'playing' && game.isFreeplay) {
+    screens.show('none')
+    hud.setPaused(game.coop?.paused ?? game.paused)
+  }
   if (phase === 'playing' && game.isSandbox) {
     const board = game.level
     void import('./ui/sandbox.ts').then(({ mountSandbox }) => {

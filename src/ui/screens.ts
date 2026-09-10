@@ -70,6 +70,7 @@ export interface BattleStats {
   heroKills: number,
   daily?: DailyResult,
   freeplay: boolean, freeplayDepth: number,
+  canHoldTheLine?: boolean,
   xpEarned: number, levelBefore: number, levelAfter: number, newUnlocks: UnlockDef[],
   starTarget: number | null, livesShort: number,
   starLossLeak: { name: string, wave: number } | null,
@@ -167,6 +168,7 @@ export class Screens {
   onPlayBellfoundry: () => void = () => {}
   onNextWatch: () => void = () => {}
   onHoldTheLine: () => void = () => {}
+  onRetry: () => void = () => {}
   onPlayTrial: (levelId: string, kind: TrialKind) => void = () => {}
 
   constructor(private save: () => SaveData) {
@@ -804,7 +806,7 @@ export class Screens {
     }
     // A cleared map is not over. Holding the line keeps the board the player
     // built and keeps the waves coming, with the ladder of bosses beyond.
-    if (won && !endless && !freeplay && !daily && !trial && this.watchesRemaining === 0) {
+    if (stats?.canHoldTheLine) {
       const hold = el('button', 'btn primary', row, `${icon('castle')} Hold the line`) as HTMLButtonElement
       hold.title = 'Keep your defense and keep fighting: harder waves, bigger bosses, a record to set'
       hold.onclick = () => this.onHoldTheLine()
@@ -814,8 +816,8 @@ export class Screens {
       next.onclick = () => this.onPlayLevel(levels[idx + 1].id)
     }
     const retry = el('button', `btn ${won && !endless ? '' : 'primary'}`, row, endless ? 'Descend again' : won ? 'Replay' : 'Try again') as HTMLButtonElement
-    retry.onclick = () => trial ? this.onPlayTrial(levelId, trial.kind) : this.onPlayLevel(levelId, undefined, undefined, endless ? 'endless' : 'campaign')
-    if (this.watchesRemaining > 0) {
+    retry.onclick = () => this.onRetry()
+    if (won && this.watchesRemaining > 0) {
       const nextWatch = el('button', 'btn primary', row,
         `Stand the next watch (${4 - this.watchesRemaining} of 3)`) as HTMLButtonElement
       nextWatch.onclick = () => this.onNextWatch()

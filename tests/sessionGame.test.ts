@@ -2,7 +2,8 @@ import historicalBattle from './fixtures/seraph-v9-battle.json'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { Game } from '../src/game/game.ts'
-import { levels } from '../src/game/levels.ts'
+import { dailyLevel, levels } from '../src/game/levels.ts'
+import { trialFor } from '../src/game/trials.ts'
 import { huntLevel } from '../src/game/hunts.ts'
 import { readSession, writeSession, type BattleSession } from '../src/game/session.ts'
 import { parseSave } from '../src/core/save.ts'
@@ -97,6 +98,48 @@ function setupFor(battle: BattleSession): CoopSetup {
 }
 
 describe('actual Game session recovery', () => {
+  it.each(['campaign', 'endless', 'bellfoundry', 'watches', 'daily', 'trial', 'hunt'] as const)(
+    'retries %s with its own rules and resets those rules for the next campaign', mode => {
+      const game = makeGame()
+      const generated = ['bellfoundry', 'watches', 'daily'].includes(mode)
+      game.startLevel(generated ? dailyLevel(1234) : levels[0], 'veteran', 'zephyra',
+        mode === 'endless' ? 'endless' : 'campaign', {
+          seed: 1234, bellfoundry: mode === 'bellfoundry', watches: mode === 'watches',
+          daily: mode === 'daily' ? 17 : undefined,
+          trial: mode === 'trial' ? trialFor(levels[0], 'relief') : undefined,
+          hunt: mode === 'hunt' ? 'ossuary' : undefined,
+        })
+      const before = { level: game.level, hero: game.hero!.heroDef.id, gold: game.gold,
+        waves: game.waves!.totalWaves, seed: game.runSeed }
+      game.phase = 'defeat'
+      game.paused = true
+      game.retryBattle()
+      expect(game.phase).toBe('playing')
+      expect(game.paused).toBe(false)
+      expect({ level: game.level, hero: game.hero!.heroDef.id, gold: game.gold,
+        waves: game.waves!.totalWaves, seed: game.runSeed }).toEqual(before)
+      expect(game.difficulty).toBe('veteran')
+      expect(game.isBellfoundry).toBe(mode === 'bellfoundry')
+      expect(game.isWatches).toBe(mode === 'watches')
+      expect(game.isDaily).toBe(mode === 'daily')
+      expect(game.isEndless).toBe(mode === 'endless')
+      expect(!!game.trial).toBe(mode === 'trial')
+      expect(!!game.hunt).toBe(mode === 'hunt')
+      game.phase = 'victory'
+      expect(game.canHoldTheLine).toBe(mode === 'campaign')
+      expect(game.battleStats().canHoldTheLine).toBe(game.canHoldTheLine)
+      game.startLevel(levels[0], 'normal', 'aldric')
+      game.waves!.resumeAt(game.waves!.authoredWaves)
+      game.phase = 'victory'
+      expect(game.canHoldTheLine).toBe(true)
+      game.holdTheLine()
+      ticks(game, 60)
+      expect(game.isFreeplay).toBe(true)
+      expect(game.phase).toBe('playing')
+      expect(game.time).toBeGreaterThan(0)
+      game.disposeLevel()
+    })
+
   it('verifies a ruleset-eight battle against its original hash and upgrades the next saved journal', async () => {
     const game = makeGame()
     game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 871 })
@@ -642,6 +685,45 @@ describe('actual Game session recovery', () => {
       return state
     }
     expect(await run(true)).toEqual(await run(false))
+  })
+
+  it('resumes a paused room before requesting Hold the Line, and leaves a failed request retryable', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 551 })
+    const connected = room()
+    expect(await game.joinCoopBattle(connected.session, setupFor(game.exportBattleSession()!))).toBe(true)
+    game.phase = 'victory'
+    game.paused = connected.session.paused = true
+    const send = vi.fn(async (_type: string, _payload?: unknown) => false)
+    connected.session.send = send
+    game.holdTheLine()
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    expect(send).toHaveBeenLastCalledWith('pause', false)
+    expect(game.phase).toBe('victory')
+    expect(game.isFreeplay).toBe(false)
+    send.mockClear()
+    send.mockImplementation(async (type, payload) => {
+      if (type === 'pause') {
+        connected.session.paused = !!payload
+        connected.emit({ type: 'pause', seat: 1, on: !!payload })
+      }
+      return true
+    })
+    game.holdTheLine()
+    await vi.waitFor(() => expect(send.mock.calls).toEqual([
+      ['pause', false], ['cmd', { kind: 'hold' }],
+    ]))
+    expect(game.phase).toBe('victory') // the POST alone cannot change the simulation
+    connected.emit({ type: 'cmd', seat: 1, turn: 1, cmd: { kind: 'hold' } })
+    connected.emit({ type: 'turn', n: 1, ticks: 12 })
+    connected.emit({ type: 'turn', n: 2, ticks: 12 })
+    const clock = game as unknown as { coopAdvance(dt: number, h: number): void }
+    for (let i = 0; i < 24; i++) clock.coopAdvance(1 / 60, 1 / 60)
+    expect(game.phase).toBe('playing')
+    expect(game.isFreeplay).toBe(true)
+    expect(game.paused).toBe(false)
+    expect(game.time).toBeGreaterThan(0)
+    game.disposeLevel()
   })
 
   it('applies simultaneous allied spells once and preserves that cooldown decision in the solo journal', async () => {
