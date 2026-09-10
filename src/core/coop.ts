@@ -18,7 +18,7 @@ interface SavedSeat { code: string, seat: number, key: string, expiresAt: number
 
 const API = (import.meta.env?.VITE_SYNC_URL ?? '').replace(/\/$/, '')
 
-const apiUrl = (path: string) => `${API}${path}${path.includes('?') ? '&' : '?'}ruleset=${RULESET_VERSION}`
+const apiUrl = (path: string) => `${API}${path}${path.includes('?') ? '&' : '?'}ruleset=${RULESET_VERSION}&paced=1`
 const REFRESH_MESSAGE = 'This game version cannot join the room. Refresh Blockhold and try again.'
 
 export { coopEnabled, inviteCodeFromUrl } from './coopLink.ts'
@@ -40,7 +40,7 @@ export type CoopEvent =
   | { type: 'hello', seat: number, setup: CoopSetup | null, started: boolean, turn: number, speed: number, paused: boolean, seats: number, connected: number[] }
   | { type: 'presence', seats: number, connected: number[] }
   | { type: 'setup', setup: CoopSetup }
-  | { type: 'start', setup: CoopSetup }
+  | { type: 'start', setup: CoopSetup, preparing?: boolean }
   | { type: 'turn', n: number, ticks: number }
   | { type: 'cmd', seat: number, turn: number, cmd: unknown }
   | { type: 'speed', speed: number, seat: number }
@@ -73,6 +73,7 @@ export class CoopSession {
     private readonly key: string,
     readonly turnMs: number,
     readonly ticksPerTurn: number,
+    readonly paced = false,
   ) { this.remember() }
 
   get isHost(): boolean { return this.seat === 0 }
@@ -82,7 +83,7 @@ export class CoopSession {
     if (r.status === 409) throw new Error(REFRESH_MESSAGE)
     if (!r.ok) throw new Error(`could not open a room (${r.status})`)
     const j = await r.json()
-    return new CoopSession(j.code, j.seat, j.key, j.turnMs, j.ticksPerTurn)
+    return new CoopSession(j.code, j.seat, j.key, j.turnMs, j.ticksPerTurn, j.paced === true)
   }
 
   static async join(code: string): Promise<CoopSession> {
@@ -94,7 +95,7 @@ export class CoopSession {
     if (r.status === 410) throw new Error('That battle can no longer be joined')
     if (!r.ok) throw new Error(`could not join (${r.status})`)
     const j = await r.json()
-    const s = new CoopSession(j.code, j.seat, j.key, j.turnMs, j.ticksPerTurn)
+    const s = new CoopSession(j.code, j.seat, j.key, j.turnMs, j.ticksPerTurn, j.paced === true)
     s.adopt(j)
     return s
   }
@@ -127,7 +128,7 @@ export class CoopSession {
       throw new Error(response.status === 404 ? 'That room has expired. Open a new room to play again.' : 'That saved seat could not be recovered.')
     }
     const data = await response.json()
-    const session = new CoopSession(saved.code, saved.seat, saved.key, data.turnMs, data.ticksPerTurn)
+    const session = new CoopSession(saved.code, saved.seat, saved.key, data.turnMs, data.ticksPerTurn, data.paced === true)
     session.adopt(data)
     return session
   }
@@ -200,7 +201,7 @@ export class CoopSession {
               if (msg.seq !== undefined) this.replaySeq = msg.seq
               if (msg.type === 'presence') { this.seats = msg.seats; this.connected = msg.connected }
               if (msg.type === 'setup') this.setup = msg.setup
-              if (msg.type === 'start') { this.setup = msg.setup; this.started = true; this.paused = !!(msg.setup?.startPaused || msg.setup?.battle) }
+              if (msg.type === 'start') { this.setup = msg.setup; this.started = true; this.paused = !!(msg.preparing || msg.setup?.startPaused || msg.setup?.battle) }
               if (msg.type === 'pause') this.paused = msg.on
               if (msg.type === 'speed') this.speed = msg.speed === 2 ? 2 : 1
               if (msg.type === 'end') this.forget()

@@ -31,7 +31,7 @@ it('rejoining our saved invitation recovers the original seat and exposes ordere
   const { CoopSession } = await import('../src/core/coop.ts')
   const history = [{ type: 'cmd', seat: 0, turn: 1, cmd: { kind: 'wave' }, seq: 3 }, { type: 'turn', n: 1, ticks: 12, seq: 4 }]
   const request = vi.fn(async (url: string, init: RequestInit) => {
-    expect(url).toBe(`https://sync.test/v1/coop/rooms/ABCDE/resume?ruleset=${RULESET_VERSION}`)
+    expect(url).toBe(`https://sync.test/v1/coop/rooms/ABCDE/resume?ruleset=${RULESET_VERSION}&paced=1`)
     expect(JSON.parse(init.body as string)).toEqual({ seat: 2, key: seatKey })
     return Response.json({ setup, seats: 3, connected: [0], started: true, history, seq: 4, paused: true, speed: 2, turnMs: 200, ticksPerTurn: 12 })
   })
@@ -52,7 +52,7 @@ it('reconnect stream authenticates in headers and delivers missing events before
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
     if (!url.includes('/events')) return Response.json({ code: 'ABCDE', seat: 0, key: seatKey, turnMs: 200, ticksPerTurn: 12 })
     requests++
-    expect(url).toBe(`https://sync.test/v1/coop/rooms/ABCDE/events?seat=0&after=0&ruleset=${RULESET_VERSION}`)
+    expect(url).toBe(`https://sync.test/v1/coop/rooms/ABCDE/events?seat=0&after=0&ruleset=${RULESET_VERSION}&paced=1`)
     expect(url).not.toContain(seatKey)
     expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${seatKey}`)
     return new Response(new ReadableStream({ start(controller) {

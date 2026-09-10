@@ -231,3 +231,84 @@ test('missing or old client rulesets cannot create, join, resume, stream or send
     }
   } finally { resetRooms(); await h.close() }
 })
+
+test('100ms rooms wait for both scenes, then order commands at six ticks per marker', async () => {
+  resetRooms()
+  const h = await harness()
+  const streams = [new AbortController(), new AbortController()]
+  try {
+    const { json: host } = await h.call('POST', '/v1/coop/rooms?paced=1', { body: {} })
+    const { json: guest } = await h.call('POST', `/v1/coop/rooms/${host.code}/join?paced=1`, { body: {} })
+    assert.equal(host.turnMs, 100)
+    assert.equal(guest.ticksPerTurn, 6)
+    assert.equal(guest.paced, true)
+    for (const [i, seat] of [host, guest].entries()) {
+      const response = await fetch(`${h.base}/v1/coop/rooms/${host.code}/events?seat=${seat.seat}&ruleset=${RULESET_VERSION}`, {
+        headers: { Authorization: `Bearer ${seat.key}` }, signal: streams[i].signal,
+      })
+      assert.equal(response.status, 200)
+    }
+    const send = (seat: typeof host, type: string, payload?: unknown) => h.call('POST', `/v1/coop/rooms/${host.code}/send`, { body: { seat: seat.seat, key: seat.key, type, payload } })
+    const state = async () => (await h.call('POST', `/v1/coop/rooms/${host.code}/resume`, { body: { seat: 0, key: host.key } })).json
+    await send(host, 'start', { levelId: 'greenhollow', seed: 71 })
+    await send(host, 'ready')
+    await send(host, 'ready') // duplicate cannot release another seat
+    await send(guest, 'pause', false) // resume cannot bypass scene readiness
+    await new Promise(r => setTimeout(r, 250))
+    const waiting = await state()
+    assert.equal(waiting.paused, true)
+    assert.ok(waiting.history.some((m: any) => m.type === 'turn'))
+    assert.ok(waiting.history.filter((m: any) => m.type === 'turn').every((m: any) => m.ticks === 0))
+    await send(guest, 'ready')
+    await send(host, 'cmd', { kind: 'wave' })
+    await new Promise(r => setTimeout(r, 250))
+    const running = await state()
+    assert.equal(running.paused, false)
+    const command = running.history.find((m: any) => m.type === 'cmd')
+    const marker = running.history.find((m: any) => m.type === 'turn' && m.n === command.turn)
+    assert.equal(marker.ticks, 6)
+    assert.ok(command.seq < marker.seq)
+    await send(host, 'speed', 2)
+    await new Promise(r => setTimeout(r, 150))
+    assert.equal((await state()).history.filter((m: any) => m.type === 'turn').at(-1).ticks, 12)
+  } finally { streams.forEach(s => s.abort()); resetRooms(); await h.close() }
+})
+
+test('a disconnected loading seat cannot strand its ready ally', async () => {
+  resetRooms()
+  const h = await harness()
+  const stream = new AbortController()
+  try {
+    const { json: host } = await h.call('POST', '/v1/coop/rooms?paced=1', { body: {} })
+    const { json: guest } = await h.call('POST', `/v1/coop/rooms/${host.code}/join?paced=1`, { body: {} })
+    await fetch(`${h.base}/v1/coop/rooms/${host.code}/events?seat=1&ruleset=${RULESET_VERSION}`, {
+      headers: { Authorization: `Bearer ${guest.key}` }, signal: stream.signal,
+    })
+    const send = (type: string) => h.call('POST', `/v1/coop/rooms/${host.code}/send`, { body: { seat: 0, key: host.key, type } })
+    const state = async () => (await h.call('POST', `/v1/coop/rooms/${host.code}/resume`, { body: { seat: 0, key: host.key } })).json
+    await send('start'); await send('ready')
+    assert.equal((await state()).paused, true)
+    stream.abort()
+    for (let i = 0; i < 30 && (await state()).paused; i++) await new Promise(r => setTimeout(r, 10))
+    assert.equal((await state()).paused, false)
+  } finally { stream.abort(); resetRooms(); await h.close() }
+})
+
+test('readiness preserves manual pauses and an adopted solo battle stays paused', async () => {
+  resetRooms()
+  const h = await harness()
+  try {
+    for (const adopted of [false, true]) {
+      const { json: { code, key } } = await h.call('POST', '/v1/coop/rooms?paced=1', { body: {} })
+      const send = (type: string, payload?: unknown) => h.call('POST', `/v1/coop/rooms/${code}/send`, { body: { seat: 0, key, type, payload } })
+      const battle = { ruleset: RULESET_VERSION, tick: 30, commands: [], initialSave: { xp: 123 } }
+      await send('start', { levelId: 'greenhollow', ...(adopted ? { battle } : {}) })
+      if (!adopted) await send('pause', true)
+      await send('ready')
+      const state = await h.call('POST', `/v1/coop/rooms/${code}/resume`, { body: { seat: 0, key } })
+      assert.equal(state.json.paused, true)
+      await send('pause', false)
+      assert.equal((await h.call('POST', `/v1/coop/rooms/${code}/resume`, { body: { seat: 0, key } })).json.paused, false)
+    }
+  } finally { resetRooms(); await h.close() }
+})

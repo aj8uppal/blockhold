@@ -92,6 +92,13 @@ export class Engine {
     this.applyQuality()
   }
 
+  /** Compile and upload the opening board before the room starts its clock. */
+  async prepareBattle(): Promise<void> {
+    await this.renderer.compileAsync(this.scene, this.camera)
+    this.render(true)
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  }
+
   private slowWindows = 0
 
   /** frame-time watchdog: degrade only on sustained, tier-appropriate slowness.

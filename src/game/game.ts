@@ -1315,6 +1315,8 @@ export class Game implements World {
     audio.setMuted(true); audio.setMusicMuted(true)
     let ok = false
     try {
+      liveHud.showToast('Preparing co-op battlefield…', 30)
+      await this.engine.prepareBattle()
       const events = [...session.replayEvents]
       let next = 0
       while (next < events.length || pending.length) {
@@ -1348,7 +1350,10 @@ export class Game implements World {
     this.paused = session.paused; this.speed = session.speed === 2 ? 2 : 1
     this.hud.setCoop({ code: session.code, seats: session.seats, connected: session.connected.length })
     this.hud.setPaused(this.paused); this.hud.setSpeed(this.speed); this.hud.refresh(this)
-    this.hud.showToast(`Co-op ${session.code} · invite a friend or resume when ready`, 5)
+    this.hud.showToast(session.paced && this.paused && !setup.battle && !setup.startPaused
+      ? 'Waiting for the other battlefield to finish loading…'
+      : `Co-op ${session.code} · invite a friend or resume when ready`, 5)
+    if (session.paced && !await session.send('ready')) this.hud.showToast('Could not confirm readiness. Rejoin the room to try again.', 5)
     return true
   }
 

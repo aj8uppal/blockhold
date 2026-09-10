@@ -281,6 +281,15 @@ missed events. Late joining and reload recovery replay the adopted solo journal
 plus ordered room history, with effects and historical account rewards muted.
 Chat is bounded, rate-limited plain text and never enters the battle journal.
 
+Clients negotiate `paced=1` for 100ms command turns (six simulation ticks at
+1×, twelve at 2×). Legacy rooms retain their 200ms cadence. Fresh battles wait
+for connected, capable clients to finish scene preparation and send `ready`
+before advancing simulation time. A loading seat that disconnects releases its
+wait; manual pauses and adopted solo journals stay paused. Readiness does not
+change the ruleset, command order, or the 60Hz simulation. Clients buffer a turn
+of delivery jitter and ease through excess queued ticks instead of abruptly
+doubling their catch-up speed.
+
 From a settled, paused campaign or endless battle, settings can **Invite a
 friend**, then **Copy invite link**. The host's starting loadout determines the
 shared simulation. **Continue solo** writes the current battle locally, leaves
@@ -289,7 +298,7 @@ in the room. Competitive modes cannot switch. Solo saves still use the local
 versioned battle journal, independently of room availability.
 
 Rooms are in memory: a server restart ends them. Rooms expire after two hours without a room request,
-with ten minutes of empty-room retention. Per-room history is capped at 60,000
+with ten minutes of empty-room retention. Per-room history is capped at 120,000
 events / 6 MB, with a 32 MB global history cap. Expired or unavailable history
 returns 410 instead of restoring an incomplete battle. These are reconnectable
 sessions, not durable cloud battle saves.

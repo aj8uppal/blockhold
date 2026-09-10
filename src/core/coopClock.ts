@@ -2,8 +2,9 @@
 export class CoopClock {
   private primed = false
   private fraction = 0
+  private rate = 1
 
-  reset(): void { this.primed = false; this.fraction = 0 }
+  reset(): void { this.primed = false; this.fraction = 0; this.rate = 1 }
 
   take(dt: number, speed: number, available: number, ticksPerTurn: number, drain = false): number {
     // One turn in reserve absorbs startup work and small variations in delivery.
@@ -17,8 +18,13 @@ export class CoopClock {
       return 0
     }
     const turns = available / (ticksPerTurn * speed)
-    const rate = turns > 5 ? 2 : turns > 3 ? 1.25 : 1
-    this.fraction += Math.min(dt, 0.1) * 60 * speed * rate
+    // Ease out a delivery backlog instead of suddenly doubling the world speed.
+    // A healthy reserve stays at exactly the requested speed; only excess
+    // authorized ticks produce catch-up, capped at 50% above that speed.
+    const elapsed = Math.min(dt, 0.1)
+    const target = 1 + Math.min(0.5, Math.max(0, turns - 3) * 0.1)
+    this.rate += (target - this.rate) * (1 - Math.exp(-elapsed / 0.25))
+    this.fraction += elapsed * 60 * speed * this.rate
     const whole = Math.floor(this.fraction + 1e-9)
     const ticks = Math.min(available, 12, whole)
     // Keep sub-tick precision, never a backlog of expensive frames.

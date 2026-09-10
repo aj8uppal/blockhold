@@ -13,8 +13,9 @@ import { RULESET_VERSION } from '../../src/game/ruleset.ts'
  *
  *   1. it puts every message from every seat into one total order (`seq`) and
  *      broadcasts it to all seats over Server-Sent Events;
- *   2. it keeps time. Every TURN_MS it emits a turn marker saying how many
- *      ticks that turn is worth (twelve at 1x, twenty-four at 2x, none while
+ *   2. it keeps time. New clients negotiate 100ms markers after their opening
+ *      scenes are ready (legacy rooms retain 200ms). Each marker authorizes
+ *      six ticks at 1x, twelve at 2x, none while
  *      paused). A command arriving during turn n is stamped for turn n+1, and
  *      every client applies it exactly when it reaches that turn - the same
  *      tick everywhere, whatever the network did in between.
@@ -34,13 +35,14 @@ const MAX_ROOMS = 500
 const SEND_LIMIT = 40
 const SEND_WINDOW_MS = 1000
 const MAX_PAYLOAD = 4096
-const MAX_HISTORY_EVENTS = 60_000
+const MAX_HISTORY_EVENTS = 120_000
 const MAX_HISTORY_BYTES = 6 * 1024 * 1024
 const MAX_TOTAL_HISTORY_BYTES = 32 * 1024 * 1024
 const MAX_CHAT_LENGTH = 240
 let historyBytes = 0
 
 interface Seat {
+  paced: boolean
   key: string
   res: ServerResponse | null
   lastSeen: number
@@ -49,6 +51,10 @@ interface Seat {
 }
 
 interface Room {
+  turnMs: number
+  ticksPerTurn: number
+  preparing: Set<number> | null
+  resumeWhenReady: boolean
   code: string
   createdAt: number
   touchedAt: number
@@ -142,8 +148,19 @@ function startMetronome(room: Room): void {
     if (room.ended) { stopRoom(room); return }
     if (![...room.seats.values()].some(seat => seat.res)) return
     room.turn++
-    broadcast(room, { type: 'turn', n: room.turn, ticks: room.paused ? 0 : TICKS_PER_TURN * room.speed })
-  }, TURN_MS)
+    broadcast(room, { type: 'turn', n: room.turn, ticks: room.paused ? 0 : room.ticksPerTurn * room.speed })
+  }, room.turnMs)
+}
+
+function finishPreparing(room: Room): void {
+  if (!room.preparing || room.preparing.size) return
+  room.preparing = null
+  room.paused = !room.resumeWhenReady
+  broadcast(room, { type: 'pause', on: room.paused, seat: 0 })
+}
+
+function pacing(room: Room): { turnMs: number, ticksPerTurn: number, paced: boolean } {
+  return { turnMs: room.turnMs, ticksPerTurn: room.ticksPerTurn, paced: room.turnMs === 100 }
 }
 
 function stopRoom(room: Room): void {
@@ -212,13 +229,16 @@ export async function handleCoop(
     sweepRooms()
     if (rooms.size >= MAX_ROOMS) { send(res, 503, { error: 'too many rooms' }); return true }
     const room: Room = {
+      turnMs: url.searchParams.get('paced') === '1' ? 100 : TURN_MS,
+      ticksPerTurn: url.searchParams.get('paced') === '1' ? 6 : TICKS_PER_TURN,
+      preparing: null, resumeWhenReady: true,
       code: newCode(), createdAt: Date.now(), touchedAt: Date.now(), seats: new Map(),
       setup: null, started: false, ended: false, seq: 0, turn: 0, speed: 1, paused: false, timer: null, history: [], historySize: 0, replayAvailable: true, setupBytes: 0,
     }
     const key = randomBytes(12).toString('base64url')
-    room.seats.set(0, { key, res: null, lastSeen: Date.now(), sent: { n: 0, until: 0 }, chat: { n: 0, until: 0 } })
+    room.seats.set(0, { paced: url.searchParams.get('paced') === '1', key, res: null, lastSeen: Date.now(), sent: { n: 0, until: 0 }, chat: { n: 0, until: 0 } })
     rooms.set(room.code, room)
-    send(res, 201, { code: room.code, seat: 0, key, turnMs: TURN_MS, ticksPerTurn: TICKS_PER_TURN })
+    send(res, 201, { code: room.code, seat: 0, key, ...pacing(room) })
     return true
   }
   const m = ROOM_PATH.exec(url.pathname)
@@ -236,7 +256,7 @@ export async function handleCoop(
     if (!room.replayAvailable) { send(res, 410, { error: 'This battle is too old to rebuild. You can start another room.' }); return true }
     send(res, 200, { code: room.code, seat: who[0], setup: room.setup, started: room.started,
       seq: room.seq, turn: room.turn, speed: room.speed, paused: room.paused,
-      history: replayEvents(room), turnMs: TURN_MS, ticksPerTurn: TICKS_PER_TURN, ...presence(room) })
+      history: replayEvents(room), ...pacing(room), ...presence(room) })
     return true
   }
 
@@ -245,9 +265,9 @@ export async function handleCoop(
     if (room.seats.size >= MAX_SEATS) { send(res, 409, { error: 'room is full' }); return true }
     const seat = room.seats.size
     const key = randomBytes(12).toString('base64url')
-    room.seats.set(seat, { key, res: null, lastSeen: Date.now(), sent: { n: 0, until: 0 }, chat: { n: 0, until: 0 } })
+    room.seats.set(seat, { paced: url.searchParams.get('paced') === '1', key, res: null, lastSeen: Date.now(), sent: { n: 0, until: 0 }, chat: { n: 0, until: 0 } })
     broadcast(room, { type: 'presence', ...presence(room) })
-    send(res, 200, { code: room.code, seat, key, setup: room.setup, started: room.started, history: replayEvents(room), seq: room.seq, paused: room.paused, speed: room.speed, turnMs: TURN_MS, ticksPerTurn: TICKS_PER_TURN, ...presence(room) })
+    send(res, 200, { code: room.code, seat, key, setup: room.setup, started: room.started, history: replayEvents(room), seq: room.seq, paused: room.paused, speed: room.speed, ...pacing(room), ...presence(room) })
     return true
   }
 
@@ -281,7 +301,11 @@ export async function handleCoop(
     const keepalive = setInterval(() => { try { res.write(': ping\n\n') } catch { /* closing */ } }, 15_000)
     req.on('close', () => {
       clearInterval(keepalive)
-      if (seat.res === res) seat.res = null
+      if (seat.res === res) {
+        seat.res = null
+        room.preparing?.delete(n)
+        finishPreparing(room)
+      }
       room.touchedAt = Date.now()
       broadcast(room, { type: 'presence', ...presence(room) })
     })
@@ -322,7 +346,12 @@ export async function handleCoop(
           if (!setSetup(room, payload ?? room.setup, res)) { room.started = false; return true }
           const setup = room.setup as Record<string, unknown> | null
           room.paused = !!(setup?.battle || setup?.startPaused)
-          broadcast(room, { type: 'start', setup: room.setup })
+          if (room.turnMs === 100 && !room.paused) {
+            room.preparing = new Set([...room.seats].filter(([id, s]) => s.paced && (s.res || id === 0)).map(([id]) => id))
+            room.paused = true
+          }
+          broadcast(room, { type: 'start', setup: room.setup, preparing: !!room.preparing })
+          finishPreparing(room)
           startMetronome(room)
         }
         break
@@ -334,8 +363,14 @@ export async function handleCoop(
         break
       }
       case 'pause': {
-        room.paused = !!payload
+        if (room.preparing) room.resumeWhenReady = !payload
+        room.paused = !!room.preparing || !!payload
         broadcast(room, { type: 'pause', on: room.paused, seat: n })
+        break
+      }
+      case 'ready': {
+        room.preparing?.delete(n)
+        finishPreparing(room)
         break
       }
       case 'chat': {
