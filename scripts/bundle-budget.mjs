@@ -43,8 +43,9 @@ const assets = join(root, 'dist', 'assets')
 // Touch selection, target cancellation and safe rotation add ~1 KiB gzip.
 // Sandbox, eleven further Mythic branches, live mastery tracking and co-op
 // unlock contributions add ~4.6 KiB total; sandbox controls remain lazy loaded.
-const APP_CHUNK_LIMIT = 159 * 1024
-const TOTAL_JS_LIMIT = 295 * 1024
+// Historical battle compatibility, full battle backups and XP receipts add ~1.4 KiB.
+const APP_CHUNK_LIMIT = 160 * 1024
+const TOTAL_JS_LIMIT = 296 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

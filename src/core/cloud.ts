@@ -69,6 +69,7 @@ export function toCloud(save: SaveData, updatedAt = save.changedAt ?? Date.now()
     lastHero: save.lastHero,
     dailyBest: save.dailyBest,
     xp: save.xp,
+    xpClaims: save.xpClaims,
     updatedAt,
   })
 }
@@ -91,6 +92,7 @@ export function applyCloud(save: SaveData, cloud: CloudSave): SaveData {
     lastHero: cloud.lastHero,
     dailyBest: cloud.dailyBest,
     xp: Math.max(save.xp, cloud.xp),
+    xpClaims: cloud.xpClaims ?? save.xpClaims,
   }
 }
 

@@ -269,10 +269,10 @@ Two caveats worth writing down rather than rediscovering:
 
 ## Co-op recovery and chat
 
-Ruleset 10 clients send `?ruleset=10` on every co-op request. Missing or older
+Ruleset 11 clients send `?ruleset=11` on every co-op request. Missing or older
 versions receive 409 with a refresh message, before joining or sending orders.
-Solo ruleset 8 and 9 battle saves are validated with their original state hash and
-migrated locally; they are never replayed as mixed-version room commands.
+Solo ruleset 8, 9 and 10 battle saves are validated with their original state hash and
+migrated locally. Pre-rebalance battles retain their original combat definitions; they are never replayed as mixed-version room commands.
 
 The browser stores its private room seat separately from the shareable invite
 code. Reloading offers **Rejoin your room**. Authenticated fetch-based SSE uses

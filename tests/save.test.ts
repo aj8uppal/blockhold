@@ -67,7 +67,7 @@ describe('save durability', () => {
   const sample: SaveData = {
     unlocked: 4, stars: { greenhollow: 3, frostmere: 2 }, armory: { coffers: 1 },
     bestEndless: { greenhollow: 41 }, bestFreeplay: { 'greenhollow:normal': 12 }, bestScore: { 'greenhollow:normal': 9100 },
-    medals: { greenhollow: ['noleak'] }, trials: {}, capstones: [], honors: [], heroPaths: {}, seenEnemies: ['juggernaut'], taughtBasics: true, lastHero: 'liora', sfxMuted: false, musicMuted: true, xp: 1234,
+    medals: { greenhollow: ['noleak'] }, trials: {}, capstones: [], honors: [], xpClaims: {}, heroPaths: {}, seenEnemies: ['juggernaut'], taughtBasics: true, lastHero: 'liora', sfxMuted: false, musicMuted: true, xp: 1234,
   }
 
   it('round-trips a save through an export code', () => {

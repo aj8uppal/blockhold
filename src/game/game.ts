@@ -82,6 +82,10 @@ export class Game implements World {
   private recovering = false
   private legacyCheckpointRun = false
 
+  legacyCombat = false
+  legacyAccess = false
+  private legacyCommandCount = 0
+  private combatRuleset: 8 | 9 | undefined
   isSandbox = false
   private sandboxSave: SaveData | null = null
   private sandboxQueue: { enemy: string, count: number, lane: number, hp: number, at: number }[] = []
@@ -117,6 +121,7 @@ export class Game implements World {
       for (const t of this.towers) values.push(t.supportedDamage)
       for (const g of this.sandboxQueue) values.push(g.count, g.hp, g.lane, g.at)
     }
+    if (ruleset >= 11) values.push(this.combatRuleset ?? RULESET_VERSION, this.legacyCommandCount)
     return stateHash(values)
   }
 
@@ -129,6 +134,7 @@ export class Game implements World {
       this.sessionWriteWarned = true
       this.hud.showToast('Could not save this battle. Your previous saved battle is still available.', 5)
     }
+    if (saved) this.bankLiveXp()
     return saved
   }
 
@@ -154,14 +160,20 @@ export class Game implements World {
     this.engine.cancelCinematic()
     try {
       this.isWatches = false
-      this.startLevel(level, session.difficulty, session.heroId, session.mode, { seed: session.seed, hunt: session.hunt })
+      this.startLevel(level, session.difficulty, session.heroId, session.mode, { seed: session.seed, hunt: session.hunt, combatRuleset: session.combatRuleset ?? (session.ruleset === 8 || session.ruleset === 9 ? session.ruleset : undefined) })
       this.onboarding = null
+      this.legacyCommandCount = session.ruleset <= 9 ? session.commands.length : session.legacyCommandCount ?? 0
       let next = 0
+      const applyRecorded = () => {
+        this.legacyAccess = next < this.legacyCommandCount
+        this.applyCoopCommand(session.commands[next++].cmd, -1)
+        this.legacyAccess = false
+      }
       while (true) {
         const batchStart = performance.now()
         do {
           while (next < session.commands.length && session.commands[next].tick === this.sessionTick) {
-            this.applyCoopCommand(session.commands[next++].cmd, -1)
+            applyRecorded()
           }
           if (this.sessionTick === session.tick) break
           if (this.phase !== 'playing' || this.sessionTick > session.tick) throw new Error('Replay ended before the saved tick')
@@ -170,7 +182,7 @@ export class Game implements World {
         if (this.sessionTick === session.tick) {
           // A batch can finish immediately after its last simulation step.
           while (next < session.commands.length && session.commands[next].tick === this.sessionTick) {
-            this.applyCoopCommand(session.commands[next++].cmd, -1)
+            applyRecorded()
           }
           break
         }
@@ -182,13 +194,14 @@ export class Game implements World {
         || (session.stateHash !== undefined && this.sessionStateHash(session.ruleset) !== session.stateHash)) {
         throw new Error('Saved battle did not reproduce its recorded state')
       }
-      this.journal = { ...session, ruleset: RULESET_VERSION, commands: session.commands.map(entry => ({ tick: entry.tick, cmd: { ...entry.cmd } })) }
+      this.journal = { ...session, ...(this.combatRuleset ? { combatRuleset: this.combatRuleset, legacyCommandCount: this.legacyCommandCount } : {}), ruleset: RULESET_VERSION, commands: session.commands.map(entry => ({ tick: entry.tick, cmd: { ...entry.cmd } })) }
       this.sessionSaveT = 0
       this.sessionWriteWarned = false
       succeeded = true
     } catch {
       this.disposeLevel()
     } finally {
+      this.legacyAccess = false
       this.hud = liveHud
       this.recoverySave = null
       this.recovering = false
@@ -208,7 +221,7 @@ export class Game implements World {
     if (!this.recovering) this.onPhaseChange('playing')
     liveHud.setPaused(true)
     liveHud.refresh(this)
-    liveHud.showToast('Battle restored exactly. Resume when you are ready.', 4)
+    liveHud.showToast(this.legacyCombat ? 'Battle restored with its original balance. Resume when you are ready.' : 'Battle restored exactly. Resume when you are ready.', 5)
     if (!this.recovering) audio.startMusic()
     this.track({ type: 'battle_start', level: level.id, difficulty: session.difficulty, hero: session.heroId,
       mode: session.hunt ? 'hunt' : this.isFreeplay ? 'freeplay' : session.mode, seed: session.seed, resumed: true })
@@ -696,6 +709,7 @@ export class Game implements World {
           this.hud.showBanner(`${this.defenseStreak} WAVES IN A ROW!`, '')
         }
       }
+      this.bankLiveXp()
     }
   }
 
@@ -1070,7 +1084,7 @@ export class Game implements World {
   get towerXp(): number { return this.roster.xp + this.bankedUnlockXp + Math.round(this.liveXp) }
 
   towerUnlocked(kind: TowerKind): boolean {
-    return this.isSandbox || isUnlocked({ xp: this.towerXp }, 'tower', kind)
+    return this.isSandbox || isUnlocked({ xp: this.legacyAccess ? this.roster.xp : this.towerXp }, 'tower', kind)
   }
 
   /** true when this client is the author of what is being applied (or nothing is) */
@@ -1304,6 +1318,7 @@ export class Game implements World {
     this.frozenLoadout = JSON.parse(JSON.stringify(this.roster)) as SaveData
     this.coop.forget()
     this.leaveCoop()
+    this.bankLiveXp()
     this.paused = true
     this.hud.setPaused(true)
     this.hud.showToast('This defense is now solo. Your allies can continue their shared battle.', 5)
@@ -1516,10 +1531,14 @@ export class Game implements World {
     difficulty: Difficulty = 'normal',
     heroId: HeroId = 'aldric',
     mode: 'campaign' | 'endless' | 'sandbox' = 'campaign',
-    opts: { hunt?: HuntId, seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean, trial?: TrialDef, coop?: { session: CoopSession, loadout: { armory: Record<string, number>, xp: number, honors?: string[], heroPaths?: Record<string, string>, stars?: Record<string, number> } } } = {},
+    opts: { combatRuleset?: 8 | 9, hunt?: HuntId, seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean, trial?: TrialDef, coop?: { session: CoopSession, loadout: { armory: Record<string, number>, xp: number, honors?: string[], heroPaths?: Record<string, string>, stars?: Record<string, number> } } } = {},
   ): void {
     if (!Object.hasOwn(HERO_DEFS, heroId)) heroId = 'aldric'
     this.disposeLevel()
+    this.legacyCommandCount = 0
+    this.legacyAccess = false
+    this.combatRuleset = opts.combatRuleset
+    this.legacyCombat = this.combatRuleset !== undefined
     this.isSandbox = mode === 'sandbox'
     this.sandboxSave = this.isSandbox ? JSON.parse(JSON.stringify(this.recoverySave ?? this.save)) as SaveData : null
     this.sandboxQueue = []
@@ -1697,7 +1716,7 @@ export class Game implements World {
     else if (level.intro) this.hud.showToast(level.intro, 5)
     if (!resume && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial) {
       this.journal = {
-        ruleset: RULESET_VERSION, levelId: level.id, difficulty, heroId, mode,
+        ruleset: RULESET_VERSION, ...(this.combatRuleset ? { combatRuleset: this.combatRuleset } : {}), levelId: level.id, difficulty, heroId, mode,
         ...(this.hunt ? { hunt: this.hunt.id } : {}), seed: this.runSeed, tick: 0,
         commands: [], initialSave: JSON.parse(JSON.stringify(this.roster)) as SaveData,
         savedAt: Date.now(), wave: 0,
@@ -2097,7 +2116,7 @@ export class Game implements World {
         firstClear,
       })
       this.lastXpEarned += huntBonus
-      this.battleSave.xp += this.lastXpEarned
+      this.creditRunXp(this.lastXpEarned)
       if (!this.persistProgress()) {
         this.track({ type: 'save_write_failed' })
         this.hud.showToast('Could not save progress - your browser is blocking storage', 6)
@@ -2135,7 +2154,30 @@ export class Game implements World {
   private sharedMythics = new Set<TowerKind>()
   hasSharedMythic(kind: TowerKind): boolean { return this.sharedMythics.has(kind) }
   /** what the account will read once this battle is paid: the bar's value */
-  xpPreview(): number { return this.isSandbox ? this.save.xp : this.coop ? this.towerXp : this.save.xp + Math.round(this.liveXp) }
+  xpPreview(): number {
+    return this.isSandbox ? this.save.xp : this.save.xp + Math.max(0, Math.round(this.liveXp) - (this.save.xpClaims?.[this.xpClaimKey()] ?? 0))
+  }
+  private xpClaimKey(): string { return `${this.runSeed}:${this.level?.id ?? 'unknown'}:${this.isFreeplay ? 'hold' : 'base'}` }
+
+  private creditRunXp(total: number): number {
+    if (this.isSandbox) return 0
+    const save = this.battleSave, key = this.xpClaimKey()
+    const paid = save.xpClaims?.[key] ?? 0
+    const earned = Math.max(0, Math.round(total) - paid)
+    if (!earned) return 0
+    save.xp = Math.min(99_999_999, save.xp + earned)
+    save.xpClaims = Object.fromEntries(Object.entries({ [key]: paid + earned, ...Object.fromEntries(Object.entries(save.xpClaims ?? {}).filter(([k]) => k !== key)) }).slice(0, 64))
+    return earned
+  }
+
+  private bankLiveXp(): void {
+    if (this.recovering || this.isSandbox || !this.journal) return
+    const before = this.save.xp, receipts = this.save.xpClaims
+    if (this.creditRunXp(this.liveXp) > 0 && !this.persistProgress()) {
+      this.save.xp = before; this.save.xpClaims = receipts
+      this.hud.showToast('Could not save account XP. Keep this tab open and try saving again.', 5)
+    }
+  }
   /** experience previewed so far this battle */
   get liveXpEarned(): number { return Math.round(this.liveXp) }
 
@@ -3206,6 +3248,7 @@ export class Game implements World {
     if (this.isSandbox) return null
     if (tower.level !== 5) return null
     if (this.isDaily || this.isWatches || this.isBellfoundry || this.trial) return 'Mythics are available in campaign, hunts and endless play.'
+    if (this.legacyAccess && this.towers.some(t => t !== tower && t.level === 6 && !t.isGhost)) return 'Historical purchase was limited to one Mythic.'
     if (!this.hasSharedMythic(tower.kind) && !masteryReady(this.roster, tower.kind)) return masteryHint(this.roster, tower.kind)
     return null
   }

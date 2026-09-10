@@ -1,4 +1,4 @@
-import { sanitizeHonors, sanitizeHeroPaths } from './saveMerge.ts'
+import { sanitizeHonors, sanitizeHeroPaths, sanitizeXpClaims } from './saveMerge.ts'
 import { seedXpFromProgress } from '../game/progress.ts'
 
 export interface SaveData {
@@ -37,6 +37,7 @@ export interface SaveData {
   changedAt?: number
   /** account experience; levels and the roster unlocks derive from it (see game/progress.ts) */
   xp: number
+  xpClaims?: Record<string, number>
 }
 
 const KEY = 'blockhold.save.v1'
@@ -123,6 +124,7 @@ export function parseSave(d: unknown): SaveData | null {
             ? [...new Set(o.capstones.filter((x): x is string => typeof x === 'string' && /^[a-z]+:[01]$/.test(x)))].slice(0, 32)
             : [],
           honors: sanitizeHonors(o.honors),
+          xpClaims: sanitizeXpClaims(o.xpClaims),
           heroPaths: sanitizeHeroPaths(o.heroPaths),
           lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',
           dailyBest: parseDailyBest(o.dailyBest),

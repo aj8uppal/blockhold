@@ -31,6 +31,9 @@ export interface MineSpec {
 
 /** What entities can see/do. Implemented by Game. */
 export interface World {
+  /** Recovered pre-rebalance battles keep their original combat definitions. */
+  readonly legacyCombat?: boolean
+  readonly legacyAccess?: boolean
   dynamic: THREE.Group           // container for entity meshes
   lanes: LanePath[]
   particles: Particles

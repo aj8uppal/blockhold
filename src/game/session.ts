@@ -7,6 +7,10 @@ import type { Difficulty, HeroId, TowerKind, TrapKind } from './types.ts'
 /** A frozen starting loadout plus ordered inputs reproduces mid-wave state. */
 export interface BattleSession {
   ruleset: number
+  /** Original battle balance; old journals keep their combat rules when recovered. */
+  combatRuleset?: 8 | 9
+  /** Historical orders obey their original purchase gates; later play uses current access. */
+  legacyCommandCount?: number
   levelId: string
   hunt?: 'ossuary' | 'empress'
   difficulty: Difficulty
@@ -104,7 +108,8 @@ export function parseBattleCommand(value: unknown): CoopCommand | null {
 }
 
 function validate(value: unknown): BattleSession | null {
-  if (!record(value) || value.ruleset !== RULESET_VERSION && value.ruleset !== 9 && value.ruleset !== 8) return null
+  if (!record(value) || value.ruleset !== RULESET_VERSION && value.ruleset !== 10 && value.ruleset !== 9 && value.ruleset !== 8) return null
+  if (value.combatRuleset !== undefined && value.combatRuleset !== 8 && value.combatRuleset !== 9) return null
   if (typeof value.levelId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(value.levelId)) return null
   if (value.hunt !== undefined && value.hunt !== 'ossuary' && value.hunt !== 'empress') return null
   if (value.difficulty !== 'casual' && value.difficulty !== 'normal' && value.difficulty !== 'veteran') return null
@@ -115,6 +120,7 @@ function validate(value: unknown): BattleSession | null {
   if (!integer(value.savedAt, Number.MAX_SAFE_INTEGER) || !integer(value.wave, 9999)) return null
   if (value.stateHash !== undefined && !integer(value.stateHash, 0xffffffff)) return null
   if (!Array.isArray(value.commands) || value.commands.length > SESSION_MAX_COMMANDS) return null
+  if (value.legacyCommandCount !== undefined && !integer(value.legacyCommandCount, value.commands.length)) return null
   const commands: BattleSession['commands'] = []
   let previousTick = 0
   for (const entry of value.commands) {
@@ -131,6 +137,8 @@ function validate(value: unknown): BattleSession | null {
   if (!initialSave) return null
   return {
     ruleset: value.ruleset as number,
+    ...(value.combatRuleset === undefined ? {} : { combatRuleset: value.combatRuleset as 8 | 9 }),
+    ...(value.legacyCommandCount === undefined ? {} : { legacyCommandCount: value.legacyCommandCount as number }),
     levelId: value.levelId,
     ...(value.hunt === undefined ? {} : { hunt: value.hunt }),
     difficulty: value.difficulty,
@@ -175,7 +183,7 @@ export function readSession(): BattleSession | null {
   try {
     if (raw.length > MAX_BYTES) { lastReadIssue = { kind: 'invalid' }; return null }
     const value: unknown = JSON.parse(raw)
-    if (record(value) && integer(value.ruleset, Number.MAX_SAFE_INTEGER) && value.ruleset !== RULESET_VERSION && value.ruleset !== 9 && value.ruleset !== 8) {
+    if (record(value) && integer(value.ruleset, Number.MAX_SAFE_INTEGER) && value.ruleset !== RULESET_VERSION && value.ruleset !== 10 && value.ruleset !== 9 && value.ruleset !== 8) {
       lastReadIssue = { kind: 'incompatible', savedRuleset: value.ruleset, currentRuleset: RULESET_VERSION }
       return null
     }

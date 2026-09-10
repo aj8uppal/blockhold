@@ -38,6 +38,7 @@ export interface CloudSave {
   dailyBest?: { day: number, wave: number, won: boolean, score: number }
   /** account experience: monotonic, the higher copy wins */
   xp: number
+  xpClaims?: Record<string, number>
   /** epoch ms of the write this copy came from; decides the mutable fields */
   updatedAt: number
 }
@@ -60,6 +61,14 @@ function numberMap(v: unknown, max: number): Record<string, number> {
     out[k] = clampInt(val, 0, max, 0)
   }
   return out
+}
+
+/** Recent per-battle XP receipts prevent save/reload from paying the same XP twice. */
+export function sanitizeXpClaims(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).filter(([key, amount]) =>
+    /^\d{1,10}:[a-z0-9-]{1,64}:(base|hold)$/.test(key) && typeof amount === 'number' && Number.isFinite(amount))
+    .slice(0, 64).map(([key, amount]) => [key, clampInt(amount, 0, 99_999_999, 0)]))
 }
 
 /** Only authored achievements and specialization choices cross devices. */
@@ -129,6 +138,7 @@ export function sanitizeCloudSave(v: unknown): CloudSave {
       score: clampInt(d.score, 0, 99_999_999, 0),
     } : undefined,
     xp: clampInt(o.xp, 0, 99_999_999, 0),
+    xpClaims: sanitizeXpClaims(o.xpClaims),
     updatedAt: clampInt(o.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
   }
 }
@@ -171,6 +181,7 @@ export function mergeSaves(a: CloudSave, b: CloudSave): CloudSave {
     capstones: [...new Set([...(a.capstones ?? []), ...(b.capstones ?? [])])],
     dailyBest: betterDaily(a.dailyBest, b.dailyBest),
     xp: Math.max(a.xp, b.xp),
+    xpClaims: sanitizeXpClaims({ ...recent.xpClaims, ...maxMerge(a.xpClaims ?? {}, b.xpClaims ?? {}) }),
     // choices, not achievements: a respec must survive the merge
     armory: { ...recent.armory },
     honors: [...new Set([...(a.honors ?? []), ...(b.honors ?? [])])],

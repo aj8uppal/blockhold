@@ -1,3 +1,4 @@
+import { downloadBattleBackup } from '../game/battleBackup.ts'
 import { readSession, readSessionIssue } from '../game/session.ts'
 import { huntById, type HuntId } from '../game/hunts.ts'
 import { heroPath } from '../game/heroPaths.ts'
@@ -219,6 +220,8 @@ export class Screens {
     if (session && sessionLevel) {
       const resume = el('button', 'btn primary', card, `${icon('respawn')} Continue ${sessionLevel} · wave ${Math.max(1, session.wave)}`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
+      const backup = el('button', 'btn ghost small', card, 'Download saved battle') as HTMLButtonElement
+      backup.onclick = () => downloadBattleBackup(this.save())
     } else if (readSessionIssue()?.kind === 'incompatible') {
       el('p', 'menu-note', card, 'Your saved battle uses an older game version. Account progress is safe; start a new battle to use the updated rules.')
     }

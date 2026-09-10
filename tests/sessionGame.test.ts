@@ -1,3 +1,4 @@
+import historicalBattle from './fixtures/seraph-v9-battle.json'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { Game } from '../src/game/game.ts'
@@ -105,11 +106,13 @@ describe('actual Game session recovery', () => {
     expect(old.stateHash).not.toBe(original.stateHash)
     const before = snapshot(game), account = JSON.stringify(game.save)
     expect(await game.resumeSession(old)).toBe(true)
-    expect(snapshot(game)).toEqual(before)
+    expect({ ...snapshot(game), hash: before.hash }).toEqual(before)
+    expect((game as unknown as Internals).sessionStateHash(8)).toBe(old.stateHash)
     expect(JSON.stringify(game.save)).toBe(account)
     expect(game.saveSession()).toBe(true)
     expect(readSession()?.ruleset).toBe(RULESET_VERSION)
-    expect(readSession()?.stateHash).toBe(original.stateHash)
+    expect(readSession()?.combatRuleset).toBe(8)
+    expect(readSession()?.stateHash).toBe(snapshot(game).hash)
     game.disposeLevel()
   })
 
@@ -404,7 +407,9 @@ describe('actual Game session recovery', () => {
     expect(guest.coop).toBeNull()
     expect(guest.canSaveSession).toBe(true)
     expect(snapshot(guest)).toEqual(shared)
-    expect(JSON.stringify(guest.save)).toBe(account)
+    expect(guest.save.xp).toBe(guest.liveXpEarned)
+    expect(guest.save.armory).toEqual(JSON.parse(account).armory)
+    expect(guest.save.honors).toEqual(JSON.parse(account).honors)
     const soloJournal = readSession()!
     expect(soloJournal.commands.filter(e => e.cmd.kind === 'heroMove')).toHaveLength(1)
     expect(soloJournal.commands.filter(e => e.cmd.kind === 'overchargeAll')).toHaveLength(1)
@@ -414,7 +419,9 @@ describe('actual Game session recovery', () => {
     expect(snapshot(guest)).toEqual(shared)
     guest.paused = false; ticks(guest, 120)
     expect(snapshot(guest)).toEqual(future)
-    expect(JSON.stringify(guest.save)).toBe(account)
+    expect(guest.save.xp).toBe(guest.liveXpEarned)
+    expect(guest.save.armory).toEqual(JSON.parse(account).armory)
+    expect(guest.save.honors).toEqual(JSON.parse(account).honors)
     guest.disposeLevel()
   })
 
@@ -823,7 +830,7 @@ describe('sandbox and live arsenal progression', () => {
 
 it('shares a late guest’s earned Mythics through paused room orders and retains them in solo recovery', async () => {
   const host = makeGame(), guest = makeGame()
-  host.save.xp = guest.save.xp = 20000
+  host.save.xp = 5000; guest.save.xp = 20000
   host.save.honors = []
   guest.save.honors = ['mastery:seraph:ossuary', 'mastery:seraph:empress']
   const setup: CoopSetup = { levelId: 'greenhollow', difficulty: 'normal', hero: 'aldric', seed: 881,
@@ -831,6 +838,9 @@ it('shares a late guest’s earned Mythics through paused room orders and retain
   const a = room([], true), b = room([], true)
   await host.joinCoopBattle(a.session, setup)
   await guest.joinCoopBattle(b.session, setup)
+  expect(host.xpPreview()).toBe(5000)
+  expect(guest.xpPreview()).toBe(20000)
+  expect(host.towerXp).toBe(guest.towerXp)
   expect(b.fake.send).toHaveBeenCalledWith('cmd', { kind: 'shareMastery', families: ['seraph'] })
   expect(a.fake.send).not.toHaveBeenCalledWith('cmd', expect.objectContaining({ kind: 'shareMastery' }))
   const account = JSON.stringify(host.save)
@@ -850,4 +860,47 @@ it('shares a late guest’s earned Mythics through paused room orders and retain
   host.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 882 })
   expect(host.mythicLock(tower)).not.toBeNull() // sharing does not grant permanent account honors
   host.disposeLevel(); guest.disposeLevel()
+})
+
+
+it('restores an actual ruleset-nine Seraph hunt and preserves its old combat on repeated saves', async () => {
+  const game = makeGame()
+  const old = historicalBattle as BattleSession
+  expect(await game.resumeSession(old)).toBe(true)
+  expect(game.legacyCombat).toBe(true)
+  expect((game as unknown as Internals).sessionStateHash(9)).toBe(old.stateHash)
+  expect(game.towers[0].level).toBe(5)
+  expect(game.towers[0].def.damage).toEqual([60, 90])
+  expect(game.towers[0].def.beamTargets).toBe(7)
+  ticks(game, 90)
+  expect(game.saveSession()).toBe(true)
+  const migrated = readSession()!
+  expect(migrated.ruleset).toBe(RULESET_VERSION)
+  expect(migrated.combatRuleset).toBe(9)
+  const before = snapshot(game)
+  expect(await game.resumeSession(migrated)).toBe(true)
+  expect(snapshot(game)).toEqual(before)
+  game.disposeLevel()
+})
+
+it('banks in-progress XP once and restores the same account level after repeated reloads', async () => {
+  const game = makeGame()
+  game.save.xp = xpForLevel(18) - 2
+  const initial = game.save.xp
+  game.startLevel(levels[0], 'normal', 'aldric', 'campaign', { seed: 911 })
+  game.buildTower('arrow', game.terrain!.plots[0]); game.callWave()
+  for (let i = 0; i < 3600 && game.liveXpEarned < 3; i++) ticks(game, 1)
+  expect(game.liveXpEarned).toBeGreaterThanOrEqual(3)
+  const preview = game.xpPreview()
+  expect(game.saveSession()).toBe(true)
+  expect(game.save.xp).toBe(preview)
+  expect(game.save.xp).toBeGreaterThan(initial)
+  const saved = readSession()!
+  expect(await game.resumeSession(saved)).toBe(true)
+  expect(game.xpPreview()).toBe(preview)
+  expect(game.saveSession()).toBe(true)
+  expect(game.save.xp).toBe(preview)
+  expect(await game.resumeSession(readSession()!)).toBe(true)
+  expect(game.xpPreview()).toBe(preview)
+  game.disposeLevel()
 })

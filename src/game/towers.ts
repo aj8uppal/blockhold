@@ -451,9 +451,9 @@ export class Tower {
   /** Eclipse concentrates the void branch on a small group of durable foes. */
   private eclipse(world: World): void {
     let hit = 0
-    const targets = world.enemies.filter(e => e.targetable && this.canSee(e, world)
+    const visible = world.enemies.filter(e => e.targetable && (world.legacyCombat || this.canSee(e, world))
       && Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) <= this.range + e.radius)
-      .sort((a, b) => b.hp - a.hp).slice(0, this.def.beamTargets ?? 4)
+    const targets = world.legacyCombat ? visible : visible.sort((a, b) => b.hp - a.hp).slice(0, this.def.beamTargets ?? 4)
     for (const e of targets) {
       e.applyStun(1.5, world)
       e.shredArmor(0.2)
@@ -670,11 +670,12 @@ export class Tower {
   get upgradeOptions(): TowerLevelDef[] {
     const tree = towerTrees[this.kind]
     if (this.level === 1 || this.level === 2) return [tree.levels[this.level]]
-    if (this.level === 3) return [...tree.branches]
-    if (this.level === 4 && this.branch !== null) return [resolveCapstone(this.kind, this.branch)]
+    if (this.level === 3) return tree.branches.map((def, branch) => this.combatDefinition(def, 4, branch as 0 | 1))
+    if (this.level === 4 && this.branch !== null) return [this.combatDefinition(resolveCapstone(this.kind, this.branch), 5)]
     if (this.level === 5 && this.branch !== null) {
+      if (this.world.legacyAccess && this.kind !== 'seraph' && !(this.kind === 'barracks' && this.branch === 0)) return []
       const mythic = mythicFor(this.kind, this.branch)
-      return mythic ? [mythic] : []
+      return mythic ? [this.combatDefinition(mythic, 6)] : []
     }
     return []
   }
@@ -699,6 +700,18 @@ export class Tower {
   private revealT = 0
   private static readonly REVEAL_HOLD = 0.14
 
+  private combatDefinition(def: TowerLevelDef, level = this.level, branch = this.branch): TowerLevelDef {
+    if (!this.world.legacyCombat || !this.isSeraph || level < 4) return def
+    const solar = branch === 0, crowned = level >= 5
+    return { ...def,
+      damage: solar ? crowned ? [60, 90] : [34, 50] : crowned ? [90, 130] : [40, 58],
+      attackInterval: solar ? crowned ? 0.1 : 0.12 : 0.14,
+      beamTargets: crowned ? 7 : 6,
+      description: `Original battle balance · ${crowned ? 7 : 6} independent ${solar ? 'solar' : 'magic'} beams. ${solar ? `Critical volleys deal 2.5× damage (${crowned ? 30 : 25}% chance).` : 'Ignores armor and strips armor from each target.'}`,
+      special: solar ? { kind: 'crit', chance: crowned ? 0.3 : 0.25, mult: 2.5 } : def.special,
+    }
+  }
+
   private applyLevel(def: TowerLevelDef, world: World, initial = false): void {
     if (this.model) {
       if (this.oldModel) { this.group.remove(this.oldModel); disposeClonedMaterials(this.oldModel) }
@@ -708,7 +721,7 @@ export class Tower {
       world.sfx('build', 0.7)
     }
     this.clearTierHalo()
-    this.def = def
+    this.def = this.combatDefinition(def)
     // Every tower gets its own materials. Flashes and the ghost wash are
     // per-tower effects, and writing either onto a cached shared material
     // would change every tower built from the same model.

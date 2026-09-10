@@ -27,8 +27,9 @@
  *   8  Boss hunts, hero paths, Mythic upgrades and complete boss phase scaling.
  *   9  Endless plot rewards, shared battle transfers and atomic bulk Overcharge.
  *  10  Sandbox commands, live tower unlocks, Seraph roles and mastery for every family.
+ *  11  Pin recovered battles to their original combat rules.
  */
-export const RULESET_VERSION = 10
+export const RULESET_VERSION = 11
 
 /** identifies a reproducible run */
 export interface RunStamp {

@@ -1,5 +1,7 @@
+import { downloadBattleBackup, parseBattleBackup } from '../game/battleBackup.ts'
+import { readSession, writeSession } from '../game/session.ts'
 import { cloud, applyCloud, toCloud } from '../core/cloud.ts'
-import { exportSave, importSave, type SaveData } from '../core/save.ts'
+import { importSave, type SaveData } from '../core/save.ts'
 import { mergeSaves } from '../core/saveMerge.ts'
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: HTMLElement, text = ''): HTMLElementTagNameMap[K] {
@@ -62,29 +64,28 @@ export function renderAccountPanel(root: HTMLElement, save: () => SaveData, onRe
     el('summary', 'account-backup-head', advanced, 'Backups & older saves')
     el('p', 'account-body', advanced, 'Download a backup file, or recover a save made before Google sign-in. Recovery keeps the progress already earned here.')
     const download = el('button', 'btn ghost small', advanced, 'Download backup')
-    download.onclick = () => {
-      const url = URL.createObjectURL(new Blob([exportSave(save())], { type: 'text/plain' }))
-      const link = document.createElement('a')
-      link.href = url
-      link.download = 'blockhold-progress.txt'
-      link.click()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
-    }
+    download.onclick = () => downloadBattleBackup(save())
     const file = el('input', 'account-input', advanced)
     file.type = 'file'
     file.accept = '.txt,.json,text/plain,application/json'
     file.setAttribute('aria-label', 'Import a Blockhold backup file')
     const recover = (text: string): boolean => {
-      const restored = importSave(text.trim())
+      const bundle = parseBattleBackup(text.trim())
+      const restored = bundle?.progress ?? importSave(text.trim())
       if (!restored) return false
       onRestore(applyCloud(save(), mergeSaves(toCloud(save()), toCloud(restored))))
-      warn.textContent = 'Backup recovered. Your existing progress was kept.'
+      if (bundle?.battle) {
+        const current = readSession()
+        if (current && current.savedAt > bundle.battle.savedAt) warn.textContent = 'Account restored. Your newer saved battle was kept.'
+        else if (!writeSession(bundle.battle)) warn.textContent = 'Account restored, but the browser could not store the battle.'
+        else warn.textContent = 'Account and battle restored. Choose Continue from the menu.'
+      } else warn.textContent = 'Account progress recovered. This older backup does not contain a battle.'
       return true
     }
     file.onchange = async () => {
       const selected = file.files?.[0]
       if (!selected) return
-      if (selected.size > 1024 * 1024) { warn.textContent = 'This backup file is too large.'; return }
+      if (selected.size > 8 * 1024 * 1024) { warn.textContent = 'This backup file is too large.'; return }
       try { if (!recover(await selected.text())) warn.textContent = 'That file is not a Blockhold backup.' }
       catch { warn.textContent = 'Could not read the backup file.' }
     }

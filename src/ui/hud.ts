@@ -493,7 +493,7 @@ export class HUD {
       bar.setAttribute('aria-valuenow', `${percent}`)
       bar.setAttribute('aria-valuetext', maxed ? remaining : `${into.toLocaleString()} of ${span.toLocaleString()} XP; ${remaining}`)
       ;(this.xpEl.querySelector('.xp-bar i') as HTMLElement).style.width = `${percent}%`
-      this.xpEl.title = game.coop ? 'Shared arsenal experience: the host’s starting level plus experience earned together.' : maxed ? 'Maximum account level reached' : `${into.toLocaleString()} / ${span.toLocaleString()} XP · ${remaining}`
+      this.xpEl.title = maxed ? 'Maximum account level reached' : `${into.toLocaleString()} / ${span.toLocaleString()} XP · ${remaining}`
       this.xpEl.classList.remove('pulse'); void this.xpEl.offsetWidth; this.xpEl.classList.add('pulse')
     }
     // the gain readout batches a burst of kills into one number and fades
@@ -728,7 +728,7 @@ export class HUD {
     const head = el('div', 'build-head', this.buildMenu)
     const label = el('div', '', head)
     el('b', '', label, 'Build')
-    el('small', '', label, isCoarsePointer() ? 'Tap to build · hold to inspect' : 'Choose a foundation upgrade')
+    el('small', '', label, this.game.coop ? `Shared arsenal · level ${levelForXp(this.game.towerXp)}` : isCoarsePointer() ? 'Tap to build · hold to inspect' : 'Choose a foundation upgrade')
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
     close.setAttribute('aria-label', 'Close build menu')
     close.onclick = () => this.game.clearSelection()
