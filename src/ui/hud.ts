@@ -1095,7 +1095,8 @@ export class HUD {
     const tower = this.currentTower
     const target = this.towerPanel.querySelector('.tp-mastery-body')
     if (!tower || !target) return
-    const game = this.game, save = game.roster
+    const game = this.game
+    const save = game.hasSharedMythic(tower.kind) && masteryReady(game.save, tower.kind) ? game.save : game.roster
     const earned = (id: string) => save.honors?.includes(`mastery:${tower.kind}:${id}`)
     const stamps = HUNTS.map(h => `<div>${earned(h.id) ? '✓' : '○'} ${h.name}</div>`).join('')
     let status: string

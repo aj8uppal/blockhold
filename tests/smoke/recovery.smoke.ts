@@ -43,3 +43,45 @@ test('a real pre-rebalance Seraph save restores from the menu and exports the wh
   expect(await page.evaluate(() => (window.vg.game as unknown as Game).xpPreview())).toBe(paid)
   expect(consoleErrors).toEqual([])
 })
+
+test('account mastery unlocks the restored tower inspector and survives another Continue', async ({ page, consoleErrors }) => {
+  await page.addInitScript(battle => {
+    if (localStorage.getItem('blockhold.mastery-recovery-test')) return
+    localStorage.setItem('blockhold.mastery-recovery-test', '1')
+    localStorage.setItem('blockhold.save.v1', JSON.stringify({ xp: 20000, taughtBasics: true, sfxMuted: true, musicMuted: true,
+      honors: ['mastery:seraph:ossuary', 'mastery:seraph:empress'] }))
+    localStorage.setItem('blockhold.session.v1', JSON.stringify(battle))
+  }, historicalBattle)
+  await bootToMenu(page)
+  for (let i = 0; i < 2; i++) {
+    await page.getByRole('button', { name: /Continue The Bone Procession/ }).click()
+    await page.waitForFunction(() => {
+      const g = window.vg.game as unknown as Game
+      return g.phase === 'playing' && !g.isRecovering && g.paused
+    })
+    await page.evaluate(() => {
+      const g = window.vg.game as unknown as Game
+      g.togglePause(); g.selectTower(g.towers[0])
+    })
+    await expect(page.locator('.tower-panel')).not.toContainText('0/2 Normal or Veteran hunts mastered')
+    await page.locator('.tp-mastery summary').click()
+    await expect(page.locator('.tp-mastery')).toContainText('Unlocked permanently')
+    await expect(page.locator('.tp-mastery')).toContainText('✓ The Bone Procession')
+    await expect(page.locator('.tp-mastery')).toContainText('✓ The Fallen Crown')
+    if (i === 0) {
+      await page.evaluate(() => {
+        const g = window.vg.game as unknown as Game
+        g.clearSelection(); g.togglePause(); g.saveSession()
+      })
+      await page.reload()
+    }
+  }
+  // Fund the purchase directly here; the reload above uses the unmodified journal.
+  await page.evaluate(() => {
+    const g = window.vg.game as unknown as Game
+    g.gold = g.towers[0].upgradeOptions[0].cost
+  })
+  await page.locator('.tower-panel .upgrade').first().click()
+  await expect.poll(() => page.evaluate(() => (window.vg.game as unknown as Game).towers[0].level)).toBe(6)
+  expect(consoleErrors).toEqual([])
+})

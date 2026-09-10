@@ -904,3 +904,51 @@ it('banks in-progress XP once and restores the same account level after repeated
   expect(game.xpPreview()).toBe(preview)
   game.disposeLevel()
 })
+
+it('records earned account mastery after historical recovery and allows the tier-six purchase', async () => {
+  const game = makeGame()
+  game.save.xp = 20000
+  game.save.honors = ['mastery:seraph:ossuary', 'mastery:seraph:empress']
+  const old = historicalBattle as BattleSession
+  expect(await game.resumeSession(old)).toBe(true)
+  expect((game as unknown as Internals).sessionStateHash(9)).toBe(old.stateHash)
+  expect(game.roster.honors ?? []).not.toContain('mastery:seraph:ossuary')
+  expect(game.mythicLock(game.towers[0])).toBeNull()
+  const saved = game.exportBattleSession()!
+  expect(saved.commands.at(-1)).toEqual({ tick: old.tick, cmd: { kind: 'shareMastery', families: ['seraph'] } })
+  expect(saved.legacyCommandCount).toBe(old.commands.length)
+  expect(await game.resumeSession(saved)).toBe(true)
+  expect(game.exportBattleSession()!.commands).toEqual(saved.commands)
+  expect(game.exportBattleSession()!.stateHash).toBe(saved.stateHash)
+  const tower = game.towers[0]
+  const cost = tower.upgradeOptions[0].cost
+  game.paused = false
+  game.gold = cost - 1
+  game.upgradeTower(tower, 0)
+  expect(tower.level).toBe(5)
+  game.gold = cost
+  game.upgradeTower(tower, 0)
+  expect(tower.level).toBe(6)
+  expect(game.gold).toBe(0)
+  game.disposeLevel()
+})
+
+it('keeps account mastery out of co-op replay until ordered, then adds it on solo continuation', async () => {
+  const game = makeGame()
+  game.save.xp = 20000
+  game.save.honors = ['mastery:seraph:ossuary', 'mastery:seraph:empress']
+  const old = historicalBattle as BattleSession
+  const shared = room([], true)
+  expect(await game.joinCoopBattle(shared.session, setupFor(old))).toBe(true)
+  expect(game.hasSharedMythic('seraph')).toBe(false)
+  expect(game.exportBattleSession()!.commands).toEqual(old.commands)
+  expect(shared.fake.send).toHaveBeenCalledWith('cmd', { kind: 'shareMastery', families: ['seraph'] })
+  // Disconnect before that contribution comes back from the room.
+  expect(game.continueSolo()).toBe(true)
+  expect(game.mythicLock(game.towers[0])).toBeNull()
+  const saved = readSession()!
+  expect(saved.commands.at(-1)?.cmd).toEqual({ kind: 'shareMastery', families: ['seraph'] })
+  expect(await game.resumeSession(saved)).toBe(true)
+  expect(game.mythicLock(game.towers[0])).toBeNull()
+  game.disposeLevel()
+})

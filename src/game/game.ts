@@ -139,7 +139,7 @@ export class Game implements World {
   }
 
   /** Rebuild in bounded batches without spending account rewards a second time. */
-  async resumeSession(input: BattleSession): Promise<boolean> {
+  async resumeSession(input: BattleSession, opts: { forCoop?: boolean } = {}): Promise<boolean> {
     if (this.recovering || this.coop) return false
     const session = parseSession(input)
     if (!session) return false
@@ -216,6 +216,9 @@ export class Game implements World {
       liveHud.showToast('This saved battle could not be restored. Its saved data has been kept.', 6)
       return false
     }
+    // Validate history first, then record today's earned unlocks as a new
+    // command. Co-op must instead contribute through the room's ordered stream.
+    if (!opts.forCoop) this.syncSoloMastery()
     this.paused = true
     liveHud.setChrome(true)
     if (!this.recovering) this.onPhaseChange('playing')
@@ -1318,6 +1321,8 @@ export class Game implements World {
     this.frozenLoadout = JSON.parse(JSON.stringify(this.roster)) as SaveData
     this.coop.forget()
     this.leaveCoop()
+    this.syncSoloMastery()
+    this.saveSession()
     this.bankLiveXp()
     this.paused = true
     this.hud.setPaused(true)
@@ -1335,7 +1340,7 @@ export class Game implements World {
     const level = hunt ? huntLevel(hunt.id) : levels.find(l => l.id === setup.levelId)
     if (!level) { unbuffer(); return false }
     if (setup.battle) {
-      if (setup.battle.levelId !== setup.levelId || !(await this.resumeSession(setup.battle))) { unbuffer(); return false }
+      if (setup.battle.levelId !== setup.levelId || !(await this.resumeSession(setup.battle, { forCoop: true }))) { unbuffer(); return false }
       this.coop = session
       this.coopLoadout = JSON.parse(JSON.stringify(this.roster)) as SaveData
       this.coopMarkers = []; this.coopCmds.clear(); this.coopBudget = 0; this.coopTurn = 0
@@ -2153,6 +2158,14 @@ export class Game implements World {
   private bankedUnlockXp = 0
   private sharedMythics = new Set<TowerKind>()
   hasSharedMythic(kind: TowerKind): boolean { return this.sharedMythics.has(kind) }
+  private syncSoloMastery(): void {
+    if (this.coop || this.recovering || !this.journal) return
+    const families = (Object.keys(towerTrees) as TowerKind[]).filter(f =>
+      masteryReady(this.save, f) && !masteryReady(this.roster, f) && !this.hasSharedMythic(f))
+    if (!families.length) return
+    const cmd: CoopCommand = { kind: 'shareMastery', families }
+    if (!this.route(cmd)) this.applyCoopCommand(cmd, -1)
+  }
   /** what the account will read once this battle is paid: the bar's value */
   xpPreview(): number {
     return this.isSandbox ? this.save.xp : this.save.xp + Math.max(0, Math.round(this.liveXp) - (this.save.xpClaims?.[this.xpClaimKey()] ?? 0))
