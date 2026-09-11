@@ -2,8 +2,28 @@ import { test, expect, bootToMenu } from './fixtures.ts'
 import type { Game } from '../../src/game/game.ts'
 import type { Screens } from '../../src/ui/screens.ts'
 
+test('home keeps modes and settings reachable with keyboard and sheet dismissal', async ({ page, consoleErrors }) => {
+  await bootToMenu(page)
+  const explore = page.getByRole('button', { name: 'Explore modes' })
+  await expect(page.getByRole('button', { name: 'Sandbox', exact: true })).toHaveCount(0)
+  await explore.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('dialog', { name: 'Explore modes', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'The Bellfoundry', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(explore).toBeFocused()
+  await page.locator('.menu-settings summary').click()
+  await page.getByRole('button', { name: 'How to play', exact: true }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'How to play', exact: true })).toBeFocused()
+  expect(consoleErrors).toEqual([])
+})
+
 test('battle setup selects hero and difficulty before an explicit start, with keyboard dismissal', async ({ page, consoleErrors }) => {
   await bootToMenu(page)
+  await page.getByRole('button', { name: 'Explore modes' }).click()
   await page.getByRole('button', { name: 'Sandbox', exact: true }).click()
   await page.locator('.level-card').first().click()
   await expect(page.getByRole('dialog')).toBeVisible()

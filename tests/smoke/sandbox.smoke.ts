@@ -5,6 +5,7 @@ import type { Screens } from '../../src/ui/screens.ts'
 test('mobile sandbox opens from the menu, spawns enemies and survives a page reload', async ({ page, consoleErrors }) => {
   await page.setViewportSize({ width: 844, height: 390 })
   await bootToMenu(page)
+  await page.getByRole('button', { name: 'Explore modes' }).click()
   await page.getByRole('button', { name: 'Sandbox', exact: true }).click()
   await expect(page.locator('.level-card.locked')).toHaveCount(0)
   await page.locator('.level-card').first().click()

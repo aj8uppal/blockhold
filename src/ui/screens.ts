@@ -18,7 +18,6 @@ import { icon } from './icons.ts'
 import { readCheckpoint } from '../game/checkpoint.ts'
 import { setTelemetryAllowed, telemetryAllowed } from '../core/sink.ts'
 import { fetchDaily, leaderboardEnabled, nickname, setNickname } from '../core/leaderboard.ts'
-import { dailyNumber } from '../game/ruleset.ts'
 import { holdPieces, holdSummary } from '../game/hold.ts'
 import { isUnlocked, levelProgress, nextUnlock, unlockLevel, xpForLevel, MAX_LEVEL, type UnlockDef } from '../game/progress.ts'
 import { cloud } from '../core/cloud.ts'
@@ -198,19 +197,21 @@ export class Screens {
     const save = this.save()
     const wrap = el('div', 'screen menu-screen', this.root)
     const card = el('div', 'menu-hero main-menu', wrap)
+    const head = el('div', 'menu-heading', card)
     // Keep the key art behind the wordmark, fading to a quiet surface under
     // the actions. Inline so the artwork URL resolves at runtime.
     card.style.background =
       'linear-gradient(180deg, rgba(20, 23, 28, 0.62), rgba(24, 26, 30, 0.96) 36%, #181a1e 70%), ' +
       'url(art/title.webp) center / cover'
-    el('div', 'menu-crest', card, icon('castle', 'gilded'))
-    el('h1', 'game-title', card, 'Blockhold')
+    el('div', 'menu-crest', head, icon('castle', 'gilded'))
+    el('h1', 'game-title', head, 'Blockhold')
     el('div', 'game-tagline', card, 'Hold the line, block by block.')
     // A newcomer has nothing to choose between yet, and a link-shared game has
     // about ten seconds. Drop them straight into the first battle; the level
     // select, heroes and difficulty appear once they have played one.
     const fresh = isFirstRun(save)
-    const play = el('button', 'btn primary big', card,
+    const actions = el('div', 'menu-primary-actions', card)
+    const play = el('button', 'btn primary big', actions,
       `${icon('swords')} &nbsp;${fresh ? 'Play' : 'To Battle'}`) as HTMLButtonElement
     play.onclick = () => {
       if (fresh) this.onPlayLevel(levels[0].id, 'normal', 'aldric', 'campaign')
@@ -222,11 +223,9 @@ export class Screens {
     if (session && sessionLevel) {
       play.classList.replace('primary', 'ghost')
       play.textContent = 'New battle'
-      const resume = el('button', 'btn primary', card, `${icon('respawn')} Continue ${sessionLevel} · wave ${Math.max(1, session.wave)}`) as HTMLButtonElement
+      const resume = el('button', 'btn primary menu-resume', actions, `<span>Continue<small>${sessionLevel} · Wave ${Math.max(1, session.wave)}</small></span><span aria-hidden="true">→</span>`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
       play.before(resume)
-      const backup = el('button', 'btn ghost small', card, 'Download saved battle') as HTMLButtonElement
-      backup.onclick = () => downloadBattleBackup(this.save())
     } else if (readSessionIssue()?.kind === 'incompatible') {
       el('p', 'menu-note', card, 'Your saved battle uses an older game version. Account progress is safe; start a new battle to use the updated rules.')
     }
@@ -236,53 +235,39 @@ export class Screens {
     const cpLevel = cp ? levels.find(l => l.id === cp.levelId) : undefined
     if (!session && cp && cpLevel) {
       const depth = cp.waveIndex + 1 - cpLevel.waves.length
-      const resume = el('button', 'btn primary', card, cp.freeplay
+      const resume = el('button', 'btn primary menu-resume', actions, cp.freeplay
         ? `${icon('castle')} Hold the line on ${cpLevel.name} · +${Math.max(1, depth)}`
         : `${icon('respawn')} Resume ${cpLevel.name} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
+      play.classList.replace('primary', 'ghost'); play.textContent = 'New battle'; play.before(resume)
     }
-    const modes = el('div', 'menu-modes', card)
-    const sandbox = el('button', 'btn ghost', modes, `${icon('castle')} Sandbox`) as HTMLButtonElement
-    sandbox.onclick = () => this.show('sandbox')
-    const hunts = el('button', 'btn ghost', modes, `${icon('crown')} Boss hunts & hero paths`) as HTMLButtonElement
-    hunts.onclick = () => this.show('hunts')
-    // one battle, the same one for everyone in the world today
-    const day = dailyNumber()
-    const done = save.dailyBest?.day === day
-    // the same row as the other modes: its (i) used to be appended straight to
-    // the column, so it dropped onto its own line and sat centred under the
-    // button while every other info dot sat inline at the right
-    const dailyRow = el('div', 'menu-mode-row', modes)
-    const daily = el('button', 'btn ghost mode-btn', dailyRow,
-      `${icon('moon')} Daily Hold #${day}${done ? ` · wave ${save.dailyBest!.wave}` : ''}`) as HTMLButtonElement
-    daily.onclick = () => this.onPlayDaily()
-    this.infoButton(dailyRow, daily, {
-      tagline: 'One battle a day, the same for everyone.',
-      body: 'Twelve waves on a board built from today\'s date, identical for every player in the world. It resets at midnight UTC.',
-      skill: 'When it ends you get a result bar you can copy, and a link that drops a friend onto the exact same board.',
-    })
-    this.modeRow(modes, 'music', 'The Bellfoundry', () => this.onPlayBellfoundry(), {
-      tagline: 'The battle keeps time.',
-      body: 'One siege scored to its own soundtrack. Towers always fire the moment they are ready - but a shot that lands on the beat rings out and hits 40% harder. A meter shows where in the bar you are.',
-      skill: 'The skill is arranging a defense whose rhythms fall on the beat more often than not.',
-    })
     if (coopEnabled()) {
-      this.modeRow(modes, 'helmPlume', 'Co-op', () => this.show('coop'), {
-        tagline: 'Hold a road with a friend.',
-        body: 'Open a room, send the link, and fight one battle on one board together: shared gold, shared lives, both of you building and commanding the hero.',
-        skill: 'Talk. One of you takes the road, the other the air; nobody spends the last of the gold without saying so.',
-      })
+      const coop = el('button', 'btn ghost', actions, `${icon('helmPlume')} Co-op`) as HTMLButtonElement
+      coop.onclick = () => this.show('coop')
     }
-    this.modeRow(modes, 'respawn', 'The Three Watches', () => this.onPlayWatches(), {
-      tagline: 'Fight beside your earlier self.',
-      body: 'One short siege, fought three times over. Each watch, the defense you built last time returns as translucent echoes that still fight - faintly, and untouchable.',
-      skill: 'By the third watch you are standing behind two earlier versions of your own plan, building the layer they could not.',
-    })
-    const utilities = el('div', 'menu-utilities', card)
+    const explore = el('button', 'menu-explore', card,
+      `<span>Explore modes<small>Sandbox, boss hunts & daily challenges</small></span><span aria-hidden="true">›</span>`)
+    let openingModes = false
+    explore.onclick = async () => {
+      if (openingModes) return
+      openingModes = true
+      try {
+        const { renderModes } = await import('./modes.ts')
+        if (this.current === 'menu') renderModes(this.root, this.save(), this)
+      } finally { openingModes = false }
+    }
+    this.renderLevelBar(card, save)
+    const settings = el('details', 'menu-settings', card)
+    el('summary', '', settings, 'Help & settings')
+    const utilities = el('div', 'menu-utilities', settings)
+    if (session && sessionLevel) {
+      const backup = el('button', 'btn ghost', utilities, 'Download saved battle')
+      backup.onclick = () => downloadBattleBackup(this.save())
+    }
     if (cloud.enabled) {
       const st = cloud.status()
-      const acct = el('button', 'btn ghost', utilities,
-        `${icon('chest')} ${st.provider ? 'Your account' : 'Sign in & sync'}`) as HTMLButtonElement
+      const acct = el('button', 'menu-account', head,
+        `${st.provider ? 'Account' : 'Sign in'}`) as HTMLButtonElement
       acct.onclick = () => this.renderAccount()
     }
     const how = el('button', 'btn ghost', utilities, 'How to play') as HTMLButtonElement
@@ -295,8 +280,7 @@ export class Screens {
       const install = el('button', 'btn ghost', utilities, `${icon('fullscreen')} Play fullscreen`) as HTMLButtonElement
       install.onclick = () => this.renderInstallGuide()
     }
-    this.renderLevelBar(wrap, save)
-    const footer = el('div', 'menu-footer', wrap, holdSummary(holdPieces(save)))
+    const footer = el('div', 'menu-footer', settings, holdSummary(holdPieces(save)))
     // A keep nobody else can see is not a trophy. Offered only once there is
     // something standing, so a bare Hold never invites a picture of nothing.
     if (holdPieces(save).towers > 0) {
@@ -316,7 +300,7 @@ export class Screens {
         }, 2600)
       }
     }
-    this.renderPrivacyRow(wrap)
+    this.renderPrivacyRow(settings)
   }
 
   /**
@@ -902,47 +886,6 @@ export class Screens {
         }, 2600)
       }
     }
-  }
-
-  /**
-   * A mode button with an info affordance beside it.
-   *
-   * `title` tooltips do not exist on touch, so the three alternate modes were
-   * unexplained on exactly the platform the game targets. The (i) opens a
-   * panel that reads the same on a phone as on a desktop.
-   */
-  private modeRow(
-    parent: HTMLElement, ico: string, label: string, play: () => void,
-    info: { tagline: string, body: string, skill: string },
-  ): void {
-    const row = el('div', 'menu-mode-row', parent)
-    const btn = el('button', 'btn ghost mode-btn', row, `${icon(ico)} ${label}`) as HTMLButtonElement
-    btn.onclick = play
-    this.infoButton(row, btn, info, label)
-  }
-
-  private infoButton(
-    parent: HTMLElement, near: HTMLElement,
-    info: { tagline: string, body: string, skill: string },
-    label?: string,
-  ): void {
-    const name = label ?? near.textContent?.trim() ?? ''
-    const b = el('button', 'info-dot', parent, 'i') as HTMLButtonElement
-    b.setAttribute('aria-label', `What is ${name}?`)
-    b.title = info.tagline
-    b.onclick = (e) => { e.stopPropagation(); this.showModeInfo(name, info) }
-  }
-
-  private showModeInfo(name: string, info: { tagline: string, body: string, skill: string }): void {
-    const overlay = el('div', 'help-overlay', this.root)
-    const card = el('div', 'help-card mode-info', overlay)
-    el('h2', '', card, name)
-    el('div', 'mode-tagline', card, info.tagline)
-    el('p', 'mode-body', card, info.body)
-    el('p', 'mode-skill', card, info.skill)
-    const close = el('button', 'btn primary', card, 'Got it') as HTMLButtonElement
-    close.onclick = () => overlay.remove()
-    bindDialog(overlay, card, () => overlay.remove())
   }
 
   renderAccount(): void {

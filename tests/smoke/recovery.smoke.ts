@@ -11,6 +11,7 @@ test('a real pre-rebalance Seraph save restores from the menu and exports the wh
     localStorage.setItem('blockhold.session.v1', JSON.stringify(battle))
   }, historicalBattle)
   await bootToMenu(page)
+  await page.locator('.menu-settings summary').click()
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download saved battle', exact: true }).click()
   const file = await download

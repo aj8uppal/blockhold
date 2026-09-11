@@ -1843,59 +1843,108 @@ button { touch-action: manipulation; }
 .btn.primary { background: #e8c88d; color: #201d17; border-color: transparent; text-shadow: none; font-weight: 600; }
 .btn.primary:hover:not(:disabled) { background: #f0cb84; }
 .btn.ghost { border-color: transparent; background: transparent; color: #d0c7b8; }
-/* Main-menu actions need their own surfaces over the illustrated backdrop. */
+/* Home is a small set of decisions; secondary modes open their own sheet. */
 .menu-screen .main-menu {
-  width: min(560px, calc(100vw - 24px)); padding: 24px;
-  gap: 8px; border: 1px solid #ffffff29; border-radius: 24px;
-  box-shadow: 0 24px 80px #0005;
+  width: min(440px, calc(100vw - 32px)); padding: 28px;
+  gap: 0; border: 1px solid #ffffff20; border-radius: 24px;
+  box-shadow: 0 24px 80px #0005; align-items: stretch;
 }
-.main-menu .menu-crest { font-size: 30px; animation: none; filter: none; color: #e8c88d; }
+.main-menu .menu-heading { display: flex; align-items: center; gap: 10px; }
+.main-menu .menu-crest { font-size: 25px; animation: none; filter: none; }
 .menu-screen .main-menu .game-title {
-  font-size: clamp(38px, 9vw, 48px); font-weight: 600; letter-spacing: -.055em;
+  font-size: 30px; font-weight: 600; letter-spacing: -.05em;
   line-height: 1.1; background: none; -webkit-text-fill-color: currentColor;
   color: #f4f2ed; filter: none;
 }
-.main-menu .game-tagline { margin: 2px 0 18px; font-size: 13px; font-style: normal; color: #b9babd; }
+.main-menu .menu-account {
+  margin-left: auto; min-width: 60px; min-height: 44px; padding: 0 10px;
+  border-radius: 9px; border: 1px solid #ffffff30; background: #ffffff0c;
+  font-size: 12px; color: #eee;
+}
+.main-menu .game-tagline { margin: 5px 0 28px; font-size: 13px; font-style: normal; color: #b9babd; text-align: left; }
+.main-menu .menu-primary-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .menu-screen .main-menu .btn {
-  min-width: 0; min-height: 46px; width: 100%; flex: none;
-  padding: 11px 14px; font-size: 14px; border-radius: 12px;
+  min-width: 0; min-height: 48px; width: 100%; flex: none;
+  padding: 12px; font-size: 14px; border-radius: 12px;
 }
 .main-menu .btn.ghost {
-  background: #292c30f5; border-color: #ffffff24; color: #eeeff1;
+  background: #ffffff09; border-color: #ffffff24; color: #eeeff1;
   box-shadow: none;
 }
-.menu-screen .main-menu > .btn.primary { min-height: 50px; font-size: 16px; }
-.menu-screen .main-menu > .btn.small { font-size: 12px; color: #cbc4b8; }
-.main-menu .menu-modes, .main-menu .menu-utilities {
-  display: grid; width: 100%; gap: 8px;
+.menu-screen .main-menu .menu-resume {
+  grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 20px; text-align: left; font-size: 18px; min-height: 84px;
 }
-.main-menu .menu-modes { margin-top: 8px; }
-.main-menu .menu-utilities {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 8px; padding-top: 16px; border-top: 1px solid #ffffff26;
+.main-menu .menu-resume small { display: block; margin-top: 5px; font-size: 12px; font-weight: 400; opacity: .8; }
+.main-menu .menu-explore {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px; margin-top: 16px; border: 1px solid #ffffff24; border-radius: 12px;
+  background: #ffffff09; color: #eeeff1; text-align: left; font-size: 14px; font-weight: 500;
 }
-.main-menu .menu-utilities > :last-child:nth-child(odd) { grid-column: 1 / -1; }
-.main-menu .menu-mode-row { gap: 6px; min-width: 0; }
-.menu-screen .main-menu .mode-btn { flex: 1; width: auto; text-align: left; }
-.main-menu .menu-modes > .btn { text-align: left; }
-.main-menu .info-dot {
-  width: 46px; height: 46px; border-radius: 12px;
-  background: #292c30f5; border-color: #ffffff24; color: #c6c7cb;
-  font-family: inherit; font-size: 16px; font-weight: 600;
+.main-menu .menu-explore small { display: block; margin-top: 5px; color: #a7a9ad; font-size: 11px; font-weight: 400; }
+.main-menu .menu-explore > span:last-child { color: #a7a9ad; font-size: 24px; font-weight: 400; }
+.main-menu .level-row {
+  display: grid; grid-template-columns: auto 1fr; gap: 10px;
+  margin-top: 24px; padding-top: 20px; border-top: 1px solid #ffffff1a;
 }
+.main-menu .level-badge { font-size: 12px; color: #e8c88d; font-weight: 500; }
+.main-menu .level-xp { grid-column: 2; grid-row: 1; text-align: right; color: #b1b4b9; font-size: 11px; font-weight: 400; }
+.main-menu .level-bar { grid-column: 1 / -1; width: 100%; height: 4px; border: 0; background: #ffffff13; }
+.main-menu .level-bar i { background: #e8c88d; }
+.main-menu .level-next { grid-column: 1 / -1; font-size: 11px; line-height: 1.5; font-weight: 400; color: #a7a9ad; min-height: 0; text-align: left; }
+.main-menu button.level-next { min-height: 44px; text-decoration: underline; text-underline-offset: 3px; }
+.main-menu .menu-settings { margin-top: 12px; border-top: 1px solid #ffffff1a; color: #b1b4b9; }
+.main-menu .menu-settings > summary {
+  min-height: 44px; display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; cursor: pointer; list-style: none;
+}
+.main-menu .menu-settings > summary::-webkit-details-marker { display: none; }
+.main-menu .menu-settings > summary::after { content: '+'; font-size: 19px; }
+.main-menu .menu-settings[open] > summary::after { content: '−'; }
+.main-menu .menu-utilities { display: grid; gap: 8px; margin: 8px 0 16px; }
+.main-menu .menu-footer { font-size: 11px; line-height: 1.6; }
+.main-menu .hold-share, .main-menu .privacy-toggle { min-height: 44px; }
+.main-menu .menu-privacy { margin: 12px 0 0; }
+.modes-sheet { display: block; width: min(500px, calc(100vw - 24px)); max-height: 90dvh; padding: 20px; overflow-y: auto; }
+.modes-sheet > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.modes-sheet > header h2 { font-size: 24px; }
+.modes-sheet > p { margin: 4px 0 20px; color: #a7a9ad; font-size: 13px; }
+.mode-choice {
+  display: flex; align-items: center; gap: 14px; width: 100%; min-height: 76px;
+  padding: 15px 12px; margin-top: 8px; border: 1px solid #ffffff20;
+  border-radius: 12px; background: #ffffff06; text-align: left; color: #eee;
+}
+.mode-choice > .ico { flex: 0 0 20px; height: 20px; color: #e8c88d; }
+.mode-choice > span:first-of-type { flex: 1; }
+.mode-choice b { display: block; font-size: 14px; font-weight: 500; }
+.mode-choice small { display: block; margin-top: 5px; color: #a7a9ad; font-size: 12px; line-height: 1.5; }
+.mode-choice > span:last-child { color: #a7a9ad; font-size: 22px; }
 @media (hover: hover) {
-  .main-menu .btn.ghost:hover, .main-menu .info-dot:hover {
-    background: #373b40; border-color: #ffffff4d; transform: none;
+  .main-menu .btn.ghost:hover, .main-menu .menu-explore:hover, .main-menu .menu-account:hover, .mode-choice:hover {
+    background: #ffffff12; border-color: #ffffff40; transform: none;
   }
 }
-@media (min-width: 600px) {
-  .main-menu .menu-modes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 400px), (max-height: 500px) {
+  .menu-screen .main-menu { padding: 20px; }
+  .main-menu .game-tagline { margin-bottom: 20px; }
 }
-@media (max-height: 500px) {
-  .menu-screen .main-menu { padding: 16px 20px; }
-  .main-menu .menu-crest { display: none; }
-  .menu-screen .main-menu .game-title { font-size: 32px; }
-  .main-menu .game-tagline { margin-bottom: 4px; }
+@media (max-width: 360px) {
+  .menu-screen .main-menu .game-title { font-size: 24px; }
+  .main-menu .menu-heading { gap: 8px; }
+  .main-menu .menu-account { min-width: 52px; padding: 0 8px; }
+}
+@media (min-width: 600px) and (max-height: 500px) {
+  .menu-screen .main-menu {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    width: min(620px, calc(100vw - 32px)); column-gap: 24px;
+  }
+  .main-menu .menu-heading { grid-column: 1; grid-row: 1; }
+  .menu-screen .main-menu .game-title { font-size: 26px; }
+  .main-menu .game-tagline { grid-column: 1; grid-row: 2; margin: 4px 0 0; font-size: 11px; }
+  .main-menu .menu-primary-actions { grid-column: 2; grid-row: 1 / 4; align-self: start; }
+  .main-menu .menu-explore { grid-column: 2; grid-row: 4; margin-top: 12px; }
+  .main-menu .level-row { grid-column: 1; grid-row: 3 / 5; margin-top: 18px; padding-top: 16px; align-content: start; }
+  .main-menu .menu-settings { grid-column: 1 / -1; grid-row: 5; }
 }
 .btn.sell { color: #ffb5aa; background: transparent; border-color: #ffb5aa2b; }
 button:disabled { cursor: default; }
