@@ -21,12 +21,16 @@ test('tap water to build a Tidecaller, upgrade both branches, and continue it af
       for (let r = 0; r < g.level!.height; r++) for (let c = 0; c < g.level!.width; c++) {
         const plot = g.terrain!.waterPlot(c, r)
         if (!plot) continue
+        // A completed Mythic can visually cover neighboring water cells.
+        // Use a separate bank so this tap targets water rather than its hull.
+        if (g.towers.some(t => t.pos.distanceTo(plot.pos) < 4)) continue
         const point = g.projectToScreen(plot.pos.x, -.4, plot.pos.z)
         if (point && point.x > 70 && point.x < innerWidth - 70 && point.y > 100 && point.y < innerHeight - 80) return point
       }
       throw new Error('No visible water site')
     })
     await page.touchscreen.tap(point.x, point.y)
+    await expect(page.locator('.build-menu')).toBeVisible()
     await expect(page.locator('.build-menu')).toContainText('Build on water')
     await expect(page.locator('.build-menu')).not.toContainText('Raise ground')
     await page.locator('.build-option').filter({ hasText: 'Tidecaller' }).tap()

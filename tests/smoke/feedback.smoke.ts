@@ -122,7 +122,8 @@ test('elevated range follows the ground, raising is disabled, and preview links 
   })
   expect(result.charged).toBe(0)
   expect(result.raised).toBe(false)
-  expect(result.min).toBeCloseTo(0.035)
+  // The eastern shoreline now lies inside this beacon's radius.
+  expect(result.min).toBeCloseTo(-0.18 + 0.035)
   expect(result.max).toBeCloseTo(2.035)
   const highGround = page.locator('.tower-panel button').filter({ hasText: 'Bonus already active' })
   await expect(highGround).toBeDisabled()

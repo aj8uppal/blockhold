@@ -1,6 +1,7 @@
 import historicalBattle from './fixtures/seraph-v9-battle.json'
 import previousBattle from './fixtures/seraph-v11-battle.json'
 import previousVoidBattle from './fixtures/void-v12-battle.json'
+import previousWaterBattle from './fixtures/water-v13-battle.json'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { Game } from '../src/game/game.ts'
@@ -102,6 +103,22 @@ function setupFor(battle: BattleSession): CoopSetup {
 }
 
 describe('actual Game session recovery', () => {
+  it('keeps the old shoreline and its placed boat when restoring an actual ruleset-thirteen save', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 18 })
+    expect(game.terrain!.waterPlot(0, 9)).toBeNull()
+    expect(await game.resumeSession(previousWaterBattle as BattleSession)).toBe(true)
+    expect(game.balanceRuleset).toBe(13)
+    expect(game.towers[0].kind).toBe('tidecaller')
+    expect(game.towers[0].plot.cell).toEqual([0, 9])
+    expect(game.level!.water).toEqual(levels[0].waterBefore14)
+    expect((game as unknown as Internals).sessionStateHash(13)).toBe(previousWaterBattle.stateHash)
+    const before = snapshot(game)
+    expect(await game.resumeSession(game.exportBattleSession()!)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    game.disposeLevel()
+  })
+
   it('Void pulses hit one or every clustered enemy, respect area boundaries, and keep three visual meshes', () => {
     for (const tier of [4, 5, 6]) for (const count of [1, 10, 40]) {
       const game = makeGame()

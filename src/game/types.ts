@@ -328,6 +328,8 @@ export interface LevelDef {
   /** road cells where traps can be built (must lie on a rasterized lane) */
   trapSpots?: [number, number][]
   water: Rect[]
+  /** Shorelines through ruleset 13, retained when replaying existing battles. */
+  waterBefore14?: Rect[]
   hills: Rect[]
   /**
    * Raised ground with a real height, for maps that want vertical drama

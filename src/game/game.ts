@@ -1565,6 +1565,7 @@ export class Game implements World {
     this.legacyCommandCount = 0
     this.legacyAccess = false
     this.balanceRuleset = opts.balanceRuleset ?? RULESET_VERSION
+    if (this.balanceRuleset <= 13 && level.waterBefore14) level = { ...level, water: level.waterBefore14 }
     this.autoWaves = true
     this.combatRuleset = opts.combatRuleset
     this.legacyCombat = this.combatRuleset !== undefined
