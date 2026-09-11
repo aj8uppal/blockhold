@@ -9,7 +9,7 @@ import { test, expect, bootToMenu, playButton } from './fixtures.ts'
 
 test('boots to the main menu with a clean console', async ({ page, consoleErrors }) => {
   await bootToMenu(page)
-  await expect(page.locator('.game-title')).toHaveText('BLOCKHOLD')
+  await expect(page.locator('.game-title')).toHaveText('Blockhold')
   await expect(playButton(page)).toBeEnabled()
   // the service worker registers and telemetry flushes shortly after the menu
   // paints; give the late arrivals a chance to fail before declaring silence

@@ -198,14 +198,13 @@ export class Screens {
     const save = this.save()
     const wrap = el('div', 'screen menu-screen', this.root)
     const card = el('div', 'menu-hero main-menu', wrap)
-    // painted key art under a dark scrim; inline so the URL resolves at runtime
-    // lighter than it was: the player's Hold stands behind this card and is
-    // meant to be seen, not covered up
+    // Keep the key art behind the wordmark, fading to a quiet surface under
+    // the actions. Inline so the artwork URL resolves at runtime.
     card.style.background =
-      'linear-gradient(180deg, rgba(24, 16, 10, 0.72), rgba(20, 14, 9, 0.82) 62%, rgba(18, 12, 8, 0.9)), ' +
+      'linear-gradient(180deg, rgba(20, 23, 28, 0.62), rgba(24, 26, 30, 0.96) 36%, #181a1e 70%), ' +
       'url(art/title.webp) center / cover'
     el('div', 'menu-crest', card, icon('castle', 'gilded'))
-    el('h1', 'game-title', card, 'BLOCKHOLD')
+    el('h1', 'game-title', card, 'Blockhold')
     el('div', 'game-tagline', card, 'Hold the line, block by block.')
     // A newcomer has nothing to choose between yet, and a link-shared game has
     // about ten seconds. Drop them straight into the first battle; the level

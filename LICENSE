@@ -24,6 +24,6 @@ SOFTWARE.
 
 The code in this repository is MIT licensed. The 2D art in `public/art/`
 (map cards, hero and boss portraits, key art) was generated with Midjourney
-and is not covered by this licence; see `art/PROMPTS.md`. The two typefaces
-in `src/fonts/`, Cinzel and Nunito, are used under the SIL Open Font License
-1.1: https://openfontlicense.org
+and is not covered by this licence; see `art/PROMPTS.md`. The Inter typeface
+in `src/fonts/` is used under the SIL Open Font License 1.1; the full license
+and attribution are in `src/fonts/Inter-LICENSE.txt`.

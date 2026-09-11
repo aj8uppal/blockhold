@@ -228,19 +228,19 @@ export function recordVerticalTape(source: HTMLCanvasElement, opts: VerticalTape
 
       ctx.textAlign = 'center'
       ctx.fillStyle = '#e0b24a'
-      ctx.font = '800 44px Cinzel, Georgia, serif'
+      ctx.font = '800 44px Inter, system-ui, sans-serif'
       ctx.fillText('BLOCKHOLD', V_W / 2, y - 210)
 
       ctx.fillStyle = '#cfe0f0'
-      ctx.font = '700 58px Nunito, system-ui, sans-serif'
+      ctx.font = '700 58px Inter, system-ui, sans-serif'
       ctx.fillText(opts.title, V_W / 2, y - 130)
 
       ctx.fillStyle = '#ffffff'
-      ctx.font = '800 76px Nunito, system-ui, sans-serif'
+      ctx.font = '800 76px Inter, system-ui, sans-serif'
       ctx.fillText(opts.headline, V_W / 2, y - 44)
 
       ctx.fillStyle = 'rgba(207,224,240,0.72)'
-      ctx.font = '700 40px Nunito, system-ui, sans-serif'
+      ctx.font = '700 40px Inter, system-ui, sans-serif'
       ctx.fillText(opts.footer, V_W / 2, y + h + 96)
     }
 
@@ -317,18 +317,18 @@ export async function capturePostcard(source: HTMLCanvasElement, opts: PostcardO
 
   ctx.textAlign = 'center'
   ctx.fillStyle = '#e0b24a'
-  ctx.font = '800 34px Cinzel, Georgia, serif'
+  ctx.font = '800 34px Inter, system-ui, sans-serif'
   ctx.fillText('MY BLOCKHOLD', W / 2, H - 92)
 
   ctx.fillStyle = 'rgba(207,224,240,0.88)'
-  ctx.font = '600 24px Nunito, system-ui, sans-serif'
+  ctx.font = '600 24px Inter, system-ui, sans-serif'
   // the summary can outgrow one line on a well-earned keep, so clip rather
   // than let it run off the card
   const text = opts.summary.length > 92 ? `${opts.summary.slice(0, 89)}...` : opts.summary
   ctx.fillText(text, W / 2, H - 54)
 
   ctx.fillStyle = 'rgba(207,224,240,0.45)'
-  ctx.font = '700 20px Nunito, system-ui, sans-serif'
+  ctx.font = '700 20px Inter, system-ui, sans-serif'
   ctx.fillText(opts.footer, W / 2, H - 20)
 
   return await new Promise<Blob | null>(resolve => stage.toBlob(b => resolve(b), 'image/png'))
