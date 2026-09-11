@@ -1,5 +1,6 @@
 import historicalBattle from './fixtures/seraph-v9-battle.json'
 import previousBattle from './fixtures/seraph-v11-battle.json'
+import previousVoidBattle from './fixtures/void-v12-battle.json'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { Game } from '../src/game/game.ts'
@@ -101,6 +102,76 @@ function setupFor(battle: BattleSession): CoopSetup {
 }
 
 describe('actual Game session recovery', () => {
+  it('Void pulses hit one or every clustered enemy, respect area boundaries, and keep three visual meshes', () => {
+    for (const tier of [4, 5, 6]) for (const count of [1, 10, 40]) {
+      const game = makeGame()
+      game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 16 })
+      game.buildTower('seraph', game.terrain!.plots[0])
+      const tower = game.towers[0]
+      for (let i = 1; i < tier; i++) game.upgradeTower(tower, i === 3 ? 1 : 0)
+      for (let i = 0; i < count + 2; i++) game.spawnEnemyAt(i === count - 1 ? 'gargoyle' : 'husk', 0, 5, { hpMult: 1000 })
+      const target = game.enemies[0]
+      for (const enemy of game.enemies) { enemy.pos.copy(target.pos); enemy.armor = .8; enemy.magicResistNow = .8 }
+      game.enemies[count].pos.x += tower.def.splash! + game.enemies[count].radius + .1
+      game.enemies[count + 1].phased = true
+      const before = game.enemies.map(e => e.hp)
+      ;(tower as unknown as { fire(e: typeof target, world: Game): void }).fire(target, game)
+      const hit = before[0] - target.hp
+      expect(hit).toBeGreaterThanOrEqual(tower.def.damage![0])
+      for (let i = 0; i < count; i++) {
+        expect(before[i] - game.enemies[i].hp).toBeCloseTo(hit)
+        expect(game.enemies[i].armor).toBeLessThan(.8)
+      }
+      expect(game.enemies.slice(count).map(e => e.hp)).toEqual(before.slice(count))
+      expect(tower.damage).toBeCloseTo(hit * count)
+      const pulse = game.projectiles.at(-1)!
+      expect(pulse.mesh.name).toBe('void-pulse')
+      expect(pulse.mesh.children).toHaveLength(3)
+      pulse.update(.14)
+      expect((pulse.mesh.children[1] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>).material.opacity).toBeCloseTo(.95)
+      pulse.update(.15)
+      expect(pulse.done).toBe(true)
+      game.disposeLevel()
+    }
+  })
+
+  it('restores a real ruleset-twelve Void battle with its old capped beams across repeated saves', async () => {
+    const game = makeGame()
+    expect(await game.resumeSession(previousVoidBattle as BattleSession)).toBe(true)
+    expect(game.balanceRuleset).toBe(12)
+    expect(game.towers[0].def.beamTargets).toBe(4)
+    expect(game.towers[0].def.splash).toBeUndefined()
+    expect(game.towers[0].def.damage).toEqual([125, 165])
+    expect((game as unknown as Internals).sessionStateHash(12)).toBe(previousVoidBattle.stateHash)
+    ticks(game, 90)
+    const before = snapshot(game)
+    expect(await game.resumeSession(game.exportBattleSession()!)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    game.disposeLevel()
+  })
+
+  it('restores a new Void-pulse battle and continues its damage deterministically', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 17 })
+    const point = game.lanes[0].sample(5)
+    const plot = [...game.terrain!.plots].sort((a, b) => Math.hypot(a.pos.x - point.x, a.pos.z - point.z) - Math.hypot(b.pos.x - point.x, b.pos.z - point.z))[0]
+    game.buildTower('seraph', plot)
+    for (let i = 0; i < 5; i++) game.upgradeTower(game.towers[0], i === 2 ? 1 : 0)
+    game.sandboxOrder({ kind: 'sandboxSpawn', enemy: 'gargoyle', count: 20, hp: 100, lane: 0 })
+    ticks(game, 900)
+    expect(game.towers[0].damage).toBeGreaterThan(0)
+    const before = snapshot(game), session = game.exportBattleSession()!
+    expect(await game.resumeSession(session)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    expect(game.towers[0].def.beamTargets).toBeUndefined()
+    ticks(game, 180)
+    const continued = snapshot(game)
+    expect(await game.resumeSession(session)).toBe(true)
+    ticks(game, 180)
+    expect(snapshot(game)).toEqual(continued)
+    game.disposeLevel()
+  })
+
   it('Tidecaller pulses hit groups on the ground, spare flyers, and apply their branch effects', () => {
     for (const branch of [0, 1]) {
       const game = makeGame()

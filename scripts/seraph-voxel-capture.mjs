@@ -10,7 +10,7 @@ try{
   const page=await browser.newPage({viewport:{width:1200,height:900}}),errors=[]
   page.on('pageerror',error=>errors.push(error.message))
   await page.goto(base);await page.waitForFunction(()=>window.previewReady,{}, {timeout:60000})
-  for(const suite of ['stone','machine','crystal']){
+  for(const suite of ['stone','machine','crystal','current']){
     for(let index=0;index<9;index++){
       const info=await page.evaluate(async({suite,index})=>{
         const api=document.querySelector('iframe').contentWindow.seraphPreview

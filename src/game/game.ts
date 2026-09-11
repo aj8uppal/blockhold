@@ -123,7 +123,7 @@ export class Game implements World {
       for (const t of this.towers) values.push(t.supportedDamage)
       for (const g of this.sandboxQueue) values.push(g.count, g.hp, g.lane, g.at)
     }
-    if (ruleset >= 11) values.push(this.combatRuleset ?? (ruleset === 11 ? 11 : RULESET_VERSION), this.legacyCommandCount)
+    if (ruleset >= 11) values.push(this.combatRuleset ?? ruleset, this.legacyCommandCount)
     if (ruleset >= 12) values.push(this.balanceRuleset, this.autoWaves ? 1 : 0, ...this.enemies.map(e => e.groundedUntil))
     return stateHash(values)
   }

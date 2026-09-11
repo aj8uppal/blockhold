@@ -552,6 +552,55 @@ function distToSegmentXZ(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): 
  * Bends use visual math only; rendering never consumes combat randomness.
  */
 const RAY_GEO = new THREE.BoxGeometry(1, 1, 1)
+const VOID_RING = new THREE.RingGeometry(.93, 1, 48)
+/** One laser and one impact circle, regardless of how many enemies are hit. */
+class VoidPulse implements Projectile {
+  mesh = new THREE.Group()
+  done = false
+  private age = 0
+  private materials: THREE.MeshBasicMaterial[] = []
+  constructor(spec: Extract<ProjectileSpec, { kind: 'voidPulse' }>) {
+    const { world, from, at } = spec
+    this.mesh.name = 'void-pulse'
+    const mat = (color: number) => {
+      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0,
+        depthWrite: false, toneMapped: false, side: THREE.DoubleSide })
+      this.materials.push(material)
+      return material
+    }
+    const impact = new THREE.Vector3(at.x, world.groundY(at.x, at.z) + .08, at.z)
+    const end = impact.clone().setY(Math.max(impact.y + .2, at.y + .3))
+    for (const [color, width] of [[0x8250b8, .18], [0x21132f, .10]]) {
+      const beam = new THREE.Mesh(RAY_GEO, mat(color))
+      beam.position.copy(from).add(end).multiplyScalar(.5)
+      beam.lookAt(end)
+      beam.scale.set(width, width, Math.max(.001, from.distanceTo(end)))
+      this.mesh.add(beam)
+    }
+    const ring = new THREE.Mesh(VOID_RING, mat(0x9262c4))
+    ring.position.copy(impact); ring.rotation.x = -Math.PI / 2
+    ring.scale.setScalar(spec.splash)
+    this.mesh.add(ring)
+    // Snapshot eligibility before deaths can summon enemies or change the list.
+    // This is an area in the map plane; both ground and air units can be hit.
+    const hits = world.enemies.filter(e => e.targetable
+      && Math.hypot(e.pos.x - at.x, e.pos.z - at.z) <= spec.splash + e.radius)
+    for (const enemy of hits) {
+      const dealt = enemy.takeDamage(spec.damage, 'magic', world, { mrPierce: 1, credit: spec.credit, flavor: 'magic' })
+      if (dealt > 0 && spec.armorShred) enemy.shredArmor(spec.armorShred)
+    }
+  }
+  update(dt: number): void {
+    this.age += dt
+    const t = Math.min(1, this.age / .28)
+    const envelope = Math.sin(Math.PI * t)
+    this.materials[0].opacity = envelope * .65
+    this.materials[1].opacity = envelope * .95
+    this.materials[2].opacity = envelope * .5
+    if (t === 1) this.done = true
+  }
+  dispose(): void { this.materials.forEach(material => material.dispose()) }
+}
 const RAY_LIFE = 0.085
 class RayProjectile implements Projectile {
   mesh = new THREE.Group()
@@ -615,6 +664,7 @@ class RayProjectile implements Projectile {
 
 export function createProjectile(spec: ProjectileSpec): Projectile {
   switch (spec.kind) {
+    case 'voidPulse': return new VoidPulse(spec)
     case 'ray': return new RayProjectile(spec)
     case 'arrow': return new ArrowProjectile(spec)
     case 'bolt': return new BoltProjectile(spec)

@@ -1,3 +1,4 @@
+import { crystalWings, sacredStone } from './models_seraph_suites.ts'
 import { tidecallerModel } from './models_tidecaller.ts'
 import { VoxModel, VoxBox, box } from './builder.ts'
 
@@ -528,255 +529,6 @@ function exchequer(): VoxModel {
   return m
 }
 
-// ---------------- The Seraph ----------------
-// A winged idol on a plinth, and the tallest thing on any board. The whole
-// figure is authored around x = 0 and never turns (a statue does not swivel;
-// its rays go where they are sent), so the wings and the halo can be their own
-// parts and move: the wings beat slowly from pivots at the shoulders, the halo
-// spins, the heart pulses. Light tiers change silhouette; Void retains its
-// monumental dark figure and square crowns.
-
-type SeraphAspect = 'plain' | 'solar' | 'void'
-
-function seraph(level: 1 | 2 | 3 | 4 | 5, aspect: SeraphAspect = 'plain'): VoxModel {
-  return level >= 4 ? ascendedSeraph(level, aspect === 'solar') : seraphIdol(level, aspect)
-}
-
-function seraphIdol(level: 1 | 2 | 3 | 4 | 5, aspect: SeraphAspect): VoxModel {
-  const marble = aspect === 'void' ? 0x3a3550 : W.white
-  const marbleDark = aspect === 'void' ? 0x26223a : 0xc9c4b2
-  const trim = aspect === 'void' ? 0x8f7ad8 : W.gold
-  const light = aspect === 'void' ? 0x9d6bff : aspect === 'solar' ? 0xffd166 : level === 3 ? 0x99ddff : 0xfff1b0
-  const lightHot = aspect === 'void' ? 0xd8b8ff : 0xffffff
-
-  const dark = aspect === 'void'
-  const plinthH = dark ? 1.2 + level * 0.5 : level === 1 ? 1.3 : 1.9
-  const base: VoxBox[] = [
-    box(0, 0.6, 0, 7.6, 1.2, 7.6, W.stoneDark),
-    box(0, 1.2 + plinthH / 2, 0, 5.6, plinthH, 5.6, marbleDark),
-    box(0, 1.2 + plinthH + 0.25, 0, 6.2, 0.5, 6.2, trim),
-  ]
-  if (level >= 2) base.push(...crenels(0, 1.2 + plinthH + 0.5, 0, 5.8, 5.8, marbleDark))
-  if (level >= 3) {
-    // four braziers of the aspect's light at the corners
-    for (const [dx, dz] of [[-2.6, -2.6], [2.6, -2.6], [-2.6, 2.6], [2.6, 2.6]] as const) {
-      base.push(box(dx, 1.2 + plinthH + 0.9, dz, 0.8, 1.0, 0.8, trim))
-      base.push(box(dx, 1.2 + plinthH + 1.7, dz, 0.6, 0.6, 0.6, light, true))
-    }
-  }
-
-
-  // the figure: feet at the top of the plinth
-  const f = 1.2 + plinthH + 0.5 + (!dark && level >= 2 ? 0.8 : 0)
-  const bodyH = dark ? 6.0 + level * 1.1 : 6.0 + level * 0.42
-  const figure: VoxBox[] = [
-    box(0, f + 0.6, 0, 3.4, 1.2, 2.4, marbleDark),                  // robe hem
-    box(0, f + bodyH * 0.35, 0, 2.8, bodyH * 0.7, 2.0, marble),      // robe
-    box(0, f + bodyH * 0.8, 0, 3.2, bodyH * 0.3, 2.2, marble),       // chest
-    box(0, f + bodyH * 0.72, 0, 3.4, 0.5, 2.4, trim),                // belt
-    box(0, f + bodyH + 0.5, 0, 1.6, 1.2, 1.6, marble),               // head
-    box(0, f + bodyH + 1.35, 0, 2.0, 0.5, 2.0, trim),                // circlet
-    box(-2.0, f + bodyH * 0.6, 0.3, 0.9, bodyH * 0.45, 0.9, marble), // arms, raised a little
-    box(2.0, f + bodyH * 0.6, 0.3, 0.9, bodyH * 0.45, 0.9, marble),
-  ]
-  // the heart: where the rays come from
-  const heart: VoxBox[] = [box(0, f + bodyH * 0.82, 1.2, 1.1, 1.1, 0.5, lightHot, true)]
-  if (level >= 3) {
-    // a lance of light held across the body
-    figure.push(box(0, f + bodyH * 0.55, 1.6, 0.35, bodyH * 0.9, 0.35, light, true))
-    figure.push(box(0, f + bodyH * 1.02, 1.6, 0.8, 1.2, 0.8, lightHot, true))
-  }
-
-
-  // wings: swept back and up in steps, one part each, pivoting at the shoulder
-  const shoulderY = f + bodyH * 0.85
-  const span = dark ? 2.6 + level * 0.9 : level === 1 ? 0.9 : level === 2 ? 5.8 : 4.4
-  const wing = (side: 1 | -1): VoxBox[] => {
-    const out: VoxBox[] = []
-    const steps = 3 + Math.min(2, level - 1)
-    for (let i = 0; i < steps; i++) {
-      const k = i / (steps - 1)
-      const rise = dark ? 0.4 + k * (1.4 + level * 0.6) - (k > 0.6 ? (k - 0.6) * 3 : 0)
-        : level === 1 ? -k * 3 : level === 2 ? k * 0.7 : k * 2.6
-      out.push(box(side * (1.8 + k * span), shoulderY + rise, -0.9 - k * 0.6,
-        dark ? 1.4 + (1 - k) * 0.6 : 1.1, dark ? 3.0 - k * 1.2 + level * 0.25 : 2.5 - k * 0.8, 0.5, i % 2 ? marbleDark : marble))
-    }
-    return out
-  }
-  const wingL = wing(-1), wingR = wing(1)
-
-  // the halo: a square ring of light above the head, which spins
-  const hy = f + bodyH + 2.4 + (level >= 5 ? 0.6 : 0)
-  const hr = 1.5 + level * 0.25
-  const halo: VoxBox[] = [
-    box(0, hy, -hr, hr * 2, 0.3, 0.3, light, true),
-    box(0, hy, hr, hr * 2, 0.3, 0.3, light, true),
-    box(-hr, hy, 0, 0.3, 0.3, hr * 2, light, true),
-    box(hr, hy, 0, 0.3, 0.3, hr * 2, light, true),
-  ]
-
-
-  const parts: VoxModel['parts'] = { base, figure, heart, wingL, wingR, halo }
-  const pivots: NonNullable<VoxModel['pivots']> = {
-    wingL: [-1.8, shoulderY, -0.9], wingR: [1.8, shoulderY, -0.9],
-    halo: [0, hy, 0], heart: [0, f + bodyH * 0.82, 1.2],
-  }
-  if (!dark && level >= 3) {
-    // The Sovereign is an orrery: two independently turning rings around
-    // the figure, a different outline even with every material unlit.
-    const orbitY = f + bodyH * 0.62
-    for (const [name, radius] of [['orbitInner', 4.6], ['orbitOuter', 5.8]] as const) {
-      pivots[name] = [0, orbitY, 0]
-      parts[name] = [
-        box(0, orbitY, -radius, radius * 2, 0.28, 0.28, light, true),
-        box(0, orbitY, radius, radius * 2, 0.28, 0.28, light, true),
-        box(-radius, orbitY, 0, 0.28, 0.28, radius * 2, light, true),
-        box(radius, orbitY, 0, 0.28, 0.28, radius * 2, light, true),
-      ]
-    }
-  }
-
-  return {
-    parts, pivots,
-    scale: dark ? (level >= 5 ? 0.135 : 0.12) : level >= 4 ? 0.11 : 0.105,
-  }
-}
-
-/** Late Seraphs trade ornament density for a legible wing silhouette and one halo. */
-function ascendedSeraph(level: number, solar: boolean): VoxModel {
-  const crowned = level >= 5
-  const stone = solar ? W.white : 0x302c43
-  const shade = solar ? 0xc9c4b2 : 0x1d1a2b
-  const trim = solar ? W.gold : 0x8470b6
-  const light = solar ? 0xffd978 : 0xb18cff
-  const f = 3.6, h = crowned ? 8.0 : 7.4
-  const shoulderY = f + h * 0.8
-  const parts: VoxModel['parts'] = {
-    base: [
-      box(0, 0.6, 0, 7.4, 1.2, 7.4, W.stoneDark),
-      box(0, 2, 0, 5.6, 1.6, 5.6, shade),
-      box(0, 3, 0, 6.1, 0.4, 6.1, trim),
-    ],
-    figure: [
-      box(0, f + h * 0.32, 0, 2.8, h * 0.64, 2, shade),
-      box(0, f + h * 0.72, 0, 3.1, h * 0.32, 2.1, stone),
-      box(0, f + h + 0.1, 0, 1.6, 1.6, 1.6, stone),
-      box(0, f + h + 1, 0, 2.1, 0.35, 1.8, trim),
-      box(-1.8, f + h * 0.58, 0.1, 0.8, 3.5, 0.9, stone),
-      box(1.8, f + h * 0.58, 0.1, 0.8, 3.5, 0.9, stone),
-    ],
-    heart: [box(0, shoulderY, 1.2, solar ? 1.2 : 0.55, solar ? 1.2 : 2.3, 0.5, light, true)],
-    wingL: [], wingR: [], halo: [],
-  }
-  const pivots: NonNullable<VoxModel['pivots']> = {
-    heart: [0, shoulderY, 1.2], wingL: [-1.8, shoulderY, -0.8], wingR: [1.8, shoulderY, -0.8],
-  }
-  for (const side of [-1, 1]) {
-    const wing = parts[side < 0 ? 'wingL' : 'wingR']
-    for (let i = 0; i < (crowned ? 4 : 3); i++) {
-      // Solar opens across the road; Void folds into a tall, pointed mantle.
-      const x = solar ? 2.6 + i * 1.6 : 2.1 + i * 0.95
-      const y = shoulderY + (solar ? i * 0.65 : i * 1.3)
-      wing.push(box(side * x, y, -1 - i * 0.12, solar ? 2 : 1.35,
-        solar ? 2.5 - i * 0.2 : 4.2 - i * 0.45, 0.65, stone))
-    }
-    if (crowned) wing.push(box(side * (solar ? 6.5 : 4.1), shoulderY + (solar ? 1.7 : 3.2), -0.65,
-      solar ? 2.4 : 0.35, solar ? 0.3 : 2.7, 0.25, trim))
-  }
-  if (solar) {
-    const y = shoulderY + 0.8, radius = crowned ? 4.6 : 4.1
-    pivots.halo = [0, y, -1.8]
-    for (let i = 0; i < 16; i++) {
-      const a = i / 16 * Math.PI * 2, b = (i + 1) / 16 * Math.PI * 2
-      const x1 = Math.cos(a) * radius, y1 = Math.sin(a) * radius
-      const x2 = Math.cos(b) * radius, y2 = Math.sin(b) * radius
-      parts.halo.push(box((x1 + x2) / 2, y + (y1 + y2) / 2, -1.8,
-        Math.abs(x2 - x1) + 0.2, Math.abs(y2 - y1) + 0.2, 0.22, light, true))
-    }
-  } else {
-    const y = f + h + 2.7, r = crowned ? 2.1 : 1.7
-    pivots.halo = [0, y, 0]
-    parts.halo = [box(0, y, -r, r * 2, 0.2, 0.2, light, true), box(0, y, r, r * 2, 0.2, 0.2, light, true),
-      box(-r, y, 0, 0.2, 0.2, r * 2, light, true), box(r, y, 0, 0.2, 0.2, r * 2, light, true)]
-  }
-  return { parts, pivots, scale: 0.125 }
-}
-
-/** Event Horizon: a suspended archangel beneath one eclipsed crown. */
-function eventHorizonSeraph(): VoxModel {
-  const stone = 0x292638, shade = 0x161420, edge = 0x665687
-  const light = 0xb894ff, hot = 0xe8dcff
-  const shoulderY = 11.0, crownY = 14.1, crownZ = -1.7
-  const parts: VoxModel['parts'] = {
-    base: [
-      box(0, 0.6, 0, 7.4, 1.2, 7.4, W.stoneDark),
-      box(0, 1.5, 0, 6.5, 0.5, 6.5, edge),
-      box(0, 2.3, 0, 5.4, 1.1, 5.4, shade),
-      box(0, 3, 0, 5.9, 0.35, 5.9, stone),
-      box(0, 3.25, 0, 2.4, 0.12, 2.4, light, true),
-    ],
-    figure: [
-      // A narrow, tapered mantle leaves daylight above the plinth.
-      box(0, 6, 0, 1.3, 2.3, 1.4, shade),
-      box(0, 8.1, 0, 2.2, 3.3, 1.8, stone),
-      box(0, 10.5, 0, 3.1, 2.2, 2.1, stone),
-      box(0, 8.3, 1.0, 0.65, 3.8, 0.2, edge),
-      box(0, 12.4, 0, 1.6, 1.6, 1.6, shade),
-      box(0, 12.65, 0.85, 1.05, 0.18, 0.15, hot, true),
-      box(-1.8, 9.4, 0.1, 0.8, 3.3, 0.9, stone),
-      box(1.8, 9.4, 0.1, 0.8, 3.3, 0.9, stone),
-    ],
-    heart: [
-      box(0, shoulderY, 1.2, 0.65, 1.6, 0.45, hot, true),
-      box(0, shoulderY, 1.2, 1.3, 0.55, 0.45, hot, true),
-    ],
-    wingL: [], wingR: [], wingLowL: [], wingLowR: [], halo: [],
-  }
-  const pivots: NonNullable<VoxModel['pivots']> = {
-    heart: [0, shoulderY, 1.2], halo: [0, crownY, crownZ],
-    wingL: [-1.8, shoulderY, -0.8], wingR: [1.8, shoulderY, -0.8],
-    wingLowL: [-1.6, 9.5, -0.9], wingLowR: [1.6, 9.5, -0.9],
-  }
-  for (const side of [-1, 1]) {
-    const wing = parts[side < 0 ? 'wingL' : 'wingR']
-    // Two broad swept blades, with a single pale tip on each side.
-    for (let i = 0; i < 4; i++) {
-      wing.push(box(side * (2.5 + i * 1.25), shoulderY + i * 1.65, -1 - i * 0.12,
-        1.7 - i * 0.25, 3.5 - i * 0.1, 0.85, i === 3 ? edge : stone))
-    }
-    wing.push(box(side * 6.25, 17.9, -1.4, 0.45, 0.7, 0.45, light, true))
-    const lower = parts[side < 0 ? 'wingLowL' : 'wingLowR']
-    for (let i = 0; i < 3; i++) {
-      lower.push(box(side * (2.35 + i * 0.95), 8.5 - i * 1.15, -1.2,
-        1.3 - i * 0.2, 2.4 - i * 0.2, 0.65, i === 2 ? edge : shade))
-    }
-  }
-  // A dark disk and a single luminous rim, authored as a crisp stepped circle.
-  // No transparent layers or particles: it stays readable at gameplay zoom.
-  for (let i = -6; i <= 6; i++) {
-    const x = i * 0.5, height = Math.sqrt(3.3 ** 2 - x ** 2) * 2
-    parts.halo.push(box(x, crownY, crownZ, 0.52, height, 0.5, 0x100e1c))
-  }
-  for (let i = 0; i < 24; i++) {
-    const a = i / 24 * Math.PI * 2, b = (i + 1) / 24 * Math.PI * 2
-    const x1 = Math.cos(a) * 3.4, y1 = Math.sin(a) * 3.4
-    const x2 = Math.cos(b) * 3.4, y2 = Math.sin(b) * 3.4
-    parts.halo.push(box((x1 + x2) / 2, crownY + (y1 + y2) / 2, crownZ + 0.32,
-      Math.abs(x2 - x1) + 0.22, Math.abs(y2 - y1) + 0.22, 0.25, i < 4 || i >= 16 && i < 20 ? hot : light, true))
-  }
-  return { parts, pivots, scale: 0.125 }
-}
-
-function mythicSeraph(solar: boolean): VoxModel {
-  if (!solar) return eventHorizonSeraph()
-  const m = ascendedSeraph(5, solar)
-  const light = solar ? 0xfff2bc : 0xe0ceff
-  m.parts.base.push(box(0, 1.35, 0, 7, 0.25, 7, solar ? W.gold : 0x8470b6))
-  m.parts.heart.push(box(0, m.pivots!.heart[1], 1.5, 0.35, 1.8, 0.3, light, true))
-  m.scale = 0.13
-  return m
-}
-
 function lastLegion(): VoxModel {
   const m = oathgateCitadel(0)
   // An open command arch carries a tall split standard; no oversized roof
@@ -952,7 +704,7 @@ const factories: Record<TowerModelId, () => VoxModel> = {
   barracks6b: () => masteryModel(oathgateCitadel(1), 'barracks', 1),
   beacon6a: () => masteryModel(crownfire(), 'beacon', 0), beacon6b: () => masteryModel(exchequer(), 'beacon', 1),
   ballista6a: () => masteryModel(heavensplitter(), 'ballista', 0), ballista6b: () => masteryModel(godsbaneRam(), 'ballista', 1),
-  barracks6a: lastLegion, seraph6a: () => mythicSeraph(true), seraph6b: () => mythicSeraph(false),
+  barracks6a: lastLegion, seraph6a: () => sacredStone(6, 0), seraph6b: () => crystalWings(6, 1),
   arrow1: () => arrowTower(1), arrow2: () => arrowTower(2), arrow3: () => arrowTower(3),
   arrow4a: sharpshooterTower, arrow4b: galeTower,
   arrow5a: () => crownwingAerie(0), arrow5b: () => crownwingAerie(1),
@@ -971,9 +723,9 @@ const factories: Record<TowerModelId, () => VoxModel> = {
   ballista1: () => ballistaTower(1), ballista2: () => ballistaTower(2), ballista3: () => ballistaTower(3),
   ballista4a: skyharrow, ballista4b: wallbreaker,
   ballista5a: heavensplitter, ballista5b: godsbaneRam,
-  seraph1: () => seraph(1), seraph2: () => seraph(2), seraph3: () => seraph(3),
-  seraph4a: () => seraph(4, 'solar'), seraph4b: () => seraph(4, 'void'),
-  seraph5a: () => seraph(5, 'solar'), seraph5b: () => seraph(5, 'void'),
+  seraph1: () => crystalWings(1, 0), seraph2: () => crystalWings(2, 0), seraph3: () => crystalWings(3, 0),
+  seraph4a: () => sacredStone(4, 0), seraph4b: () => crystalWings(4, 1),
+  seraph5a: () => sacredStone(5, 0), seraph5b: () => crystalWings(5, 1),
 }
 
 const modelCache = new Map<TowerModelId, VoxModel>()

@@ -1,4 +1,4 @@
-import { EnemyDef } from './types.ts'
+import type { EnemyDef } from './types.ts'
 
 const defs: EnemyDef[] = [
   {

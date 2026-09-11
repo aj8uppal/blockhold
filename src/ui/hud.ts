@@ -1103,7 +1103,8 @@ export class HUD {
       chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`, tower.rateMult > 1 ? 'lit' : '') +
       chip('Range', `${icon('range')} ${fmtNum(tower.range)}`, tower.range > def.range ? 'lit' : '') +
       chip(def.beamTargets ? 'DPS / target' : 'DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : '') +
-      (def.beamTargets ? chip('Targets', `${def.beamTargets}`) : ''))
+      (def.beamTargets ? chip('Targets', `${def.beamTargets}`) : '') +
+      (tower.isSeraph && def.splash ? chip('Splash radius', `${Math.round(def.splash * m.splash * 100) / 100} tiles`) + chip('Targets', 'All in area') : ''))
   }
 
   private refreshMasteryProgress(): void {

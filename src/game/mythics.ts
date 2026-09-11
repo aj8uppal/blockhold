@@ -63,7 +63,8 @@ const transformations: Partial<Record<TowerKind, Partial<Record<0 | 1, Partial<T
     },
     1: {
       name: 'Event Horizon', cost: 16000, model: 'seraph6b', signature: 'eventHorizon',
-      description: 'Four heavy void beams pierce all magic resistance. Every 14s opens a 2.2-tile rift beneath the strongest foe for 4s: enemies inside are revealed and take 30% more damage from the whole defense.',
+      damage: [520, 680], attackInterval: 0.45, splash: 1.65,
+      description: 'Void pulses hit every enemy within 1.65 tiles, ignoring armor and magic resistance. Every 14s opens a 2.2-tile rift beneath the strongest foe for 4s: enemies inside are revealed and take 30% more damage from the whole defense.',
     },
   },
   barracks: {

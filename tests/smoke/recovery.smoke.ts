@@ -2,6 +2,7 @@ import { test, expect, bootToMenu } from './fixtures.ts'
 import type { Game } from '../../src/game/game.ts'
 import { readFileSync } from 'node:fs'
 import type { BattleSession } from '../../src/game/session.ts'
+import { enemyDefs } from '../../src/game/enemyDefs.ts'
 const historicalBattle = JSON.parse(readFileSync(new URL('../fixtures/seraph-v9-battle.json', import.meta.url), 'utf8')) as BattleSession
 
 test('a real pre-rebalance Seraph save restores from the menu and exports the whole battle', async ({ page, consoleErrors }) => {
@@ -45,13 +46,15 @@ test('a real pre-rebalance Seraph save restores from the menu and exports the wh
 })
 
 test('account mastery unlocks the restored tower inspector and survives another Continue', async ({ page, consoleErrors }) => {
-  await page.addInitScript(battle => {
+  await page.addInitScript(({ battle, seenEnemies }) => {
     if (localStorage.getItem('blockhold.mastery-recovery-test')) return
     localStorage.setItem('blockhold.mastery-recovery-test', '1')
     localStorage.setItem('blockhold.save.v1', JSON.stringify({ xp: 20000, taughtBasics: true, sfxMuted: true, musicMuted: true,
-      honors: ['mastery:seraph:ossuary', 'mastery:seraph:empress'] }))
+      // This account has completed both hunts; enemy introductions must not
+      // race the inspector click when a slower renderer reaches a new spawn.
+      seenEnemies, honors: ['mastery:seraph:ossuary', 'mastery:seraph:empress'] }))
     localStorage.setItem('blockhold.session.v1', JSON.stringify(battle))
-  }, historicalBattle)
+  }, { battle: historicalBattle, seenEnemies: [...enemyDefs.keys()] })
   await bootToMenu(page)
   for (let i = 0; i < 2; i++) {
     await page.getByRole('button', { name: /Continue The Bone Procession/ }).click()

@@ -13,6 +13,7 @@ import { towerModel, muzzleHeights, rallyFlagModel } from '../voxel/models_tower
 import { randRange, lerpAngle, clamp, simChance } from '../core/utils.ts'
 import { RAMPART_RANGE_BONUS, RAMPART_DAMAGE_BONUS } from './earthworks.ts'
 import { onBeat, BEAT_BONUS } from './beat.ts'
+import { RULESET_VERSION } from './ruleset.ts'
 import { mythicFor, SOLAR_CHARGES, SOLAR_WARNING, SOLAR_RADIUS, RIFT_COOLDOWN, RIFT_DURATION, RIFT_RADIUS, LEGION_COOLDOWN, LEGION_DURATION, LEGION_RADIUS } from './mythics.ts'
 
 /**
@@ -160,7 +161,7 @@ function towerCrownHeight(model: string): number {
 
 /** the colour of each Seraph's light: the aspects differ, the crowns burn hotter */
 const SERAPH_LIGHT: Record<string, number> = {
-  seraph1: 0xfff1b0, seraph2: 0xfff1b0, seraph3: 0xfff4c8,
+  seraph1: 0xc2d8ff, seraph2: 0xc4deff, seraph3: 0xe0e8fa,
   seraph4a: 0xffd166, seraph5a: 0xffe08a, seraph6a: 0xfff2b0,
   seraph4b: 0x9d6bff, seraph5b: 0xb98cff, seraph6b: 0xd3b6ff,
 }
@@ -228,6 +229,7 @@ export class Tower {
   private static readonly ECLIPSE_EVERY = 10
   private seraphT = 0
   private seraphPulse = 0
+  private seraphHeartScale = 1
   private seraphSpeed = 1.3
   private mythicCharge = 0
   private mythicReadyAt = 0
@@ -315,7 +317,8 @@ export class Tower {
       if (orbit) { orbit.rotation.x = sign * 0.55; orbit.rotation.y += dt * sign * 0.55 }
     }
     const heart = getPart(this.model, 'heart')
-    if (heart) heart.scale.setScalar(1 + this.seraphPulse * 0.22 + Math.sin(world.time * 2) * 0.025)
+    this.seraphHeartScale += (1 + this.seraphPulse * .14 + Math.sin(world.time * 2) * .018 - this.seraphHeartScale) * (1 - Math.exp(-dt * 22))
+    if (heart) heart.scale.setScalar(this.seraphHeartScale)
     if (this.level === 6 && this.branch === 1) {
       // Small, continuous levitation; never tie the statue's pose to a hit.
       const lift = Math.sin(world.time * 1.4) * 0.025
@@ -714,6 +717,12 @@ export class Tower {
   private static readonly REVEAL_HOLD = 0.14
 
   private combatDefinition(def: TowerLevelDef, level: number = this.level, branch = this.branch): TowerLevelDef {
+    if (this.isSeraph && branch === 1 && level >= 4 && (this.world.balanceRuleset ?? RULESET_VERSION) <= 12) {
+      const crowned = level >= 5
+      def = { ...def, damage: crowned ? [125, 165] : [65, 85], attackInterval: crowned ? .15 : .17,
+        splash: undefined, beamTargets: crowned ? 4 : 3,
+        description: `Original battle balance · ${crowned ? 4 : 3} independent void beams. Ignores armor${(this.world.balanceRuleset ?? 12) >= 12 ? ' and magic resistance' : ''}; strips armor from each target.` }
+    }
     if (this.isSeraph && (this.world.balanceRuleset ?? 12) <= 11 && (level === 2 || level === 3))
       def = { ...def, cost: level === 2 ? 1500 : 2100 }
     if (!this.world.legacyCombat || !this.isSeraph || level < 4) return def
@@ -1266,6 +1275,14 @@ export class Tower {
         break
       }
       case 'seraph': {
+        if (this.branch === 1 && def.splash) {
+          world.fireProjectile({ kind: 'voidPulse', from, at: target.pos.clone(), damage: dmg,
+            splash: def.splash * world.splashMult(), armorShred: def.special?.kind === 'armorShred' ? def.special.amount : undefined,
+            credit: this, world })
+          this.seraphPulse = 1
+          world.sfx('ray', .45)
+          break
+        }
         // Every beam starts at the idol. Pick all targets before damage can
         // alter the enemy list; every secondary obeys the tower's own reach.
         const targets = [target, ...world.enemies.filter(e => e !== target && e.targetable
@@ -1296,7 +1313,6 @@ export class Tower {
           }
         }
         this.seraphPulse = 1
-        getPart(this.model, 'heart')?.scale.setScalar(1.22)
         world.sfx('ray', 0.6)
         break
       }

@@ -29,8 +29,9 @@
  *  10  Sandbox commands, live tower unlocks, Seraph roles and mastery for every family.
  *  11  Pin recovered battles to their original combat rules.
  *  12  Water towers, manual waves, grounding, resistance piercing and revised economics.
+ *  13  Void Seraph area pulses replace capped beam volleys.
  */
-export const RULESET_VERSION = 12
+export const RULESET_VERSION = 13
 
 /** identifies a reproducible run */
 export interface RunStamp {

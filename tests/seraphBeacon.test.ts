@@ -23,7 +23,7 @@ function fixture(enemies: Enemy[] = []) {
   const world = {
     time: 1, dynamic: new THREE.Group(), lanes: [lane], enemies, soldiers: [], towers: [],
     cameraQuat: new THREE.Quaternion(), isBellfoundry: false,
-    towerDamageMult: () => 1, armoryTier: () => 0, soldierHpMult: () => 1,
+    towerDamageMult: () => 1, armoryTier: () => 0, soldierHpMult: () => 1, splashMult: () => 1,
     sightBlocked: () => false, groundY: () => 0,
     sfx: vi.fn(), shake: vi.fn(), impact: vi.fn(), floater: vi.fn(), shatterUnit: vi.fn(), onEnemyKilled: vi.fn(),
     particles: { stunStars: vi.fn(), hitSpark: vi.fn(), magicImpact: vi.fn(), buildDust: vi.fn() },
@@ -85,9 +85,9 @@ describe('Seraph independent beams', () => {
     e.takeDamage(1, 'true', world)
     expect(materials[0].emissiveIntensity).toBe(0.24)
   })
-  it('widens Solar volleys and focuses Void volleys into fewer full-damage beams', () => {
+  it('widens Solar volleys and switches Void to uncapped area pulses at tier four', () => {
     for (const branch of [0, 1]) for (let tier = 1; tier <= 5; tier++) {
-      const enemies = Array.from({ length: 8 }, (_, i) => enemy(1 + i * 0.2))
+      const enemies = Array.from({ length: 8 }, (_, i) => enemy(1 + i * 0.1))
       const { world, shots } = fixture(enemies)
       const tower = new Tower('seraph', plot(), world)
       for (let level = 1; level < tier; level++) {
@@ -97,10 +97,13 @@ describe('Seraph independent beams', () => {
       tower.update(1 / 60, world)
       expect(shots).toHaveLength(1)
       const damage = enemies.map(e => e.maxHp - e.hp).filter(d => d > 0)
-      expect(damage, `tier ${tier}, branch ${branch}`).toHaveLength((branch === 0 ? [3, 4, 5, 7, 8] : [3, 4, 5, 3, 4])[tier - 1])
+      expect(damage, `tier ${tier}, branch ${branch}`).toHaveLength((branch === 0 ? [3, 4, 5, 7, 8] : [3, 4, 5, 8, 8])[tier - 1])
       expect(damage.every(d => d === damage[0])).toBe(true)
       expect(tower.damage).toBeCloseTo(damage[0] * damage.length)
-      expect((shots[0].mesh.getObjectByName('ray-core') as THREE.InstancedMesh).count).toBe(damage.length * 3)
+      if (branch === 1 && tier >= 4) {
+        expect(shots[0].mesh.name).toBe('void-pulse')
+        expect(shots[0].mesh.children).toHaveLength(3)
+      } else expect((shots[0].mesh.getObjectByName('ray-core') as THREE.InstancedMesh).count).toBe(damage.length * 3)
       shots[0].dispose?.()
     }
   })
