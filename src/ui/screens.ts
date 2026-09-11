@@ -197,7 +197,7 @@ export class Screens {
   private renderMenu(): void {
     const save = this.save()
     const wrap = el('div', 'screen menu-screen', this.root)
-    const card = el('div', 'menu-hero', wrap)
+    const card = el('div', 'menu-hero main-menu', wrap)
     // painted key art under a dark scrim; inline so the URL resolves at runtime
     // lighter than it was: the player's Hold stands behind this card and is
     // meant to be seen, not covered up
@@ -242,9 +242,10 @@ export class Screens {
         : `${icon('respawn')} Resume ${cpLevel.name} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
     }
-    const sandbox = el('button', 'btn ghost', card, `${icon('castle')} Sandbox`) as HTMLButtonElement
+    const modes = el('div', 'menu-modes', card)
+    const sandbox = el('button', 'btn ghost', modes, `${icon('castle')} Sandbox`) as HTMLButtonElement
     sandbox.onclick = () => this.show('sandbox')
-    const hunts = el('button', 'btn ghost', card, `${icon('crown')} Boss hunts & hero paths`) as HTMLButtonElement
+    const hunts = el('button', 'btn ghost', modes, `${icon('crown')} Boss hunts & hero paths`) as HTMLButtonElement
     hunts.onclick = () => this.show('hunts')
     // one battle, the same one for everyone in the world today
     const day = dailyNumber()
@@ -252,7 +253,7 @@ export class Screens {
     // the same row as the other modes: its (i) used to be appended straight to
     // the column, so it dropped onto its own line and sat centred under the
     // button while every other info dot sat inline at the right
-    const dailyRow = el('div', 'menu-mode-row', card)
+    const dailyRow = el('div', 'menu-mode-row', modes)
     const daily = el('button', 'btn ghost mode-btn', dailyRow,
       `${icon('moon')} Daily Hold #${day}${done ? ` · wave ${save.dailyBest!.wave}` : ''}`) as HTMLButtonElement
     daily.onclick = () => this.onPlayDaily()
@@ -261,37 +262,38 @@ export class Screens {
       body: 'Twelve waves on a board built from today\'s date, identical for every player in the world. It resets at midnight UTC.',
       skill: 'When it ends you get a result bar you can copy, and a link that drops a friend onto the exact same board.',
     })
-    this.modeRow(card, 'music', 'The Bellfoundry', () => this.onPlayBellfoundry(), {
+    this.modeRow(modes, 'music', 'The Bellfoundry', () => this.onPlayBellfoundry(), {
       tagline: 'The battle keeps time.',
       body: 'One siege scored to its own soundtrack. Towers always fire the moment they are ready - but a shot that lands on the beat rings out and hits 40% harder. A meter shows where in the bar you are.',
       skill: 'The skill is arranging a defense whose rhythms fall on the beat more often than not.',
     })
     if (coopEnabled()) {
-      this.modeRow(card, 'helmPlume', 'Co-op', () => this.show('coop'), {
+      this.modeRow(modes, 'helmPlume', 'Co-op', () => this.show('coop'), {
         tagline: 'Hold a road with a friend.',
         body: 'Open a room, send the link, and fight one battle on one board together: shared gold, shared lives, both of you building and commanding the hero.',
         skill: 'Talk. One of you takes the road, the other the air; nobody spends the last of the gold without saying so.',
       })
     }
-    this.modeRow(card, 'respawn', 'The Three Watches', () => this.onPlayWatches(), {
+    this.modeRow(modes, 'respawn', 'The Three Watches', () => this.onPlayWatches(), {
       tagline: 'Fight beside your earlier self.',
       body: 'One short siege, fought three times over. Each watch, the defense you built last time returns as translucent echoes that still fight - faintly, and untouchable.',
       skill: 'By the third watch you are standing behind two earlier versions of your own plan, building the layer they could not.',
     })
+    const utilities = el('div', 'menu-utilities', card)
     if (cloud.enabled) {
       const st = cloud.status()
-      const acct = el('button', 'btn ghost', card,
+      const acct = el('button', 'btn ghost', utilities,
         `${icon('chest')} ${st.provider ? 'Your account' : 'Sign in & sync'}`) as HTMLButtonElement
       acct.onclick = () => this.renderAccount()
     }
-    const how = el('button', 'btn ghost', card, 'How to play') as HTMLButtonElement
+    const how = el('button', 'btn ghost', utilities, 'How to play') as HTMLButtonElement
     how.onclick = () => this.renderHelp()
     if (save.seenEnemies.length) {
-      const guide = el('button', 'btn ghost', card, `${icon('eye')} Field guide`) as HTMLButtonElement
+      const guide = el('button', 'btn ghost', utilities, `${icon('eye')} Field guide`) as HTMLButtonElement
       guide.onclick = async () => { const { renderFieldGuide } = await import('./fieldGuide.ts'); renderFieldGuide(this.root, this.save().seenEnemies, () => {}) }
     }
     if (needsInstallGuide()) {
-      const install = el('button', 'btn ghost', card, `${icon('fullscreen')} Play fullscreen`) as HTMLButtonElement
+      const install = el('button', 'btn ghost', utilities, `${icon('fullscreen')} Play fullscreen`) as HTMLButtonElement
       install.onclick = () => this.renderInstallGuide()
     }
     this.renderLevelBar(wrap, save)
