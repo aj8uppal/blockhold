@@ -10,6 +10,7 @@ test('mobile sandbox opens from the menu, spawns enemies and survives a page rel
   await page.locator('.level-card').first().click()
   await expect(page.locator('.hero-option:disabled')).toHaveCount(0)
   await page.locator('.diff-option.normal').click()
+  await page.getByRole('button', { name: 'Start sandbox', exact: true }).click()
   await page.waitForFunction(() => (window.vg.game as unknown as Game).isSandbox)
   await expect(page.locator('.callwave')).toBeHidden()
   await page.locator('.sandbox-tools summary').click()

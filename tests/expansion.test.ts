@@ -15,7 +15,7 @@ function terrain(level: LevelDef = {
   ...levelById('greenhollow'), id: 'expansion-fixture', seed: 313, width: 18, height: 14,
   lanes: [[[0, 6], [17, 6]]], plots: [[5, 4]], trapSpots: [[10, 6]],
   hills: [[9, 0, 17, 3]], plateaus: [[9, 9, 17, 13, 1.6]],
-  voids: [[3, 2, 3, 2]], water: [[2, 2, 2, 2]], landmarks: [[7, 10, 'greatTree']],
+  voids: [[3, 2, 3, 2]], water: [[2, 2, 2, 2]], waterPlots: [[2, 2]], landmarks: [[7, 10, 'greatTree']],
 }): Terrain {
   const t = new Terrain(level, buildPaths(level)); terrains.push(t); return t
 }

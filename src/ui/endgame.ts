@@ -68,6 +68,7 @@ export function renderEndgame(root: HTMLElement, save: SaveData,
     for (const [index, path] of HERO_PATHS[hero].entries()) {
       const unlocked = count >= index + 1
       const button = document.createElement('button'); button.className = `endgame-card path-option${equipped?.id === path.id ? ' picked' : ''}`
+      button.setAttribute('aria-pressed', String(equipped?.id === path.id))
       button.innerHTML = `<h3>${icon(path.icon)} ${path.name}</h3><b>${path.abilityName}</b><p>${path.blurb}</p><small>${unlocked ? equipped?.id === path.id ? 'Equipped' : 'Equip path' : index === 0 ? `Win either hunt with ${champion.name}` : `Win both hunts with ${champion.name} (${count}/2)`}</small>`
       button.disabled = !unlocked
       button.onclick = () => { save.heroPaths = { ...save.heroPaths, [hero]: path.id }; writeSave(save); paint() }

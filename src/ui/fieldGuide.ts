@@ -1,3 +1,4 @@
+import { bindDialog } from './dialog.ts'
 import { icon, BOSS_ART } from './icons.ts'
 import { enemyDefs } from '../game/enemyDefs.ts'
 import { traitsOf, counterFor, isNotable } from '../game/dossier.ts'
@@ -56,6 +57,6 @@ export function renderFieldGuide(root: HTMLElement, seen: readonly string[], onC
   for (const d of others) entry(d)
   const close = el('button', 'btn primary', card, 'Close') as HTMLButtonElement
   close.onclick = () => { overlay.remove(); onClose() }
-  overlay.onclick = (e: MouseEvent) => { if (e.target === overlay) { overlay.remove(); onClose() } }
+  bindDialog(overlay, card, () => { overlay.remove(); onClose() })
   return overlay
 }

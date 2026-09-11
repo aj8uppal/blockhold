@@ -1,3 +1,4 @@
+import { bindDialog } from './dialog.ts'
 import { downloadBattleBackup, parseBattleBackup } from '../game/battleBackup.ts'
 import { readSession, writeSession } from '../game/session.ts'
 import { cloud, applyCloud, toCloud } from '../core/cloud.ts'
@@ -116,16 +117,5 @@ export function renderAccountPanel(root: HTMLElement, save: () => SaveData, onRe
     unavailable = 'Could not reach sign-in. Your progress stays on this device; try again when connected.'
     draw()
   })
-  overlay.onclick = e => { if (e.target === overlay) close() }
-  overlay.onkeydown = e => {
-    if (e.key === 'Escape') { e.preventDefault(); close() }
-    if (e.key === 'Tab') {
-      const buttons = [...card.querySelectorAll<HTMLElement>('button:not(:disabled), summary, input, textarea')]
-        .filter(node => node.getClientRects().length > 0)
-      const first = buttons[0], last = buttons[buttons.length - 1]
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus() }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus() }
-    }
-  }
-  card.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+  bindDialog(overlay, card, close)
 }

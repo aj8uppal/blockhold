@@ -1,3 +1,4 @@
+import { bindDialog } from './dialog.ts'
 import { HUNTS, masteryReady } from '../game/hunts.ts'
 import { QUALITY_OPTIONS, type QualityPreference } from '../core/quality.ts'
 import { fmtDamage } from './screens.ts'
@@ -104,6 +105,7 @@ export class HUD {
   private bannerTimer = 0
   private toastTimer = 0
   private lastRefreshAt = performance.now()
+  private pauseDialogFocus: ((open: boolean) => void) | null = null
 
   constructor(private game: Game) {
     this.root = document.getElementById('hud')!
@@ -111,24 +113,34 @@ export class HUD {
     // ("typing isn't allowed in full screen"). Release button focus; selects
     // still need it so the visual quality picker remains usable
     this.root.addEventListener('focusin', (e) => {
-      if (document.fullscreenElement && e.target instanceof HTMLButtonElement) e.target.blur()
+      if (document.fullscreenElement && e.target instanceof HTMLButtonElement && !e.target.matches(':focus-visible')) e.target.blur()
     })
     this.buildTopBar()
     this.buildWaveButton()
     this.buildAbilities()
     this.buildMenu = el('div', 'build-menu hidden', this.root)
+    this.buildMenu.setAttribute('role', 'region'); this.buildMenu.setAttribute('aria-label', 'Build options')
     // A fresh press on an existing control is intentional, even immediately
     // after the panel opens. Compatibility clicks still face the time guard.
     this.root.addEventListener('pointerdown', event => {
       if (event.target instanceof Element && event.target.closest('.build-menu button, .tower-panel button')) this.menuOpenedAt = 0
     }, { capture: true })
     this.towerPanel = el('div', 'tower-panel hidden', this.root)
+    this.towerPanel.setAttribute('role', 'region'); this.towerPanel.setAttribute('aria-label', 'Selection details')
+    document.addEventListener('pointerdown', event => {
+      if (!(event.target instanceof Node)) return
+      this.root.querySelectorAll<HTMLDetailsElement>('.wave-details[open], .sandbox-tools[open]').forEach(details => {
+        if (!details.contains(event.target as Node)) details.open = false
+      })
+    })
     new ResizeObserver(() => this.syncInspectorOverflow()).observe(this.towerPanel)
     this.towerPanel.addEventListener('scroll', () => this.syncInspectorOverflow(), { passive: true })
     this.enemyTip = el('div', 'enemy-tip hidden', this.root)
     this.vignette = el('div', 'damage-vignette', this.root)
     this.bannerEl = el('div', 'banner hidden', this.root)
     this.toastEl = el('div', 'toast hidden', this.root)
+    this.toastEl.setAttribute('role', 'status')
+    this.toastEl.setAttribute('aria-live', 'polite')
     this.modeHint = el('div', 'mode-hint hidden', this.root)
     this.coachMark = el('div', 'coach-mark hidden', this.root)
     this.abilityTip = el('div', 'ability-tip hidden', this.root)
@@ -351,6 +363,7 @@ export class HUD {
     this.pauseOverlay.onclick = event => { if (event.target === this.pauseOverlay) this.game.togglePause() }
     const card = el('div', 'pause-card', this.pauseOverlay)
     el('h2', '', card, 'Paused')
+    this.pauseDialogFocus = bindDialog(this.pauseOverlay, card, () => this.game.togglePause())
     const resume = el('button', 'btn primary', card, 'Resume') as HTMLButtonElement
     resume.onclick = () => this.game.togglePause()
     const guide = el('button', 'btn ghost', card, `${icon('eye')} Field guide`) as HTMLButtonElement
@@ -361,15 +374,18 @@ export class HUD {
     this.sfxBtn = el('button', 'icon-btn', settings, sfxIcon()) as HTMLButtonElement
     this.sfxBtn.title = 'Sound effects'
     this.sfxBtn.setAttribute('aria-label', 'Toggle sound effects')
-    this.sfxBtn.onclick = () => { this.game.toggleSfx(); this.sfxBtn.innerHTML = sfxIcon() }
+    this.sfxBtn.setAttribute('aria-pressed', String(!this.game.save.sfxMuted))
+    this.sfxBtn.onclick = () => { this.game.toggleSfx(); this.sfxBtn.innerHTML = sfxIcon(); this.sfxBtn.setAttribute('aria-pressed', String(!this.game.save.sfxMuted)) }
     this.musicBtn = el('button', 'icon-btn', settings, icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')) as HTMLButtonElement
     this.musicBtn.title = 'Music'
     this.musicBtn.setAttribute('aria-label', 'Toggle music')
     this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
+    this.musicBtn.setAttribute('aria-pressed', String(!this.game.save.musicMuted))
     this.musicBtn.onclick = () => {
       this.game.toggleMusic()
       this.musicBtn.innerHTML = icon(this.game.save.musicMuted ? 'musicOff' : 'music', 'plain')
       this.musicBtn.classList.toggle('muted', this.game.save.musicMuted)
+      this.musicBtn.setAttribute('aria-pressed', String(!this.game.save.musicMuted))
     }
     const qualityLabel = el('label', 'quality-setting', card, 'Visual quality ')
     const quality = el('select', '', qualityLabel) as HTMLSelectElement
@@ -718,6 +734,7 @@ export class HUD {
     if (!this.buildMenu.classList.contains('hidden')) {
       this.buildMenu.querySelectorAll<HTMLButtonElement>('button[data-cost]').forEach(b => {
         b.classList.toggle('poor', game.gold < Number(b.dataset.cost))
+        b.setAttribute('aria-disabled', String(game.gold < Number(b.dataset.cost)))
       })
     }
     // timers
@@ -739,7 +756,7 @@ export class HUD {
     const head = el('div', 'build-head', this.buildMenu)
     const label = el('div', '', head)
     el('b', '', label, 'Build')
-    el('small', '', label, this.game.coop ? `Shared arsenal · level ${levelForXp(this.game.towerXp)}` : isCoarsePointer() ? 'Tap to build · hold to inspect' : 'Choose a foundation upgrade')
+    el('small', '', label, isCoarsePointer() ? 'Tap to build · hold to inspect' : 'Hover to inspect · click to build')
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
     close.setAttribute('aria-label', 'Close build menu')
     close.onclick = () => this.game.clearSelection()
@@ -752,6 +769,7 @@ export class HUD {
     if (plot.water) {
       this.buildMenu.style.gridTemplateColumns = '1fr'
       this.buildMenu.querySelector('.build-head b')!.textContent = 'Build on water'
+      this.buildMenu.querySelector('.build-head small')!.textContent = 'One Tidecaller per mooring'
     }
     const kinds: TowerKind[] = plot.water ? ['tidecaller'] : ['arrow', 'mage', 'cannon', 'barracks', 'ballista', 'beacon', 'seraph']
     for (const kind of kinds) {
@@ -787,6 +805,7 @@ export class HUD {
         this.hideBuildTooltip()
       }, () => this.game.buildTower(kind))
       btn.classList.toggle('poor', this.game.gold < def.cost)
+      btn.setAttribute('aria-disabled', String(this.game.gold < def.cost))
     }
     // the ground itself is buildable: raise this foundation before or after a tower goes on it
     if (!plot.raised && !plot.water) this.raiseOption(this.buildMenu, plot, 'build-option trap-option')
@@ -853,7 +872,11 @@ export class HUD {
   ): void {
     // fine pointers get hover from `tapOrHold`; coarse ones get press-and-hold
     this.tapOrHold(key, btn, inspect, release)
-    btn.onclick = this.menuGuard(() => this.commitBuild(key, btn, inspect, build))
+    btn.onclick = this.menuGuard(() => this.commitBuild(key, btn, inspect, () => {
+      const short = Number(btn.dataset.cost ?? 0) - this.game.gold
+      if (short > 0) { this.showToast(`Need ${Math.ceil(short).toLocaleString()} more gold`, 2); this.flashGold(); return }
+      build()
+    }))
   }
 
   /**
@@ -951,6 +974,13 @@ export class HUD {
     this.game.previewRange(null)
     this.clearArmedBuild()
     this.buildMenu.classList.add('hidden')
+  }
+
+  closeDisclosure(): boolean {
+    const open = this.root.querySelector<HTMLDetailsElement>('.wave-details[open], .sandbox-tools[open]')
+    if (!open) return false
+    open.open = false
+    return true
   }
 
   /** one option: this ground can take exactly one kind of work */
@@ -1246,7 +1276,7 @@ export class HUD {
     // when the only thing between the player and either was gold. Say what
     // the step is, and (below, live) exactly how much gold is missing.
     if (!capped && tower.level === 3) {
-      el('div', 'tp-choice', actions, `Choose a specialization · permanent`)
+      el('div', 'tp-choice', primary, `Choose a specialization · permanent`)
     }
     if (!capped) tower.upgradeOptions.forEach((opt, i) => {
       const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, primary) as HTMLButtonElement
@@ -1546,7 +1576,7 @@ export class HUD {
 
     const go = el('button', 'btn primary', card, 'Understood') as HTMLButtonElement
     go.onclick = () => { overlay.remove(); onClose() }
-    // a stray tap on the backdrop should not skip the one explanation there is
+    bindDialog(overlay, card, () => { overlay.remove(); onClose() })
     setTimeout(() => go.focus?.(), 40)
   }
 
@@ -1624,7 +1654,9 @@ export class HUD {
     this.coopSwitchBtn.textContent = this.game.coop ? 'Continue this battle solo' : 'Invite a friend to this battle'
     this.coopSwitchBtn.disabled = !this.game.canSwitchCoop
     this.pauseBtn.innerHTML = icon(paused ? 'play' : 'pause', 'plain')
+    this.pauseBtn.setAttribute('aria-label', paused ? 'Resume game' : 'Pause')
     this.pauseOverlay.classList.toggle('hidden', !paused)
+    this.pauseDialogFocus?.(paused)
     if (paused && this.game.canSaveSession) {
       this.quitBtn.textContent = 'Save & exit'
       this.bankedEl.textContent = 'Saves this moment on this device, including the current wave. Continue from the main menu after reloading.'

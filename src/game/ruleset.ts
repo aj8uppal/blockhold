@@ -31,8 +31,9 @@
  *  12  Water towers, manual waves, grounding, resistance piercing and revised economics.
  *  13  Void Seraph area pulses replace capped beam volleys.
  *  14  Tactical shorelines give water towers useful road coverage.
+ *  15  Boats use authored moorings instead of unrestricted water cells.
  */
-export const RULESET_VERSION = 14
+export const RULESET_VERSION = 15
 
 /** identifies a reproducible run */
 export interface RunStamp {

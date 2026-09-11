@@ -1565,7 +1565,6 @@ export class Game implements World {
     this.legacyCommandCount = 0
     this.legacyAccess = false
     this.balanceRuleset = opts.balanceRuleset ?? RULESET_VERSION
-    if (this.balanceRuleset <= 13 && level.waterBefore14) level = { ...level, water: level.waterBefore14 }
     this.autoWaves = true
     this.combatRuleset = opts.combatRuleset
     this.legacyCombat = this.combatRuleset !== undefined
@@ -1619,6 +1618,8 @@ export class Game implements World {
     this.level = this.hunt ? huntLevel(this.hunt.id) : this.trial ? trialLevel(level, this.trial.kind, this.trial.startGold)
       : this.isEndless ? { ...level, waves: generateEndlessWaves(level, undefined, this.runSeed) } : level
     level = this.level
+    if (this.balanceRuleset <= 13 && level.waterBefore14) level = { ...level, water: level.waterBefore14 }
+    this.level = level = { ...level, waterPlots: this.balanceRuleset <= 14 ? undefined : level.waterPlots ?? [] }
     this.difficulty = difficulty
     this.battleSave.lastHero = heroId
     this.persistProgress()
@@ -2792,7 +2793,7 @@ export class Game implements World {
     this.rangeRing.visible = true
     this.projectRange(this.rangeRing, tower.pos, tower.range)
     this.selectRing.visible = true
-    this.selectRing.position.set(tower.pos.x, tower.pos.y - 0.05, tower.pos.z)
+    this.selectRing.position.set(tower.pos.x, tower.plot.water ? -.10 : tower.pos.y - 0.05, tower.pos.z)
     this.showHoldLine(tower)
     this.sfx('click')
   }
@@ -2805,7 +2806,7 @@ export class Game implements World {
     const screen = this.projectToScreen(plot.pos.x, plot.pos.y + 0.2, plot.pos.z)
     this.hud.openBuildMenu(plot, screen?.x ?? sx, screen?.y ?? sy)
     this.selectRing.visible = true
-    this.selectRing.position.set(plot.pos.x, plot.pos.y + 0.02, plot.pos.z)
+    this.selectRing.position.set(plot.pos.x, plot.water ? -.10 : plot.pos.y + 0.02, plot.pos.z)
     this.rangeRing.visible = false
     this.sfx('click')
   }

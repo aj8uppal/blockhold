@@ -325,6 +325,7 @@ export const sunderfallLevel: LevelDef = {
   landmarks: [[4, 8, 'greatTree'], [14, 2, 'monolith'], [26, 4, 'arch']],
   // Low water beside the eastern turn and the final pass around the mesa.
   water: [[18, 15, 20, 17], [23, 5, 24, 7]],
+  waterPlots: [[19, 15], [23, 6]],
   waterBefore14: [[0, 15, 4, 17], [24, 0, 29, 1]],
   hills: [[0, 0, 3, 1], [25, 6, 28, 9]],
   voids: [[0, 17, 1, 17]],
@@ -383,6 +384,7 @@ export const tidereachLevel: LevelDef = {
   landmarks: [[4, 11, 'ruin'], [23, 3, 'monolith'], [28, 15, 'ruin']],
   // Keep the coast; the inner basin covers the shared and southern crossings.
   water: [[0, 0, 31, 1], [0, 16, 31, 17], [17, 10, 19, 11], [1, 6, 2, 7]],
+  waterPlots: [[9, 1], [13, 16], [19, 11], [2, 7]],
   waterBefore14: [[0, 0, 31, 1], [0, 16, 31, 17], [10, 10, 16, 11], [1, 6, 2, 7]],
   hills: [[28, 3, 30, 5]],
   voids: [[0, 17, 1, 17]],
@@ -415,6 +417,7 @@ export const levels: LevelDef[] = [
     landmarks: [[21, 10, 'greatTree'], [2, 11, 'ruin']],
     // A pond inside the returning road, plus a bank along the final approach.
     water: [[9, 5, 11, 7], [18, 0, 20, 2]],
+    waterPlots: [[9, 7], [19, 2]],
     waterBefore14: [[19, 11, 22, 13], [0, 9, 1, 11]],
     hills: [[10, 0, 14, 0], [0, 0, 2, 1], [21, 0, 23, 1], [0, 13, 2, 13]],
     voids: [[23, 13, 23, 13], [0, 12, 0, 13], [23, 0, 23, 0]],
@@ -446,6 +449,7 @@ export const levels: LevelDef[] = [
     landmarks: [[19, 2, 'monolith'], [4, 6, 'spire'], [13, 2, 'arch']],
     // Upper turn, lower approach and the common exit each have a shoreline.
     water: [[14, 3, 16, 5], [3, 8, 4, 10], [19, 11, 22, 12]],
+    waterPlots: [[14, 5], [4, 10], [20, 11]],
     waterBefore14: [[14, 2, 18, 5], [1, 5, 3, 7], [20, 12, 23, 13]],
     hills: [[10, 0, 16, 0], [0, 0, 1, 0], [22, 0, 23, 2], [10, 12, 14, 13]],
     voids: [[0, 13, 1, 13], [23, 0, 23, 0]],
@@ -505,6 +509,7 @@ export const levels: LevelDef[] = [
     landmarks: [[22, 2, 'monolith'], [27, 2, 'arch'], [17, 2, 'spire'], [20, 6, 'monolith'], [25, 6, 'arch']],
     // Fen pools guard both approaches and the bend after they meet.
     water: [[7, 11, 8, 13], [16, 5, 18, 6], [10, 0, 14, 2]],
+    waterPlots: [[7, 11], [16, 6], [10, 2]],
     waterBefore14: [[0, 6, 3, 8], [20, 14, 24, 16], [12, 0, 16, 2]],
     hills: [[0, 0, 3, 1], [10, 5, 14, 6], [27, 14, 29, 16]],
     voids: [[29, 0, 29, 1], [0, 16, 2, 16]],
@@ -536,6 +541,7 @@ export const levels: LevelDef[] = [
     landmarks: [[2, 11, 'spire'], [29, 11, 'monolith'], [6, 15, 'ruin'], [25, 15, 'arch'], [11, 15, 'spire'], [19, 5, 'monolith']],
     // Separate flank pools reward covering an approach rather than every lane.
     water: [[3, 7, 5, 9], [17, 1, 19, 3], [26, 6, 28, 8]],
+    waterPlots: [[5, 7], [17, 3], [26, 6]],
     waterBefore14: [[0, 12, 5, 16], [17, 0, 21, 4], [26, 12, 31, 17]],
     hills: [[9, 0, 11, 2], [19, 6, 21, 7]],
     voids: [[0, 17, 2, 17], [30, 0, 31, 1]],
@@ -596,6 +602,7 @@ export const levels: LevelDef[] = [
     landmarks: [[2, 16, 'spire'], [7, 16, 'monolith'], [6, 11, 'ruin'], [31, 13, 'arch'], [11, 14, 'spire'], [3, 8, 'monolith'], [30, 8, 'ruin'], [21, 4, 'arch']],
     // Each incoming flank has a useful bank; the central ridge stays dry.
     water: [[7, 6, 9, 8], [18, 1, 20, 3], [21, 6, 23, 7]],
+    waterPlots: [[9, 6], [18, 3], [23, 7]],
     waterBefore14: [[0, 9, 5, 13], [26, 14, 33, 18], [18, 0, 22, 3]],
     hills: [[12, 0, 13, 3], [4, 17, 9, 18], [28, 6, 32, 9]],
     voids: [[0, 18, 1, 18], [32, 0, 33, 1], [0, 0, 1, 1]],

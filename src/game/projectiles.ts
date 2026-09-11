@@ -559,6 +559,12 @@ class VoidPulse implements Projectile {
   done = false
   private age = 0
   private materials: THREE.MeshBasicMaterial[] = []
+  private beams: THREE.Mesh[] = []
+  private origin: THREE.Vector3
+  private end: THREE.Vector3
+  private distance: number
+  private ring: THREE.Mesh
+  private radius: number
   constructor(spec: Extract<ProjectileSpec, { kind: 'voidPulse' }>) {
     const { world, from, at } = spec
     this.mesh.name = 'void-pulse'
@@ -570,17 +576,22 @@ class VoidPulse implements Projectile {
     }
     const impact = new THREE.Vector3(at.x, world.groundY(at.x, at.z) + .08, at.z)
     const end = impact.clone().setY(Math.max(impact.y + .2, at.y + .3))
+    this.origin = from.clone(); this.end = end
+    this.distance = from.distanceTo(end); this.radius = spec.splash
     for (const [color, width] of [[0x8250b8, .18], [0x21132f, .10]]) {
       const beam = new THREE.Mesh(RAY_GEO, mat(color))
       beam.position.copy(from).add(end).multiplyScalar(.5)
       beam.lookAt(end)
       beam.scale.set(width, width, Math.max(.001, from.distanceTo(end)))
       this.mesh.add(beam)
+      this.beams.push(beam)
     }
     const ring = new THREE.Mesh(VOID_RING, mat(0x9262c4))
     ring.position.copy(impact); ring.rotation.x = -Math.PI / 2
     ring.scale.setScalar(spec.splash)
     this.mesh.add(ring)
+    this.ring = ring
+    this.update(0)
     // Snapshot eligibility before deaths can summon enemies or change the list.
     // This is an area in the map plane; both ground and air units can be hit.
     const hits = world.enemies.filter(e => e.targetable
@@ -592,12 +603,22 @@ class VoidPulse implements Projectile {
   }
   update(dt: number): void {
     this.age += dt
-    const t = Math.min(1, this.age / .28)
-    const envelope = Math.sin(Math.PI * t)
-    this.materials[0].opacity = envelope * .65
-    this.materials[1].opacity = envelope * .95
-    this.materials[2].opacity = envelope * .5
-    if (t === 1) this.done = true
+    // A compact packet travels down the firing line, leaving visible darkness
+    // behind it. The next shot has a clear gap, even at the fastest fire rate.
+    const travel = Math.min(1, this.age / .14)
+    const head = Math.min(1, travel * 1.25), tail = Math.max(0, travel * 1.25 - .25)
+    const envelope = Math.sin(Math.PI * travel)
+    for (const [i, beam] of this.beams.entries()) {
+      beam.position.lerpVectors(this.origin, this.end, (head + tail) / 2)
+      const width = (i === 0 ? .24 : .14) * (.65 + .35 * envelope)
+      beam.scale.set(width, width, Math.max(.001, this.distance * (head - tail)))
+    }
+    this.materials[0].opacity = envelope * .85
+    this.materials[1].opacity = envelope
+    const impact = Math.max(0, Math.min(1, (this.age - .10) / .18))
+    this.ring.scale.setScalar(this.radius * (.35 + .65 * (1 - (1 - impact) ** 2)))
+    this.materials[2].opacity = Math.sin(Math.PI * impact) * .6
+    if (this.age >= .28) this.done = true
   }
   dispose(): void { this.materials.forEach(material => material.dispose()) }
 }

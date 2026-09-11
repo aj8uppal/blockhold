@@ -40,9 +40,11 @@ describe('tactical shorelines', () => {
       const lava = level.theme === 'ember' || level.theme === 'ashfall'
       if (lava) { expect(current.sites, level.id).toBe(0); continue }
       expect(current.useful, level.id).toBeGreaterThanOrEqual(2)
+      expect(current.sites, level.id).toBe(level.waterPlots!.length)
+      expect(current.sites, level.id).toBeLessThanOrEqual(4)
       expect(current.best, level.id).toBeGreaterThanOrEqual(5)
       for (const length of current.perLane) expect(length, level.id).toBeGreaterThanOrEqual(4)
-      const before = coverage({ ...level, water: level.waterBefore14 ?? level.water })
+      const before = coverage({ ...level, water: level.waterBefore14 ?? level.water, waterPlots: undefined })
       report[level.id] = { before, current }
     }
     if (process.env.REPORT_WATER) writeFileSync(process.env.REPORT_WATER, JSON.stringify(report, null, 2))

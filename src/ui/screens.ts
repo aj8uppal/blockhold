@@ -1,3 +1,4 @@
+import { bindDialog } from './dialog.ts'
 import { downloadBattleBackup } from '../game/battleBackup.ts'
 import { readSession, readSessionIssue } from '../game/session.ts'
 import { huntById, type HuntId } from '../game/hunts.ts'
@@ -220,8 +221,11 @@ export class Screens {
     const session = readSession()
     const sessionLevel = session ? (session.hunt ? huntById(session.hunt)?.name : levels.find(l => l.id === session.levelId)?.name) : null
     if (session && sessionLevel) {
+      play.classList.replace('primary', 'ghost')
+      play.textContent = 'New battle'
       const resume = el('button', 'btn primary', card, `${icon('respawn')} Continue ${sessionLevel} · wave ${Math.max(1, session.wave)}`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
+      play.before(resume)
       const backup = el('button', 'btn ghost small', card, 'Download saved battle') as HTMLButtonElement
       backup.onclick = () => downloadBattleBackup(this.save())
     } else if (readSessionIssue()?.kind === 'incompatible') {
@@ -377,7 +381,7 @@ export class Screens {
     step(3, 'castle', 'Launch <b>Blockhold</b> from your Home Screen. That\'s the fullscreen app — this tab can stay behind.')
     const close = el('button', 'btn primary', card, 'Got it') as HTMLButtonElement
     close.onclick = () => overlay.remove()
-    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove() }
+    bindDialog(overlay, card, () => overlay.remove())
   }
 
   // ---------------- co-op lobby ----------------
@@ -618,6 +622,7 @@ export class Screens {
     const save = this.save()
     let hero: HeroId = (save.lastHero in HERO_DEFS ? save.lastHero : 'aldric') as HeroId
     let mode: GameMode = sandbox ? 'sandbox' : 'campaign'
+    let difficulty: Difficulty = 'normal'
     const beaten = !sandbox && (save.stars[levelId] ?? 0) > 0
     const best = save.bestEndless[levelId] ?? 0
     const overlay = el('div', 'help-overlay', this.root)
@@ -629,9 +634,13 @@ export class Screens {
       const modeRow = el('div', 'mode-row', card)
       const mkMode = (m: GameMode, label: string) => {
         const btn = el('button', `mode-option${m === mode ? ' picked' : ''}`, modeRow, label) as HTMLButtonElement
+        btn.setAttribute('aria-pressed', String(m === mode))
         btn.onclick = () => {
           mode = m
-          modeRow.querySelectorAll('.mode-option').forEach((b, i) => b.classList.toggle('picked', (i === 0) === (m === 'campaign')))
+          modeRow.querySelectorAll('.mode-option').forEach((b, i) => {
+            const selected = (i === 0) === (m === 'campaign')
+            b.classList.toggle('picked', selected); b.setAttribute('aria-pressed', String(selected))
+          })
         }
         return btn
       }
@@ -643,21 +652,28 @@ export class Screens {
       // Two more stars per map, each behind a short test. Shown where the map
       // is chosen, so the pursuit is visible every time the player comes back.
       const won = trialsWon(save.trials, levelId)
-      el('div', 'diff-sub', card, `Trials · ${won.length}/2 ★`)
-      const trialRow = el('div', 'trial-row', card)
+      const trials = el('details', 'setup-trials', card)
+      el('summary', '', trials, `Bonus trials · ${won.length}/2 ★`)
+      const trialRow = el('div', 'trial-row', trials)
       for (const kind of TRIAL_KINDS) {
         const def = trialFor(levelById(levelId), kind)
         const done = won.includes(kind)
         const btn = el('button', `trial-option${done ? ' won' : ''}`, trialRow) as HTMLButtonElement
-        btn.innerHTML = `<span class="trial-name">${icon(TRIAL_ICONS[kind])} ${def.name}${done ? ' <span class="trial-star">★</span>' : ''}</span>` +
+        btn.innerHTML = `<span class="trial-name">${icon(TRIAL_ICONS[kind])} Start ${def.name}${done ? ' <span class="trial-star">★</span>' : ''}</span>` +
           `<span class="trial-blurb">${def.blurb}</span>` +
           `<span class="trial-stats">${icon('coin')} ${def.startGold} · ${icon('heart')} 1 · ${icon('gem')} ${def.shards} · tier ${def.maxTier} cap · no Armory</span>`
         btn.onclick = () => this.onPlayTrial(levelId, kind)
       }
     }
 
-    el('div', 'diff-sub', card, 'Choose your champion')
-    const heroRow = el('div', 'hero-row', card)
+    const heroGroup = el('section', 'setup-hero-group', card)
+    el('div', 'diff-sub', heroGroup, 'Champion')
+    const heroRow = el('div', 'hero-row', heroGroup)
+    const heroSummary = el('div', 'hero-selection', heroGroup)
+    const describeHero = () => {
+      const def = HERO_DEFS[hero], path = heroPath(hero, save.heroPaths?.[hero])
+      heroSummary.innerHTML = `<p>${def.blurb}</p><details><summary>${path?.abilityName ?? def.ability.name}</summary><p>${path?.blurb ?? def.ability.blurb}</p></details>`
+    }
     const heroBtns = new Map<HeroId, HTMLButtonElement>()
     // a hero the account has not reached is shown, named and priced in levels,
     // rather than hidden: the ladder only pulls if the rungs can be seen
@@ -679,27 +695,44 @@ export class Screens {
         `<span class="hero-ability">✦ ${heroPath(def.id, save.heroPaths?.[def.id])?.abilityName ?? def.ability.name}: ${heroPath(def.id, save.heroPaths?.[def.id])?.blurb ?? def.ability.blurb}</span>`
       btn.onclick = () => {
         hero = def.id
-        heroBtns.forEach((b, id) => b.classList.toggle('picked', id === hero))
+        heroBtns.forEach((b, id) => { b.classList.toggle('picked', id === hero); b.setAttribute('aria-pressed', String(id === hero)) })
+        describeHero()
       }
       heroBtns.set(def.id, btn)
+      btn.setAttribute('aria-pressed', String(def.id === hero))
     }
     heroBtns.get(hero)?.classList.add('picked')
+    describeHero()
 
-    el('div', 'diff-sub', card, 'Choose your challenge')
-    const row = el('div', 'diff-row', card)
+    const difficultyGroup = el('section', 'setup-difficulty-group', card)
+    el('div', 'diff-sub', difficultyGroup, 'Difficulty')
+    const row = el('div', 'diff-row', difficultyGroup)
+    const hint = el('p', 'difficulty-hint', difficultyGroup, difficultyMods(levelId, difficulty).blurb)
     for (const key of ['casual', 'normal', 'veteran'] as Difficulty[]) {
       // the numbers this map will actually use, which on the late maps differ
       // from the global table; a picker that showed the table would lie
       const d = difficultyMods(levelId, key, (mode as GameMode) === 'endless' ? 'endless' : 'campaign')
       const btn = el('button', `diff-option ${key}`, row) as HTMLButtonElement
+      btn.classList.toggle('picked', key === difficulty)
+      btn.setAttribute('aria-pressed', String(key === difficulty))
       btn.innerHTML = `<span class="diff-name">${d.name}</span><span class="diff-blurb">${d.blurb}</span>` +
         `<span class="diff-stats">${icon('heart')} ${d.lives} · foes ${Math.round(d.enemyHp * 100)}% · gold ${Math.round(d.bounty * 100)}%` +
         `${d.eliteChance ? ` · elites ${Math.round(d.eliteChance * 100)}%` : ''}</span>`
-      btn.onclick = () => this.onPlayLevel(levelId, key, hero, mode)
+      btn.onclick = () => {
+        difficulty = key
+        hint.textContent = d.blurb
+        row.querySelectorAll('button').forEach(b => {
+          const selected = b === btn
+          b.classList.toggle('picked', selected); b.setAttribute('aria-pressed', String(selected))
+        })
+      }
     }
-    const cancel = el('button', 'btn ghost small', card, 'Cancel') as HTMLButtonElement
+    const footer = el('div', 'setup-actions', card)
+    const cancel = el('button', 'btn ghost', footer, 'Cancel') as HTMLButtonElement
     cancel.onclick = () => overlay.remove()
-    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove() }
+    const start = el('button', 'btn primary', footer, sandbox ? 'Start sandbox' : 'Start battle')
+    start.onclick = () => this.onPlayLevel(levelId, difficulty, hero, mode)
+    bindDialog(overlay, card, () => overlay.remove())
   }
 
   private renderEnd(won: boolean, stars: number, levelId: string, stats?: BattleStats): void {
@@ -908,7 +941,7 @@ export class Screens {
     el('p', 'mode-skill', card, info.skill)
     const close = el('button', 'btn primary', card, 'Got it') as HTMLButtonElement
     close.onclick = () => overlay.remove()
-    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove() }
+    bindDialog(overlay, card, () => overlay.remove())
   }
 
   renderAccount(): void {
@@ -964,34 +997,14 @@ export class Screens {
     reset.onclick = () => { respec(save); writeSave(save); rerender() }
     const close = el('button', 'btn primary', row, 'Done') as HTMLButtonElement
     close.onclick = () => { overlay.remove(); this.show('levels') }
-    overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); this.show('levels') } }
+    bindDialog(overlay, card, () => { overlay.remove(); this.show('levels') })
   }
 
-  private renderHelp(): void {
-    const overlay = el('div', 'help-overlay', this.root)
-    const card = el('div', 'help-card', overlay)
-    el('h2', '', card, 'How to play')
-    card.insertAdjacentHTML('beforeend', `
-      <div class="help-grid">
-        <div><b>${icon('castle')} Build.</b> Click a stone plot and pick a tower. Arrows are cheap and quick, mages pierce armor, cannons splash groups, barracks block the road.</div>
-        <div><b>⬆ Upgrade.</b> Towers level up three times, choose one of two elite specializations — then, for a small fortune, crown the tree with a capstone: Crown Volleys, Convergence Runes, Seismic Charges, or the Last Muster.</div>
-        <div><b>${icon('shield')} Block.</b> Barracks soldiers hold enemies in place while your towers work. Move them with the rally flag.</div>
-        <div><b>${icon('helmPlume')} Command your hero.</b> Sir Aldric levels up from nearby kills and slams groups of foes. Select him (or press H) to see his stats and guard ring, then click the ground to move his post.</div>
-        <div><b>${icon('swords')} Call waves.</b> Call the next wave early for bonus gold — if you dare.</div>
-        <div><b>${icon('meteor')} Abilities.</b> Meteor Storm (4) devastates an area. Reinforcements (3) plug a leak for a few seconds.</div>
-        <div><b>${icon('spike')} Trap the road.</b> Rune circles on the road hold traps: spike snares, frost runes, and blast charges that fire on whatever crosses them.</div>
-        <div><b>${icon('gem')} Harvest shards.</b> Shardbacks, elites, and bosses drop Veilshards. Spend them to Overcharge a tower's attack speed or Ascend a tier-4 tower with a permanent perk.</div>
-        <div><b>${icon('moon')} Respect the Veiltide.</b> Marked waves surge with empowered enemies under a violet sky. Calling one early is a gamble.</div>
-        <div><b>${icon('link')} Build in choirs.</b> Same-family towers standing adjacent resonate: +6% damage each (barracks: tougher soldiers).</div>
-        <div><b>${icon('eye')} Know your enemy.</b> Hover any foe to inspect it. Armor shrugs off arrows; mystics resist magic; flyers sail over soldiers and cannons — and Mistwalkers phase out of reach entirely.</div>
-        <div><b><span class="gold-star">★</span> Spend your stars.</b> Victory stars buy permanent upgrades in the Royal Armory, found on the level-select screen.</div>
-        <div><b>${icon('moon')} Survive the Long Night.</b> Beat a map to unlock its Endless mode: ever-escalating waves, a boss every tenth, and a personal record to chase.</div>
-        <div><b>${icon('range')} Camera.</b> Drag to pan; right-drag, middle-drag, or Shift+drag to orbit and tilt; scroll to zoom. Touch: pinch to zoom, twist to rotate, two-finger drag to tilt.</div>
-        <div><b>${icon('rune')} Hotkeys.</b> Space = call wave · F = speed · P = pause · 1 = hero · 2 = hero ability · 3 = meteor · 4 = reinforcements · V = fullscreen · Q/E rotate · T/G tilt · C = reset view · Esc = cancel/close.</div>
-      </div>
-    `)
-    const close = el('button', 'btn primary', card, 'Got it') as HTMLButtonElement
-    close.onclick = () => overlay.remove()
-    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove() }
+  private async renderHelp(): Promise<void> {
+    const current = this.current
+    const { renderHelp } = await import('./help.ts')
+    if (this.current !== current) return
+    renderHelp(this.root)
   }
+
 }

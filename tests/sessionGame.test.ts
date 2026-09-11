@@ -2,6 +2,7 @@ import historicalBattle from './fixtures/seraph-v9-battle.json'
 import previousBattle from './fixtures/seraph-v11-battle.json'
 import previousVoidBattle from './fixtures/void-v12-battle.json'
 import previousWaterBattle from './fixtures/water-v13-battle.json'
+import openWaterBattle from './fixtures/water-v14-battle.json'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { Game } from '../src/game/game.ts'
@@ -103,6 +104,19 @@ function setupFor(battle: BattleSession): CoopSetup {
 }
 
 describe('actual Game session recovery', () => {
+  it('restores unrestricted-water saves without shifting their tower indices', async () => {
+    const game = makeGame()
+    expect(await game.resumeSession(openWaterBattle as BattleSession)).toBe(true)
+    expect(game.balanceRuleset).toBe(14)
+    expect(game.level!.waterPlots).toBeUndefined()
+    expect(game.towers[0].plot.cell).toEqual([9, 5])
+    expect(game.towers[0].plot.index).toBe(levels[0].plots.length)
+    expect((game as unknown as Internals).sessionStateHash(14)).toBe(openWaterBattle.stateHash)
+    const before = snapshot(game)
+    expect(await game.resumeSession(game.exportBattleSession()!)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    game.disposeLevel()
+  })
   it('keeps the old shoreline and its placed boat when restoring an actual ruleset-thirteen save', async () => {
     const game = makeGame()
     game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 18 })
@@ -144,8 +158,15 @@ describe('actual Game session recovery', () => {
       const pulse = game.projectiles.at(-1)!
       expect(pulse.mesh.name).toBe('void-pulse')
       expect(pulse.mesh.children).toHaveLength(3)
-      pulse.update(.14)
-      expect((pulse.mesh.children[1] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>).material.opacity).toBeCloseTo(.95)
+      const beam = pulse.mesh.children[1] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>
+      pulse.update(.05)
+      const first = beam.position.clone()
+      expect(beam.material.opacity).toBeGreaterThan(.8)
+      pulse.update(.05)
+      expect(beam.position.distanceTo(first)).toBeGreaterThan(0)
+      pulse.update(.04)
+      expect(beam.material.opacity).toBeCloseTo(0)
+      expect((pulse.mesh.children[2] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>).material.opacity).toBeGreaterThan(0)
       pulse.update(.15)
       expect(pulse.done).toBe(true)
       game.disposeLevel()
@@ -339,7 +360,7 @@ describe('actual Game session recovery', () => {
     game.buildTower('arrow', water)
     expect(game.terrain!.plots).toHaveLength(count)
     game.buildTower('tidecaller', water)
-    expect(game.terrain!.plots).toHaveLength(count + 1)
+    expect(game.terrain!.plots).toHaveLength(count)
     game.buildTower('tidecaller', water) // stale duplicate cannot add a second foundation
     expect(game.towers).toHaveLength(1)
     for (let i = 0; i < 5; i++) game.upgradeTower(game.towers[0], game.towers[0].level === 3 ? 1 : 0)
@@ -534,7 +555,7 @@ describe('actual Game session recovery', () => {
         if (order) {
           if (order.tier === 1) {
             const reach = towerTrees[order.kind].levels[0].range
-            const plots = game.terrain!.plots.filter(p => !p.occupied)
+            const plots = game.terrain!.plots.filter(p => !p.occupied && !p.water)
             plots.sort((a, b) => {
               const score = (p: typeof a) => {
                 let value = 0
@@ -605,7 +626,7 @@ describe('actual Game session recovery', () => {
     game.startLevel(huntLevel('ossuary'), 'casual', 'aldric', 'campaign', { seed: 71, hunt: 'ossuary' })
     for (const kind of ['arrow', 'mage', 'cannon', 'barracks'] as const) {
       const range = towerTrees[kind].branches[0].range
-      const plots = game.terrain!.plots.filter(p => !p.occupied)
+      const plots = game.terrain!.plots.filter(p => !p.occupied && !p.water)
       const coverage = (plot: typeof plots[number]) => {
         let length = 0
         for (let d = 0; d < game.lanes[0].length; d += 0.5) {

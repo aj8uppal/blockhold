@@ -572,6 +572,8 @@ window.addEventListener('pagehide', () => telemetry.flush())
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat || e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))) return
+  // Space/Enter activate a focused control; they must not also call a wave.
+  if ((e.code === 'Space' || e.code === 'Enter') && e.target instanceof Element && e.target.closest('button, summary, a')) return
   if (e.code === 'KeyV' && !isPortalMode()) { toggleFullscreen(); return }
   keys.add(e.code)
   if (game.phase !== 'playing') return
@@ -591,6 +593,7 @@ window.addEventListener('keydown', (e) => {
     case 'Digit2': game.castHeroSignature(); break
     case 'KeyC': game.engine.resetView(game.level?.width, game.level?.height); break
     case 'Escape':
+      if (hud.closeDisclosure()) break
       if (game.targetMode) game.setTargetMode(null)
       else if (hud.hasSelection || game.selectedTower || game.selectedPlot || game.heroSelected) game.clearSelection()
       else game.togglePause()

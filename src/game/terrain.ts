@@ -133,6 +133,9 @@ export class Terrain {
     this.buildLandmarks(rng)
     this.buildEndpoints()
     this.buildClouds(rng)
+    // Append after the scenery is authored: moorings never alter decoration RNG
+    // or the stable indices of land foundations.
+    for (const [c, r] of level.waterPlots ?? []) this.waterPlot(c, r, true)
   }
 
   private cellKind(c: number, r: number): 'void' | 'water' | 'hill' | 'road' | 'grass' | 'plot' {
@@ -556,13 +559,21 @@ export class Terrain {
   canAddExpansionPlot(c: number, r: number): boolean { return this.expansionBlockReason(c, r) === null }
 
   waterPlot(c: number, r: number, install = false): PlotInfo | null {
+    const existing = this.plots.find(p => p.cell[0] === c && p.cell[1] === r)
+    if (existing) return this.level.waterPlots !== undefined && existing.water && !existing.occupied ? existing : null
     if (!Number.isInteger(c) || !Number.isInteger(r) || c < 0 || r < 0 || c >= this.level.width || r >= this.level.height
+      || this.level.waterPlots !== undefined && !this.level.waterPlots.some(([pc, pr]) => pc === c && pr === r)
       || (this.level.liquid === 'lava' || this.level.liquid !== 'water' && (this.level.theme === 'ember' || this.level.theme === 'ashfall'))
       || this.cellKind(c, r) !== 'water' || this.plots.some(p => p.cell[0] === c && p.cell[1] === r)) return null
     const [x, z] = gridToWorld(c, r, this.level.width, this.level.height)
     if (this.expansionObstacles.some(b => x + .48 > b.min.x && x - .48 < b.max.x && z + .48 > b.min.y && z - .48 < b.max.y)) return null
-    const mesh = install ? buildModel({ parts: { base: [box(-4, 0, 0, .3, .3, 8, 0x89cbc7), box(4, 0, 0, .3, .3, 8, 0x89cbc7), box(0, 0, -4, 8, .3, .3, 0x89cbc7), box(0, 0, 4, 8, .3, .3, 0x89cbc7)] }, scale: .1 }, 'water-foundation') : new THREE.Group()
-    mesh.position.set(x, -.35, z)
+    const mesh = install ? buildModel({ parts: { base: [
+      box(-4, 0, 0, .7, .6, 8, 0x657d80), box(4, 0, 0, .7, .6, 8, 0x657d80),
+      box(0, 0, -4, 8, .6, .7, 0x657d80), box(0, 0, 4, 8, .6, .7, 0x657d80),
+      ...[-4, 4].flatMap(cx => [-4, 4].map(cz => box(cx, .6, cz, 1, 1, 1, 0xb9e3da))),
+      box(0, 0, 0, 2.4, .3, .5, 0xb9e3da), box(0, 0, 0, .5, .3, 2.4, 0xb9e3da),
+    ] }, scale: .1 }, 'water-mooring') : new THREE.Group()
+    mesh.position.set(x, -.14, z)
     const plot: PlotInfo = { index: install ? this.plots.length : -1, cell: [c, r], pos: new THREE.Vector3(x, -.3, z), occupied: false, raised: false, water: true, mesh }
     if (install) { this.plots.push(plot); this.group.add(mesh) }
     return plot

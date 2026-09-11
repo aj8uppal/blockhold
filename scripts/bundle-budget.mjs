@@ -48,7 +48,9 @@ const assets = join(root, 'dist', 'assets')
 // Tidecaller's nine models, wave controls and backwards-compatible balance add ~2.6 KiB.
 const APP_CHUNK_LIMIT = 164 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
-const TOTAL_JS_LIMIT = 301 * 1024
+// Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.
+// The how-to sheet now loads on demand; the initial app budget stays unchanged.
+const TOTAL_JS_LIMIT = 303 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

@@ -69,7 +69,7 @@ export async function bootToMenu(page: Page): Promise<void> {
 
 /** the menu's primary action: "Play" on a fresh save, "To Battle" afterwards */
 export function playButton(page: Page) {
-  return page.locator('.menu-screen .btn.primary.big')
+  return page.locator('.menu-screen .btn.big')
 }
 
 /** press Play and wait until a level is actually running */

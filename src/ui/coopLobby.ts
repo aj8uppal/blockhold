@@ -163,14 +163,16 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
     for (const def of Object.values(HERO_DEFS)) {
       if (setup.mode !== 'sandbox' && !isUnlocked(save, 'hero', def.id)) continue
       const b = el('button', `mode-option${setup.hero === def.id ? ' picked' : ''}`, heroRow, def.name) as HTMLButtonElement
-      b.onclick = () => { setup.hero = def.id; heroRow.querySelectorAll('.mode-option').forEach(x => x.classList.toggle('picked', x === b)); sendSetup() }
+      b.setAttribute('aria-pressed', String(setup.hero === def.id))
+      b.onclick = () => { setup.hero = def.id; heroRow.querySelectorAll('.mode-option').forEach(x => { x.classList.toggle('picked', x === b); x.setAttribute('aria-pressed', String(x === b)) }); sendSetup() }
     }
     el('div', 'diff-sub', card, 'Challenge')
     const diffRow = el('div', 'mode-row', card)
     for (const key of ['casual', 'normal', 'veteran'] as Difficulty[]) {
       const d = difficultyMods(setup.levelId, key)
       const b = el('button', `mode-option${setup.difficulty === key ? ' picked' : ''}`, diffRow, d.name) as HTMLButtonElement
-      b.onclick = () => { setup.difficulty = key; diffRow.querySelectorAll('.mode-option').forEach(x => x.classList.toggle('picked', x === b)); sendSetup() }
+      b.setAttribute('aria-pressed', String(setup.difficulty === key))
+      b.onclick = () => { setup.difficulty = key; diffRow.querySelectorAll('.mode-option').forEach(x => { x.classList.toggle('picked', x === b); x.setAttribute('aria-pressed', String(x === b)) }); sendSetup() }
     }
     const start = el('button', 'btn primary big', card, `${icon('swords')} Start the battle`) as HTMLButtonElement
     const paintStart = () => { start.disabled = session.connected.length < 1 }

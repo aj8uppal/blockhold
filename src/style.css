@@ -1816,3 +1816,171 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px
 .tp-mastery-body { line-height: 1.65; padding: 0 4px 8px; }
 .tp-mastery-body p { margin: 8px 0 0; }
 .tp-mastery-body progress { width: 100%; height: 6px; accent-color: #b99752; }
+
+/* Shared control language: quiet surfaces, explicit selection and steady targets. */
+:root {
+  --panel-surface: #252321;
+  --panel-edge: #ffffff26;
+  --control-surface: #ffffff09;
+  --control-edge: #ffffff26;
+  --parchment: #f3f0e9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Nunito', sans-serif;
+}
+button, summary, select { -webkit-tap-highlight-color: transparent; }
+button { touch-action: manipulation; }
+.btn, .icon-btn, .tp-close, .info-dot, .mode-option, .mode-btn, .endgame-back,
+.privacy-toggle, .level-next, .quality-setting select, .endgame-loadout select {
+  min-height: 44px; min-width: 44px;
+}
+.btn, .build-option, .mode-option, .hero-option, .diff-option {
+  font-weight: 600; line-height: 1.4; border-radius: 12px;
+  border-color: var(--control-edge); background: var(--control-surface);
+  transition: background-color .14s ease, border-color .14s ease, opacity .14s ease;
+}
+.btn { padding: 10px 16px; }
+.btn.primary { background: #e6bb68; color: #271d0c; border-color: transparent; text-shadow: none; font-weight: 700; }
+.btn.primary:hover:not(:disabled) { background: #f0cb84; }
+.btn.ghost { border-color: transparent; background: transparent; color: #d0c7b8; }
+.btn.sell { color: #ffb5aa; background: transparent; border-color: #ffb5aa2b; }
+button:disabled { cursor: default; }
+.btn:disabled, .build-option.locked { opacity: .55; }
+.btn.upgrade:disabled { opacity: 1; color: #b9b3aa; }
+button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
+  outline: 2px solid #a0dcff; outline-offset: 3px;
+}
+button:active:not(:disabled):not([aria-disabled="true"]) { opacity: .76; }
+.hero-option.picked, .diff-option.picked, .mode-option.picked, .path-option.picked {
+  border-color: #a0dcff; background: #a0dcff12; box-shadow: inset 0 0 0 1px #a0dcff;
+}
+.diff-option, .hero-option { position: relative; }
+.diff-option.picked::after, .hero-option.picked::after {
+  content: '✓'; position: absolute; right: 7px; top: 5px;
+  color: #a0dcff; font-size: 13px; font-weight: 700;
+}
+.build-menu, .tower-panel, .pause-card, .help-card, .endgame-card {
+  background: var(--panel-surface); border: 1px solid var(--panel-edge);
+  border-radius: 18px; box-shadow: 0 12px 36px #0004;
+}
+.topbar .stat, .topbar .icon-btn, .wave-details summary {
+  background: var(--panel-surface); border-color: var(--panel-edge); box-shadow: 0 3px 12px #0002;
+}
+#hud .wave-call { animation: none; border-width: 1px; box-shadow: 0 3px 12px #0002; }
+.tp-close, .build-head .tp-close, .tp-head .tp-close {
+  width: 44px; height: 44px; flex: 0 0 44px; border-radius: 12px;
+  background: #ffffff09; color: #d2ccc2; font-size: 21px;
+}
+.build-head b, .tp-name { font-weight: 650; letter-spacing: -.02em; }
+.build-head small, .chip-label, .tp-level, .quality-note { color: #bab4aa; }
+.build-option { align-items: center; }
+.build-option .b-name { font-weight: 600; }
+.build-option.poor { opacity: 1; background: #ffffff03; }
+.build-option.poor .b-icon { opacity: .55; }
+.build-option.poor .b-cost { color: #ddb3a0; }
+.stat-chips, .chip { background: transparent; }
+.tp-primary .btn.upgrade {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px;
+  background: #e6bb680d; border-color: #e6bb6844; padding: 12px;
+}
+.btn.upgrade .u-name { min-width: 0; font-size: 13px; line-height: 1.4; }
+.btn.upgrade .u-cost { float: none; font-size: 12px; line-height: 1.5; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.btn.upgrade .u-desc, .btn.upgrade .u-delta, .btn.upgrade .u-need { grid-column: 1 / -1; margin-top: 0; }
+.btn.upgrade .u-desc { color: #c8c1b5; line-height: 1.5; font-weight: 400; }
+.tp-primary .btn.upgrade:disabled { background: #ffffff03; border-color: var(--control-edge); }
+.btn.upgrade:disabled .u-name { color: #c8c1b5; }
+.btn.upgrade:disabled .u-cost, .btn.upgrade .u-need { color: #ddb3a0; }
+.tp-actions .btn { min-height: 44px; }
+.setup-actions {
+  position: sticky; bottom: -24px; z-index: 3; display: grid; grid-template-columns: 1fr 2fr;
+  gap: 12px; padding: 14px 0 0; margin-top: 6px; align-self: stretch;
+  background: var(--panel-surface); box-shadow: 0 -10px 16px var(--panel-surface);
+}
+.setup-actions .btn { min-height: 46px; }
+.difficulty-card .diff-row { align-items: stretch; }
+.difficulty-card .hero-row, .difficulty-card .diff-row { gap: 10px; }
+.difficulty-card .diff-option { padding: 12px 10px; }
+.help-card, .pause-card { scrollbar-gutter: stable; }
+.help-overlay, .pause-overlay { background: #10111388; }
+.ability { border-width: 1px; border-color: #dfc99566; box-shadow: 0 4px 12px #0003; }
+.ability.active { background: #244352; border-color: #a0dcff; box-shadow: inset 0 0 0 1px #a0dcff; }
+@media (hover: hover) {
+  .btn:hover:not(:disabled), .icon-btn:hover, .wave-call:hover, .build-option:hover { transform: none; }
+  .btn.ghost:hover:not(:disabled), .tp-close:hover, .build-option:hover { background: #ffffff10; }
+}
+@media (pointer: coarse) {
+  .btn, .btn.small, .mode-option, .info-dot, .icon-btn { min-height: 44px; min-width: 44px; }
+  .build-menu { padding: 10px; gap: 6px; }
+  .build-head { top: -10px; }
+  .build-option { min-height: 56px; height: auto; padding: 5px; border-radius: 10px; }
+  .build-option .b-name, .build-option .b-cost { line-height: 15px; }
+  .tower-panel { padding: 12px; }
+  .tp-head { top: -12px; }
+  .tp-primary .btn.upgrade { padding: 10px; }
+  .tp-actions .tp-row { gap: 6px; }
+  .setup-actions { bottom: -20px; }
+  .quality-setting select { max-width: 62%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+.difficulty-card .hero-blurb, .difficulty-card .hero-ability { display: none; }
+.hero-selection { width: 100%; padding: 0 4px; color: #c8c1b5; text-align: center; font-size: 13px; line-height: 1.5; }
+.hero-selection summary { min-height: 44px; align-content: center; cursor: pointer; color: #a0dcff; font-size: 12px; }
+.hero-selection details p { margin-bottom: 8px; }
+.setup-trials { width: 100%; color: #bab4aa; font-size: 13px; }
+.setup-trials > summary { min-height: 44px; align-content: center; cursor: pointer; }
+.setup-trials .trial-row { margin-top: 8px; }
+.setup-actions { bottom: 0; }
+.tp-choice { color: #bab4aa; font-size: 11px; margin: 0; }
+@media (pointer: coarse) {
+  .difficulty-card .hero-option { padding: 8px 5px; }
+  .difficulty-card .hero-portrait { width: 42px; height: 42px; }
+  .difficulty-card .hero-name { font-size: 13px; }
+  .difficulty-card .hero-title, .difficulty-card .hero-stats { font-size: 10px; }
+  .hero-selection { font-size: 12px; }
+  .btn.upgrade .u-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .btn.upgrade.armed .u-desc { -webkit-line-clamp: unset; }
+}
+/* Opening an inspector must never move its hit targets under the pointer. */
+.build-menu, .tower-panel { animation: panel-reveal .12s ease; }
+@keyframes panel-reveal { from { opacity: 0; } to { opacity: 1; } }
+@media (pointer: coarse) {
+  .build-menu { padding: 8px; gap: 5px; }
+  .build-head { top: -8px; }
+  .build-option { height: 52px; min-height: 52px; padding: 4px 5px; gap: 0; }
+  .build-option .b-name, .build-option .b-cost { line-height: 13px; }
+  #hud:has(.tower-panel:not(.hidden), .build-menu:not(.hidden)) .sandbox-tools { justify-self: start; }
+}
+input, select, textarea { font-family: inherit; }
+.coop-select, .coop-join input, .account-card input { min-height: 44px; border-radius: 10px; }
+@media (prefers-reduced-motion: reduce) { .build-menu, .tower-panel { animation: none; } }
+.setup-hero-group, .setup-difficulty-group { width: 100%; }
+.setup-hero-group > .diff-sub, .setup-difficulty-group > .diff-sub { margin: 0 0 10px; }
+.difficulty-hint { display: none; }
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+  .difficulty-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 14px; padding: 16px; }
+  .difficulty-card > h2 { order: 0; text-align: left; font-size: 23px; margin: 0; align-self: center; }
+  .difficulty-card > .mode-row { order: 1; gap: 6px; margin: 0; }
+  .difficulty-card > .mode-row .mode-option { font-size: 11px; padding: 8px; }
+  .setup-hero-group { order: 2; }
+  .setup-difficulty-group { order: 3; }
+  .setup-trials { order: 4; grid-column: 1 / -1; }
+  .setup-actions { order: 5; grid-column: 1 / -1; margin: 0; padding: 0; }
+  .difficulty-card .hero-row, .difficulty-card .diff-row { gap: 6px; margin: 0; }
+  .difficulty-card .hero-option { padding: 6px 4px; gap: 2px; }
+  .difficulty-card .hero-portrait { width: 36px; height: 36px; }
+  .difficulty-card .hero-title, .difficulty-card .hero-stats, .hero-selection > p { display: none; }
+  .hero-selection { padding: 0; }
+  .hero-selection summary { min-height: 44px; }
+  .setup-hero-group > .diff-sub, .setup-difficulty-group > .diff-sub { margin: 0 0 6px; text-align: left; font-size: 12px; }
+  .difficulty-card .diff-option { min-width: 0; min-height: 56px; padding: 8px 4px; }
+  .difficulty-card .diff-name { font-size: 12px; }
+  .difficulty-card .diff-option .diff-blurb, .difficulty-card .diff-option .diff-stats { display: none; }
+  .difficulty-hint { display: block; margin: 8px 0 0; color: #c8c1b5; font-size: 12px; line-height: 1.5; }
+}
+@media (hover: hover) {
+  .hero-option:hover:not(.picked), .diff-option:hover:not(.picked), .mode-option:hover:not(.picked) { transform: none; border-color: #ffffff4d; background: #ffffff0d; }
+}
+@media (pointer: coarse) {
+  .hero-option:hover:not(.picked), .diff-option:hover:not(.picked), .mode-option:hover:not(.picked) { transform: none; border-color: var(--control-edge); background: var(--control-surface); }
+}
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) { .difficulty-card { align-items: start; } }

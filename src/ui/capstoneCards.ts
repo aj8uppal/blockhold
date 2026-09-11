@@ -1,3 +1,4 @@
+import { bindDialog } from './dialog.ts'
 import { icon } from './icons.ts'
 import { towerTrees } from '../game/towerDefs.ts'
 import type { TowerKind } from '../game/types.ts'
@@ -47,6 +48,6 @@ export function renderCapstoneCards(root: HTMLElement, cards: readonly string[],
   }
   const close = el('button', 'btn primary', card, 'Close') as HTMLButtonElement
   close.onclick = () => { overlay.remove(); onClose() }
-  overlay.onclick = (e: MouseEvent) => { if (e.target === overlay) { overlay.remove(); onClose() } }
+  bindDialog(overlay, card, () => { overlay.remove(); onClose() })
   return overlay
 }
