@@ -978,7 +978,7 @@ export class Screens {
         <div><b>${icon('shield')} Block.</b> Barracks soldiers hold enemies in place while your towers work. Move them with the rally flag.</div>
         <div><b>${icon('helmPlume')} Command your hero.</b> Sir Aldric levels up from nearby kills and slams groups of foes. Select him (or press H) to see his stats and guard ring, then click the ground to move his post.</div>
         <div><b>${icon('swords')} Call waves.</b> Call the next wave early for bonus gold — if you dare.</div>
-        <div><b>${icon('meteor')} Abilities.</b> Meteor Storm (3) devastates an area. Reinforcements (4) plug a leak for a few seconds.</div>
+        <div><b>${icon('meteor')} Abilities.</b> Meteor Storm (4) devastates an area. Reinforcements (3) plug a leak for a few seconds.</div>
         <div><b>${icon('spike')} Trap the road.</b> Rune circles on the road hold traps: spike snares, frost runes, and blast charges that fire on whatever crosses them.</div>
         <div><b>${icon('gem')} Harvest shards.</b> Shardbacks, elites, and bosses drop Veilshards. Spend them to Overcharge a tower's attack speed or Ascend a tier-4 tower with a permanent perk.</div>
         <div><b>${icon('moon')} Respect the Veiltide.</b> Marked waves surge with empowered enemies under a violet sky. Calling one early is a gamble.</div>

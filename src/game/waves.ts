@@ -155,9 +155,9 @@ export class WaveManager {
     return Math.round(this.countdown * EARLY_CALL_GOLD_PER_SEC)
   }
 
-  callNext(): number {
+  callNext(earlyBonus = true): number {
     if (this.phase !== 'countdown' || this.isLastWaveStarted) return 0
-    const bonus = this.earlyCallBonus()
+    const bonus = earlyBonus ? this.earlyCallBonus() : 0
     this.startWave(this.waveIndex + 1)
     return bonus
   }
@@ -177,9 +177,10 @@ export class WaveManager {
     this.onWaveStart(index)
   }
 
-  update(dt: number): void {
+  update(dt: number, automatic = true): void {
     if (this.phase === 'finished') return
     if (this.phase === 'countdown') {
+      if (!automatic) return
       this.countdown -= dt
       if (this.countdown <= 0) {
         if (this.isLastWaveStarted) { this.phase = 'finished'; return }

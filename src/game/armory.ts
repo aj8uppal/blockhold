@@ -18,7 +18,7 @@ export interface ArmoryTrack {
 }
 
 export const ARMORY_TRACKS: ArmoryTrack[] = [
-  { id: 'salvage', icon: 'coin', name: 'Full Salvage', desc: 'Sell towers and traps for their full price instead of 70%.', tierCosts: [3] },
+  { id: 'salvage', icon: 'coin', name: 'Expert Salvage', desc: 'Recover 90% of tower and trap purchase costs when selling.', tierCosts: [3] },
   { id: 'bulwark', icon: 'castle', name: 'Gate Ward', desc: 'The first enemy to reach the gate each battle costs you nothing.', tierCosts: [4] },
   { id: 'secondwind', icon: 'respawn', name: 'Second Wind', desc: 'Your hero returns from the field in half the time.', tierCosts: [3] },
   { id: 'comet', icon: 'meteor', name: 'Comet Calling', desc: 'Meteor Storm recharges 20% faster and calls one extra meteor.', tierCosts: [3] },

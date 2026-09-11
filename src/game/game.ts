@@ -83,6 +83,8 @@ export class Game implements World {
   private legacyCheckpointRun = false
 
   legacyCombat = false
+  balanceRuleset = RULESET_VERSION
+  autoWaves = true
   legacyAccess = false
   private legacyCommandCount = 0
   private combatRuleset: 8 | 9 | undefined
@@ -117,11 +119,12 @@ export class Game implements World {
     if (this.hero) values.push(this.hero.level, this.hero.xp, this.hero.signatureRank, this.hero.abilityCooldown, this.hero.respawnCountdown)
     if (ruleset >= 9) values.push(this.completedEndlessWaves, this.terrain?.plots.length ?? 0)
     if (ruleset >= 10) {
-      values.push(this.bankedUnlockXp, ...Object.keys(towerTrees).map(k => this.sharedMythics.has(k as TowerKind) ? 1 : 0))
+      values.push(this.bankedUnlockXp, ...Object.keys(towerTrees).filter(k => ruleset >= 12 || k !== 'tidecaller').map(k => this.sharedMythics.has(k as TowerKind) ? 1 : 0))
       for (const t of this.towers) values.push(t.supportedDamage)
       for (const g of this.sandboxQueue) values.push(g.count, g.hp, g.lane, g.at)
     }
-    if (ruleset >= 11) values.push(this.combatRuleset ?? RULESET_VERSION, this.legacyCommandCount)
+    if (ruleset >= 11) values.push(this.combatRuleset ?? (ruleset === 11 ? 11 : RULESET_VERSION), this.legacyCommandCount)
+    if (ruleset >= 12) values.push(this.balanceRuleset, this.autoWaves ? 1 : 0, ...this.enemies.map(e => e.groundedUntil))
     return stateHash(values)
   }
 
@@ -160,7 +163,7 @@ export class Game implements World {
     this.engine.cancelCinematic()
     try {
       this.isWatches = false
-      this.startLevel(level, session.difficulty, session.heroId, session.mode, { seed: session.seed, hunt: session.hunt, combatRuleset: session.combatRuleset ?? (session.ruleset === 8 || session.ruleset === 9 ? session.ruleset : undefined) })
+      this.startLevel(level, session.difficulty, session.heroId, session.mode, { seed: session.seed, hunt: session.hunt, balanceRuleset: session.balanceRuleset ?? session.ruleset, combatRuleset: session.combatRuleset ?? (session.ruleset === 8 || session.ruleset === 9 ? session.ruleset : undefined) })
       this.onboarding = null
       this.legacyCommandCount = session.ruleset <= 9 ? session.commands.length : session.legacyCommandCount ?? 0
       let next = 0
@@ -194,7 +197,7 @@ export class Game implements World {
         || (session.stateHash !== undefined && this.sessionStateHash(session.ruleset) !== session.stateHash)) {
         throw new Error('Saved battle did not reproduce its recorded state')
       }
-      this.journal = { ...session, ...(this.combatRuleset ? { combatRuleset: this.combatRuleset, legacyCommandCount: this.legacyCommandCount } : {}), ruleset: RULESET_VERSION, commands: session.commands.map(entry => ({ tick: entry.tick, cmd: { ...entry.cmd } })) }
+      this.journal = { ...session, balanceRuleset: this.balanceRuleset, ...(this.combatRuleset ? { combatRuleset: this.combatRuleset, legacyCommandCount: this.legacyCommandCount } : {}), ruleset: RULESET_VERSION, commands: session.commands.map(entry => ({ tick: entry.tick, cmd: { ...entry.cmd } })) }
       this.sessionSaveT = 0
       this.sessionWriteWarned = false
       succeeded = true
@@ -313,7 +316,7 @@ export class Game implements World {
    * foundation so a board cannot simply be raised wholesale.
    */
   raisePlot(plot: PlotInfo): void {
-    if (this.paused || !this.terrain || plot.raised) return
+    if (this.paused || !this.terrain || plot.raised || plot.water) return
     if (this.terrain.isOnHill(...plot.cell)) return
     if (this.route({ kind: 'raise', plot: plot.index })) return
     const cost = this.nextRaiseCost()
@@ -674,7 +677,7 @@ export class Game implements World {
         if (this.completedEndlessWaves % EXPANSION_EVERY === 0) this.hud.showToast('New plot earned! Tap Plot to build on any clear ground.', 6)
       }
       const waveNo = e.waveTag + 1
-      const clearBonus = 10 + waveNo * 3 + (this.hunt ? huntClearGold(waveNo) : 0)
+      const clearBonus = 10 + waveNo * 3 + (this.hunt ? huntClearGold(waveNo, this.balanceRuleset) : 0)
       this.addGold(clearBonus)
       if (track.leaked) {
         const end = e.lane.sample(e.lane.length - 0.5)
@@ -1031,9 +1034,9 @@ export class Game implements World {
     return hasArmory(this.loadout, 'secondwind') ? 0.5 : 1
   }
 
-  /** Full Salvage: sell for everything invested rather than 70% */
+  /** Expert Salvage: 90% back; saved battles retain their original refund. */
   get sellRefund(): number {
-    return hasArmory(this.loadout, 'salvage') ? 1 : SELL_REFUND
+    return hasArmory(this.loadout, 'salvage') ? this.balanceRuleset <= 11 ? 1 : 0.9 : SELL_REFUND
   }
 
   /** Gate Ward: eat the first leak of the battle */
@@ -1198,7 +1201,7 @@ export class Game implements World {
   }
 
   private applyCoopCommand(cmd: CoopCommand, seat: number): void {
-    if (this.coop && this.paused && cmd.kind !== 'hold' && cmd.kind !== 'shareMastery') return
+    if (this.coop && this.paused && cmd.kind !== 'hold' && cmd.kind !== 'shareMastery' && cmd.kind !== 'autoWaves') return
     if (this.coop && (cmd.kind === 'meteor' || cmd.kind === 'reinforce') && this.abilities[cmd.kind].cooldown > 0) return
     if (this.coop) this.recordCommand(cmd)
     this.applying = true
@@ -1220,6 +1223,11 @@ export class Game implements World {
         case 'overcharge': if (t) this.overchargeTower(t); break
         case 'overchargeAll': this.overchargeAll(); break
         case 'expand': this.expandPlot(cmd.c, cmd.r); break
+        case 'waterBuild': {
+          const water = this.terrain?.waterPlot(cmd.c, cmd.r)
+          if (water) this.buildTower('tidecaller', water)
+          break
+        }
         case 'policy': if (t) this.cycleTargetPolicy(t); break
         case 'trackline': if (t) this.clearHoldLine(t); break
         case 'holdline': if (t) this.performTarget('holdline', cmd.x, cmd.z, t); break
@@ -1229,6 +1237,7 @@ export class Game implements World {
         case 'earthwork': { const es = this.terrain?.earthworkSpots.find(o => o.index === cmd.spot); if (es) this.buildEarthwork(es); break }
         case 'raise': if (plot) this.raisePlot(plot); break
         case 'wave': this.callWave(); break
+        case 'autoWaves': this.autoWaves = cmd.on; break
         case 'heroMove': if (this.hero && !this.hero.dead) this.hero.orderMove(new THREE.Vector3(cmd.x, 0, cmd.z), this); break
         case 'heroSig': this.castHeroSignature(); break
         case 'heroRank': this.upgradeHeroSignature(); break
@@ -1549,12 +1558,14 @@ export class Game implements World {
     difficulty: Difficulty = 'normal',
     heroId: HeroId = 'aldric',
     mode: 'campaign' | 'endless' | 'sandbox' = 'campaign',
-    opts: { combatRuleset?: 8 | 9, hunt?: HuntId, seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean, trial?: TrialDef, coop?: { session: CoopSession, loadout: { armory: Record<string, number>, xp: number, honors?: string[], heroPaths?: Record<string, string>, stars?: Record<string, number> } } } = {},
+    opts: { balanceRuleset?: number, combatRuleset?: 8 | 9, hunt?: HuntId, seed?: number, resume?: Checkpoint, daily?: number, watches?: boolean, bellfoundry?: boolean, trial?: TrialDef, coop?: { session: CoopSession, loadout: { armory: Record<string, number>, xp: number, honors?: string[], heroPaths?: Record<string, string>, stars?: Record<string, number> } } } = {},
   ): void {
     if (!Object.hasOwn(HERO_DEFS, heroId)) heroId = 'aldric'
     this.disposeLevel()
     this.legacyCommandCount = 0
     this.legacyAccess = false
+    this.balanceRuleset = opts.balanceRuleset ?? RULESET_VERSION
+    this.autoWaves = true
     this.combatRuleset = opts.combatRuleset
     this.legacyCombat = this.combatRuleset !== undefined
     this.isSandbox = mode === 'sandbox'
@@ -1735,7 +1746,7 @@ export class Game implements World {
     else if (level.intro) this.hud.showToast(level.intro, 5)
     if (!resume && !this.isDaily && !this.isWatches && !this.isBellfoundry && !this.trial) {
       this.journal = {
-        ruleset: RULESET_VERSION, ...(this.combatRuleset ? { combatRuleset: this.combatRuleset } : {}), levelId: level.id, difficulty, heroId, mode,
+        ruleset: RULESET_VERSION, balanceRuleset: this.balanceRuleset, ...(this.combatRuleset ? { combatRuleset: this.combatRuleset } : {}), levelId: level.id, difficulty, heroId, mode,
         ...(this.hunt ? { hunt: this.hunt.id } : {}), seed: this.runSeed, tick: 0,
         commands: [], initialSave: JSON.parse(JSON.stringify(this.roster)) as SaveData,
         savedAt: Date.now(), wave: 0,
@@ -2553,6 +2564,13 @@ export class Game implements World {
         else this.heroHasMoved = true
         return
       }
+    } else if (this.terrain) {
+      this.rayFromScreen(sx, sy)
+      const hit = this.raycaster.intersectObjects(this.terrain.group.children.filter(o => o instanceof THREE.Mesh), false)[0]?.point
+      if (hit) {
+        const water = this.terrain.waterPlot(...this.terrain.worldToCell(hit.x, hit.z))
+        if (water) { this.selectPlot(water, sx, sy); return }
+      }
     }
     this.clearSelection()
   }
@@ -2620,7 +2638,7 @@ export class Game implements World {
   private aimPoint(sx: number, sy: number): THREE.Vector3 | null {
     if (this.targetMode !== 'expand' || !this.terrain) return this.groundPoint(sx, sy)
     this.rayFromScreen(sx, sy)
-    return this.raycaster.intersectObjects(this.terrain.group.children, true)[0]?.point ?? this.groundPoint(sx, sy)
+    return this.raycaster.intersectObjects(this.terrain.group.children.filter(o => o instanceof THREE.Mesh), false)[0]?.point ?? this.groundPoint(sx, sy)
   }
 
   private targetValid(g: THREE.Vector3): boolean {
@@ -2933,13 +2951,18 @@ export class Game implements World {
   buildTower(kind: TowerKind, plot: PlotInfo | null = this.selectedPlot): void {
     if (this.paused) return
     if (!plot || plot.occupied) return
-    if (this.route({ kind: 'build', plot: plot.index, tower: kind })) { this.hud.closeBuildMenu(); return }
+    if ((kind === 'tidecaller') !== !!plot.water) return
+    if (this.route(plot.water && plot.index < 0 ? { kind: 'waterBuild', c: plot.cell[0], r: plot.cell[1] } : { kind: 'build', plot: plot.index, tower: kind })) { this.hud.closeBuildMenu(); return }
     // the ladder is enforced here, not only in the menu, so a stale button or a
     // scripted call cannot build what the account has not earned
     if (!this.towerUnlocked(kind)) { this.sfx('error'); return }
     if (this.trial && !this.trial.kinds.includes(kind)) { this.sfx('error'); this.hud.showToast(`${this.trial.name}: that family is not on this board`, 2.4); return }
     const cost = towerTrees[kind].levels[0].cost
     if (this.gold < cost) { this.sfx('error'); this.hud.flashGold(); return }
+    if (plot.water && plot.index < 0) {
+      plot = this.terrain?.waterPlot(...plot.cell, true) ?? null
+      if (!plot) return
+    }
     this.gold -= cost
     plot.occupied = true
     const tower = new Tower(kind, plot, this)
@@ -3137,7 +3160,7 @@ export class Game implements World {
     if (this.paused) return
     if (this.route({ kind: 'sellTrap', spot: trap.spot.index })) return
     if (trap.kills > 0 || trap.damage > 0) this.retiredKillers.push({ name: trap.def.name, kills: trap.kills, damage: trap.damage })
-    const refund = Math.round(trap.def.cost * (hasArmory(this.loadout, 'salvage') ? 1 : 0.6))
+    const refund = Math.round(trap.def.cost * (hasArmory(this.loadout, 'salvage') ? this.sellRefund : 0.6))
     this.addGold(refund, trap.group.position.x, 0.4, trap.group.position.z)
     this.goldEarned -= refund  // refunds are not earnings
     trap.spot.occupied = false
@@ -3399,12 +3422,13 @@ export class Game implements World {
 
   callWave(): void {
     if (!this.waves || this.isSandbox || this.phase !== 'playing' || this.paused) return
+    if (!this.autoWaves && this.enemies.some(e => e.alive)) return
     if (this.route({ kind: 'wave' })) return
     // Silent Guns: the siege is one wave and it is not called in early
     if (this.trial && !this.trial.earlyCall && this.waves.waveIndex >= 0) { this.sfx('error'); return }
-    const secondsLeft = this.waves.countdown
+    const secondsLeft = this.autoWaves ? this.waves.countdown : 0
     const surgeNext = this.waves.nextWaveIsSurge()
-    const bonus = this.waves.callNext()
+    const bonus = this.waves.callNext(this.autoWaves)
     // when a wave was called is a player decision like any other, and a replay
     // that cannot reproduce the timing cannot reproduce the run
     this.replay.record({ t: this.time, kind: 'wave', index: this.waves.waveIndex })
@@ -3437,6 +3461,12 @@ export class Game implements World {
     }
     this.paused = !this.paused
     this.hud.setPaused(this.paused)
+  }
+
+  setAutoWaves(on: boolean): void {
+    if (this.phase !== 'playing' || this.recovering || this.isSandbox) return
+    if (this.route({ kind: 'autoWaves', on })) return
+    this.autoWaves = on
   }
 
   toggleSpeed(): void {
@@ -3608,7 +3638,7 @@ export class Game implements World {
       }
     }
     this.time += dt
-    if (!this.isSandbox) this.waves!.update(dt)
+    if (!this.isSandbox) this.waves!.update(dt, this.autoWaves)
     else {
       const next = this.sandboxQueue[0]
       if (next && this.time >= next.at) {

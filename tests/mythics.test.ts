@@ -72,7 +72,7 @@ describe('all-family Mythic roster', () => {
       tower.update(0.4, (tower as unknown as { world: World }).world)
       expect(tower.model.scale.toArray().every(Number.isFinite)).toBe(true)
     }
-    expect(new Set(roster).size).toBe(14)
+    expect(new Set(roster).size).toBe(Object.keys(towerTrees).length * 2)
   })
 
   it('rejects tier seven and invalid option indices', () => {

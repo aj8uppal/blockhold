@@ -60,14 +60,15 @@ describe('authored boss hunts', () => {
     resolve()
     expect(game.gold).toBe(0)
     resolve()
-    expect(game.gold).toBe(913)
+    expect(game.gold).toBe(1163)
     resolve()
-    expect(game.gold).toBe(913)
+    expect(game.gold).toBe(1163)
     expect(game.perfectWaves).toBe(0)
   })
 
   it('never grants approach funding for the final wave, freeplay, or malformed wave numbers', () => {
-    expect(Array.from({ length: 9 }, (_, i) => huntClearGold(i + 1)).reduce((a, b) => a + b)).toBe(8100)
+    expect(Array.from({ length: 9 }, (_, i) => huntClearGold(i + 1)).reduce((a, b) => a + b)).toBe(10350)
+    expect(huntClearGold(1, 11)).toBe(900)
     for (const wave of [-1, 0, 1.5, 10, 11, 100, NaN, Infinity]) expect(huntClearGold(wave)).toBe(0)
   })
 })

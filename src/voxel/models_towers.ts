@@ -1,3 +1,4 @@
+import { tidecallerModel } from './models_tidecaller.ts'
 import { VoxModel, VoxBox, box } from './builder.ts'
 
 /**
@@ -908,6 +909,7 @@ function godsbaneRam(): VoxModel {
 // ---------------- registry ----------------
 
 export type TowerModelId =
+  | 'tidecaller1' | 'tidecaller2' | 'tidecaller3' | 'tidecaller4a' | 'tidecaller4b' | 'tidecaller5a' | 'tidecaller5b' | 'tidecaller6a' | 'tidecaller6b'
   | 'arrow1' | 'arrow2' | 'arrow3' | 'arrow4a' | 'arrow4b' | 'arrow5a' | 'arrow5b'
   | 'mage1' | 'mage2' | 'mage3' | 'mage4a' | 'mage4b' | 'mage5a' | 'mage5b'
   | 'cannon1' | 'cannon2' | 'cannon3' | 'cannon4a' | 'cannon4b' | 'cannon5a' | 'cannon5b'
@@ -934,6 +936,16 @@ function masteryModel(model: VoxModel, family: string, branch: number): VoxModel
 }
 
 const factories: Record<TowerModelId, () => VoxModel> = {
+  tidecaller1: () => tidecallerModel(1, 0),
+  tidecaller2: () => tidecallerModel(2, 0),
+  tidecaller3: () => tidecallerModel(3, 0),
+  tidecaller4a: () => tidecallerModel(4, 0),
+  tidecaller4b: () => tidecallerModel(4, 1),
+  tidecaller5a: () => tidecallerModel(5, 0),
+  tidecaller5b: () => tidecallerModel(5, 1),
+  tidecaller6a: () => tidecallerModel(6, 0),
+  tidecaller6b: () => tidecallerModel(6, 1),
+
   arrow6a: () => masteryModel(crownwingAerie(0), 'arrow', 0), arrow6b: () => masteryModel(crownwingAerie(1), 'arrow', 1),
   mage6a: () => masteryModel(convergenceMonolith(0), 'mage', 0), mage6b: () => masteryModel(convergenceMonolith(1), 'mage', 1),
   cannon6a: () => masteryModel(faultlineArsenal(0), 'cannon', 0), cannon6b: () => masteryModel(faultlineArsenal(1), 'cannon', 1),
@@ -973,6 +985,16 @@ export function towerModel(id: TowerModelId): VoxModel {
 
 /** world-space height where projectiles originate */
 export const muzzleHeights: Record<TowerModelId, number> = {
+  tidecaller1: 0.42,
+  tidecaller2: 0.49,
+  tidecaller3: 0.56,
+  tidecaller4a: 0.63,
+  tidecaller4b: 0.63,
+  tidecaller5a: 0.7,
+  tidecaller5b: 0.7,
+  tidecaller6a: 0.77,
+  tidecaller6b: 0.77,
+
   arrow6a: 2.3, arrow6b: 2.3, mage6a: 2.1, mage6b: 2.1, cannon6a: 1.25, cannon6b: 1.25,
   barracks6b: 1.8, beacon6a: 1.8, beacon6b: 1.8, ballista6a: 1.1, ballista6b: 1.1,
   barracks6a: 1.8, seraph6a: 2.9, seraph6b: 2.9,

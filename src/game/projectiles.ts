@@ -156,6 +156,17 @@ class BoltProjectile implements Projectile {
     world.particles.trail(this.pos.x, this.pos.y, this.pos.z, this.spec.color, 0.22)
     if (d <= step) {
       this.done = true
+      if (this.spec.splash) {
+        for (const enemy of world.enemies) {
+          if (!enemy.targetable || enemy.airborne || Math.hypot(enemy.pos.x - to.x, enemy.pos.z - to.z) > this.spec.splash + enemy.radius) continue
+          const dealt = enemy.takeDamage(this.spec.damage, 'magic', world, { credit: this.spec.credit })
+          if (dealt > 0 && this.spec.slow) enemy.applySlow(this.spec.slow.factor, this.spec.slow.duration, world)
+          if (dealt > 0 && this.spec.knockback) enemy.shove(this.spec.knockback)
+        }
+        world.particles.magicImpact(to.x, to.y, to.z, this.spec.color)
+        world.sfx('hit', .5)
+        return
+      }
       if (target.alive) {
         const dealt = target.takeDamage(this.spec.damage, 'magic', world, { mrPierce: this.spec.mrPierce, credit: this.spec.credit })
         if (dealt > 0) {
@@ -293,7 +304,7 @@ function explode(
     if (splash >= 0.6) world.impact('heavy')
   }
   for (const e of world.enemies) {
-    if (!e.targetable || e.def.flying) continue
+    if (!e.targetable || e.airborne) continue
     const d = e.pos.distanceTo(at)
     if (d <= splash + e.radius) {
       const falloff = 1 - 0.5 * (d / (splash + e.radius))
@@ -484,7 +495,7 @@ class SpearProjectile implements Projectile {
     // sweep the segment we just crossed, so a fast bolt cannot skip a body
     for (const e of world.enemies) {
       if (!e.targetable || this.struck.has(e)) continue
-      if (e.def.flying && !this.spec.hitsAir) continue
+      if (e.airborne && !this.spec.hitsAir) continue
       const d = distToSegmentXZ(e.pos, this.pos, next)
       if (d > SpearProjectile.HIT_RADIUS + e.radius) continue
       this.strike(e)
@@ -507,7 +518,7 @@ class SpearProjectile implements Projectile {
     this.struck.add(e)
     const order = this.hits++
     let dmg = this.spec.damage * (this.spec.pierceAll || order === 0 ? 1 : Math.pow(this.spec.falloff, order))
-    if (e.def.flying && this.spec.airMult) dmg *= this.spec.airMult
+    if (e.airborne && this.spec.airMult) dmg *= this.spec.airMult
     const dealt = e.takeDamage(dmg, 'physical', world, { credit, armorPierce })
     if (dealt <= 0) return
     world.particles.hitSpark(e.pos.x, e.pos.y + 0.4, e.pos.z)
@@ -518,7 +529,8 @@ class SpearProjectile implements Projectile {
     }
     // Heavensplitter: a flyer struck is knocked out of the air
     if (this.spec.skyfall && e.def.flying && e.alive) {
-      e.applyStun(1.5, world)
+      if ((world.balanceRuleset ?? 12) <= 11) e.applyStun(1.5, world)
+      else e.ground(1.5, world)
     }
   }
 
@@ -576,7 +588,7 @@ class RayProjectile implements Projectile {
         segment.updateMatrix()
         this.core.setMatrixAt(i * 3 + j, segment.matrix)
       }
-      const dealt = e.takeDamage(spec.damage, spec.damageType, world, { crit: spec.crit, credit: spec.credit, flavor: spec.damageType === 'magic' ? 'magic' : 'fire' })
+      const dealt = e.takeDamage(spec.damage, spec.damageType, world, { mrPierce: spec.mrPierce, crit: spec.crit, credit: spec.credit, flavor: spec.damageType === 'magic' ? 'magic' : 'fire' })
       if (dealt > 0) {
         if (spec.armorShred) e.shredArmor(spec.armorShred)
         // One small contact spark, even on critical volleys. Large burst
@@ -670,7 +682,7 @@ export function updateBurnZones(dt: number, world: World): void {
       )
     }
     for (const e of world.enemies) {
-      if (!e.alive || e.def.flying) continue
+      if (!e.alive || e.airborne) continue
       if (Math.hypot(e.pos.x - z.pos.x, e.pos.z - z.pos.z) < z.radius + e.radius) {
         e.takeDamage(z.dps * dt, 'true', world, { silent: true, credit: z.credit, flavor: 'fire' })
       }
@@ -743,7 +755,7 @@ export function updateMines(dt: number, world: World): void {
       : 0x6b4a30)
     if (!armed) continue
     for (const e of world.enemies) {
-      if (!e.targetable || e.def.flying) continue
+      if (!e.targetable || e.airborne) continue
       if (Math.hypot(e.pos.x - m.pos.x, e.pos.z - m.pos.z) < m.spec.trigger + e.radius) {
         removeMine(world, m)
         explode(world, m.pos, randRange(...m.spec.damage), m.spec.radius, m.spec.stunChance, m.spec.owner)

@@ -24,8 +24,8 @@ export const huntById = (id: string): HuntDef | undefined => HUNTS.find(h => h.i
 export const huntAccess = (save: Pick<SaveData, 'xp' | 'stars'>): boolean => levelForXp(save.xp) >= 25 || (save.stars.tidereach ?? 0) > 0
 
 /** Earn the capstone budget by clearing the approach; the final boss pays its own bounty. */
-export function huntClearGold(waveNo: number): number {
-  return Number.isInteger(waveNo) && waveNo >= 1 && waveNo < 10 ? 900 : 0
+export function huntClearGold(waveNo: number, balanceRuleset = 12): number {
+  return Number.isInteger(waveNo) && waveNo >= 1 && waveNo < 10 ? balanceRuleset <= 11 ? 900 : 1150 : 0
 }
 
 const g = (enemy: string, count: number, interval: number, delay = 0, lane = 0, hpMult = 1): WaveGroup =>
@@ -53,7 +53,7 @@ export function huntLevel(id: HuntId): LevelDef {
     breakAfter: i === 5 || i === 8 ? 48 : 40,
   }))
   return { ...base, id: `hunt-${id}`, name: hunt.name, subtitle: 'Boss hunt · ten waves',
-    theme: air ? 'void' : 'ashfall', hazard: undefined, waves, flatScale: true,
+    theme: air ? 'void' : 'ashfall', liquid: 'water', hazard: undefined, waves, flatScale: true,
     startGold: 6400, startShards: 10, intro: hunt.briefing }
 }
 

@@ -27,8 +27,8 @@ function chip(label: string, value: string, cls = ''): string {
   return `<span class="chip${cls ? ' ' + cls : ''}"${cls.split(' ').includes('lit') ? ' title="Boosted · see Combat details"' : ''}><span class="chip-label">${label}</span><span class="chip-value">${value}</span></span>`
 }
 
-const TOWER_ICONS: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm', beacon: 'flame', ballista: 'target', seraph: 'seraph' }
-const TOWER_NAMES: Record<TowerKind, string> = { arrow: 'Arrow', mage: 'Mage', cannon: 'Cannon', barracks: 'Barracks', beacon: 'Beacon', ballista: 'Ballista', seraph: 'Seraph' }
+const TOWER_ICONS: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm', beacon: 'flame', ballista: 'target', seraph: 'seraph', tidecaller: 'wave' }
+const TOWER_NAMES: Record<TowerKind, string> = { arrow: 'Arrow', mage: 'Mage', cannon: 'Cannon', barracks: 'Barracks', beacon: 'Beacon', ballista: 'Ballista', seraph: 'Seraph', tidecaller: 'Tidecaller' }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, html?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag)
@@ -203,6 +203,7 @@ export class HUD {
   }
 
   private heroBtn!: HTMLButtonElement
+  private waveMode!: HTMLSelectElement
 
   private coopEl!: HTMLElement
   /** the room this battle is shared with, or nothing */
@@ -276,13 +277,13 @@ export class HUD {
       }
       this.abilityBtns[key] = btn
     }
-    mk('meteor', 'meteor', 'Meteor Storm', '3', 'Rain three meteors on a target area (true damage + stun). Hotkey 3.')
-    mk('reinforce', 'shield', 'Reinforcements', '4', 'Summon two militia anywhere on the road for 14s. Hotkey 4.')
+    mk('reinforce', 'shield', 'Reinforcements', '3', 'Summon two militia anywhere on the road for 14s. Hotkey 3.')
+    mk('meteor', 'meteor', 'Meteor Storm', '4', 'Rain three meteors on a target area (true damage + stun). Hotkey 4.')
     // the hero's signature used to fire itself; it is the player's to spend now
     this.signatureBtn = el('button', 'ability', bar) as HTMLButtonElement
     this.signatureBtn.innerHTML =
       `<span class="ability-icon">${icon('quake')}</span><span class="cd-sweep"></span><span class="hotkey">2</span><span class="ability-caption">Ability</span>`
-    bar.insertBefore(this.signatureBtn, this.abilityBtns.meteor)
+    bar.insertBefore(this.signatureBtn, this.abilityBtns.reinforce)
     this.overchargeAllBtn = el('button', 'ability overcharge-all hidden', bar) as HTMLButtonElement
     this.overchargeAllBtn.onclick = () => this.game.overchargeAll()
     this.expansionBtn = el('button', 'ability expansion-button hidden', bar) as HTMLButtonElement
@@ -379,6 +380,12 @@ export class HUD {
     quality.value = this.game.engine.qualityPreference
     quality.onchange = () => this.game.engine.setQuality(quality.value as QualityPreference)
     el('small', 'quality-note', card, 'Low reduces detail and shadows. Battery saver also draws at 30 fps. Combat speed stays the same.')
+    const wavesLabel = el('label', 'quality-setting', card, 'Wave flow ')
+    this.waveMode = el('select', '', wavesLabel) as HTMLSelectElement
+    this.waveMode.setAttribute('aria-label', 'Wave flow')
+    this.waveMode.innerHTML = '<option value="auto">Keep waves coming</option><option value="manual">Wait between rounds</option>'
+    this.waveMode.onchange = () => this.game.setAutoWaves(this.waveMode.value === 'auto')
+    el('small', 'quality-note', card, 'Wait between rounds clears the field, then lets you start the next wave. Manual waves give no early-call bonus.')
     this.coopSwitchBtn = el('button', 'btn ghost pause-coop', card, 'Invite a friend to this battle') as HTMLButtonElement
     this.coopSwitchBtn.onclick = () => this.onCoopSwitch()
     this.inviteBtn = el('button', 'btn ghost pause-invite hidden', card, 'Copy invite link') as HTMLButtonElement
@@ -506,6 +513,8 @@ export class HUD {
       }
     }
     const w = game.waves
+    this.waveMode.value = game.autoWaves ? 'auto' : 'manual'
+    this.waveMode.disabled = game.isSandbox
     if (w) {
       const waveText = game.isSandbox ? 'Sandbox' : game.isEndless
         ? `${Math.max(1, w.waveIndex + 1)}/∞`
@@ -522,7 +531,7 @@ export class HUD {
       let btnText = ''
       const noCall = !!game.trial && !game.trial.earlyCall && w.waveIndex >= 0
       if (!game.isSandbox && game.phase === 'playing' && w.phase === 'countdown' && !w.isLastWaveStarted && !noCall) {
-        const bonus = w.earlyCallBonus()
+        const bonus = game.autoWaves ? w.earlyCallBonus() : 0
         const secs = Math.ceil(w.countdown)
         // the whole bargain: the gold, the shard a defied surge pays, and what is still out there
         const onField = game.enemies.filter(e => e.alive).length
@@ -531,6 +540,7 @@ export class HUD {
         btnText = w.waveIndex < 0
           ? `${icon('swords')} Begin assault <span class="call-sub">${secs}s · +${bonus}${icon('coin')}${shard}<span class="call-explanation"> if called now${surgeWarn}</span></span>`
           : `${icon('swords')} Call wave ${w.waveIndex + 2} <span class="call-sub">${secs}s · +${bonus}${icon('coin')}${shard}<span class="call-explanation"> early bonus${surgeWarn}</span></span>`
+        if (!game.autoWaves) btnText = onField > 0 ? '' : `${icon('swords')} ${w.waveIndex < 0 ? 'Begin assault' : `Start wave ${w.waveIndex + 2}`}`
       }
       if (btnText !== this.lastWaveBtnText) {
         this.lastWaveBtnText = btnText
@@ -725,6 +735,7 @@ export class HUD {
 
   private resetBuildMenu(): void {
     this.buildMenu.innerHTML = ''
+    this.buildMenu.style.gridTemplateColumns = ''
     const head = el('div', 'build-head', this.buildMenu)
     const label = el('div', '', head)
     el('b', '', label, 'Build')
@@ -738,7 +749,11 @@ export class HUD {
   openBuildMenu(plot: PlotInfo, x: number, y: number): void {
     this.armedBuild = null
     this.resetBuildMenu()
-    const kinds: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks', 'ballista', 'beacon', 'seraph']
+    if (plot.water) {
+      this.buildMenu.style.gridTemplateColumns = '1fr'
+      this.buildMenu.querySelector('.build-head b')!.textContent = 'Build on water'
+    }
+    const kinds: TowerKind[] = plot.water ? ['tidecaller'] : ['arrow', 'mage', 'cannon', 'barracks', 'ballista', 'beacon', 'seraph']
     for (const kind of kinds) {
       const def = towerTrees[kind].levels[0]
       // a tower the account has not reached stays on the menu, greyed and
@@ -774,7 +789,7 @@ export class HUD {
       btn.classList.toggle('poor', this.game.gold < def.cost)
     }
     // the ground itself is buildable: raise this foundation before or after a tower goes on it
-    if (!plot.raised) this.raiseOption(this.buildMenu, plot, 'build-option trap-option')
+    if (!plot.raised && !plot.water) this.raiseOption(this.buildMenu, plot, 'build-option trap-option')
     const tip = el('div', 'build-tooltip hidden', this.buildMenu)
     tip.id = 'build-tip'
     this.placeMenu(x, y)
@@ -1316,12 +1331,12 @@ export class HUD {
     const sell = el('button', 'btn small sell', row, `Sell ${icon('coin')}${tower.sellValue}`) as HTMLButtonElement
     this.confirmOnTouch(sell, `Sell for ${tower.sellValue}? Tap again`, () => this.game.sellTower(tower))
     // the ground under a standing tower can be raised too; a raised one says so
-    if (!tower.plot.raised) {
+    if (!tower.plot.raised && !tower.plot.water) {
       const raise = el('div', 'tp-row', actions)
       this.raiseOption(raise, tower.plot, 'btn small raise')
       const tip = el('div', 'build-tooltip hidden', actions)
       tip.id = 'build-tip'
-    } else {
+    } else if (tower.plot.raised) {
       el('div', 'tp-traits', p, `${icon('quake')} Standing on raised ground.`)
     }
 

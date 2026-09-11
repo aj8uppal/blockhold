@@ -9,6 +9,8 @@ export interface BattleSession {
   ruleset: number
   /** Original battle balance; old journals keep their combat rules when recovered. */
   combatRuleset?: 8 | 9
+  /** Preserve the economics and mechanics used to start a saved battle. */
+  balanceRuleset?: number
   /** Historical orders obey their original purchase gates; later play uses current access. */
   legacyCommandCount?: number
   levelId: string
@@ -35,7 +37,7 @@ const KEY = 'blockhold.session.v1'
 export const SESSION_MAX_TICKS = 60 * 60 * 12 * 60
 export const SESSION_MAX_COMMANDS = 20_000
 const MAX_BYTES = 4_000_000
-const TOWERS: readonly TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks', 'beacon', 'ballista', 'seraph']
+const TOWERS: readonly TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks', 'beacon', 'ballista', 'seraph', 'tidecaller']
 const TRAPS: readonly TrapKind[] = ['spike', 'frost', 'blast']
 let lastReadIssue: SessionReadIssue | null = null
 
@@ -59,6 +61,7 @@ export function parseBattleCommand(value: unknown): CoopCommand | null {
   if (!record(value)) return null
   const { kind, plot, spot, x, z } = value
   switch (kind) {
+    case 'autoWaves': return typeof value.on === 'boolean' ? { kind, on: value.on } : null
     case 'shareMastery':
       return Array.isArray(value.families) && value.families.length <= TOWERS.length
         && value.families.every(f => TOWERS.includes(f as TowerKind))
@@ -101,6 +104,7 @@ export function parseBattleCommand(value: unknown): CoopCommand | null {
     case 'hold':
       return { kind }
     case 'expand':
+    case 'waterBuild':
       return integer(value.c, 4095) && integer(value.r, 4095) ? { kind, c: value.c, r: value.r } : null
     default:
       return null
@@ -108,7 +112,8 @@ export function parseBattleCommand(value: unknown): CoopCommand | null {
 }
 
 function validate(value: unknown): BattleSession | null {
-  if (!record(value) || value.ruleset !== RULESET_VERSION && value.ruleset !== 10 && value.ruleset !== 9 && value.ruleset !== 8) return null
+  if (!record(value) || !integer(value.ruleset, RULESET_VERSION, 8)) return null
+  if (value.balanceRuleset !== undefined && !integer(value.balanceRuleset, RULESET_VERSION, 8)) return null
   if (value.combatRuleset !== undefined && value.combatRuleset !== 8 && value.combatRuleset !== 9) return null
   if (typeof value.levelId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(value.levelId)) return null
   if (value.hunt !== undefined && value.hunt !== 'ossuary' && value.hunt !== 'empress') return null
@@ -137,6 +142,7 @@ function validate(value: unknown): BattleSession | null {
   if (!initialSave) return null
   return {
     ruleset: value.ruleset as number,
+    ...(value.balanceRuleset === undefined ? {} : { balanceRuleset: value.balanceRuleset as number }),
     ...(value.combatRuleset === undefined ? {} : { combatRuleset: value.combatRuleset as 8 | 9 }),
     ...(value.legacyCommandCount === undefined ? {} : { legacyCommandCount: value.legacyCommandCount as number }),
     levelId: value.levelId,
@@ -183,7 +189,7 @@ export function readSession(): BattleSession | null {
   try {
     if (raw.length > MAX_BYTES) { lastReadIssue = { kind: 'invalid' }; return null }
     const value: unknown = JSON.parse(raw)
-    if (record(value) && integer(value.ruleset, Number.MAX_SAFE_INTEGER) && value.ruleset !== RULESET_VERSION && value.ruleset !== 10 && value.ruleset !== 9 && value.ruleset !== 8) {
+    if (record(value) && integer(value.ruleset, Number.MAX_SAFE_INTEGER) && !integer(value.ruleset, RULESET_VERSION, 8)) {
       lastReadIssue = { kind: 'incompatible', savedRuleset: value.ruleset, currentRuleset: RULESET_VERSION }
       return null
     }

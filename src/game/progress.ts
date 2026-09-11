@@ -47,6 +47,7 @@ export interface UnlockDef {
 export const UNLOCKS: UnlockDef[] = [
   { level: 5, kind: 'hero', id: 'liora', name: 'Liora the Gale Warden', blurb: 'A ranged champion who strikes the sky. Piercing Volley.' },
   { level: 10, kind: 'hero', id: 'zephyra', name: 'Zephyra the Stormcaller', blurb: 'Armor-ignoring bolts and a slowing Static Nova.' },
+  { level: 12, kind: 'tower', id: 'tidecaller', name: 'The Tidecaller', blurb: 'Tap open water to build. Choose powerful wave bursts or slowing currents.' },
   { level: 15, kind: 'tower', id: 'ballista', name: 'The Ballista', blurb: 'A bolt that flies in a line and strikes everything along it.' },
   { level: 20, kind: 'tower', id: 'beacon', name: 'The Beacon', blurb: 'Never attacks. Makes every tower in its light stronger.' },
   { level: 25, kind: 'tower', id: 'seraph', name: 'The Seraph', blurb: 'Three beams per volley. Choose wide solar volleys or concentrated void beams.' },

@@ -1,4 +1,5 @@
 import historicalBattle from './fixtures/seraph-v9-battle.json'
+import previousBattle from './fixtures/seraph-v11-battle.json'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { Game } from '../src/game/game.ts'
@@ -15,6 +16,8 @@ import { OVERCHARGE_SHARD_COST } from '../src/game/types.ts'
 import type { CoopEvent, CoopSession, CoopSetup } from '../src/core/coop.ts'
 import { xpForLevel } from '../src/game/progress.ts'
 import { RULESET_VERSION } from '../src/game/ruleset.ts'
+import { createProjectile } from '../src/game/projectiles.ts'
+import type { Tower } from '../src/game/towers.ts'
 
 vi.mock('../src/core/audio.ts', async importOriginal => ({
   ...await importOriginal<typeof import('../src/core/audio.ts')>(),
@@ -98,6 +101,169 @@ function setupFor(battle: BattleSession): CoopSetup {
 }
 
 describe('actual Game session recovery', () => {
+  it('Tidecaller pulses hit groups on the ground, spare flyers, and apply their branch effects', () => {
+    for (const branch of [0, 1]) {
+      const game = makeGame()
+      game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 15 })
+      let built = false
+      for (let r = 0; r < game.level!.height && !built; r++) for (let c = 0; c < game.level!.width && !built; c++) {
+        const plot = game.terrain!.waterPlot(c, r)
+        if (plot) { game.buildTower('tidecaller', plot); built = true }
+      }
+      const tower = game.towers[0]
+      for (let i = 0; i < 4; i++) game.upgradeTower(tower, i === 2 ? branch : 0)
+      game.spawnEnemyAt('husk', 0, 5, { hpMult: 100 })
+      game.spawnEnemyAt('husk', 0, 5.3, { hpMult: 100 })
+      game.spawnEnemyAt('gargoyle', 0, 5.3, { hpMult: 100 })
+      const [first, second, flyer] = game.enemies, hp = game.enemies.map(e => e.hp)
+      const projectiles: Parameters<Game['fireProjectile']>[0][] = []
+      game.fireProjectile = spec => { projectiles.push(spec) }
+      const count = branch === 0 ? 4 : 5
+      for (let i = 0; i < count; i++) (tower as unknown as { fire(e: typeof first, world: Game): void }).fire(first, game)
+      expect(tower.signatureReadout(game.time)!.text).toContain(`in ${count}`)
+      const spec = projectiles.at(-1)!
+      expect(spec.kind).toBe('bolt')
+      spec.from.copy(first.pos)
+      const shot = createProjectile(spec)
+      shot.update(.2)
+      expect(first.hp).toBeLessThan(hp[0])
+      expect(second.hp).toBeLessThan(hp[1])
+      expect(flyer.hp).toBe(hp[2])
+      if (branch === 1) {
+        expect(first.slowUntil).toBeGreaterThan(game.time)
+        expect(first.dist).toBeLessThan(5)
+      } else if (spec.kind === 'bolt') expect(spec.splash).toBeCloseTo(tower.def.splash! * 1.3)
+      game.disposeLevel()
+    }
+  })
+
+  it('new Seraph upgrades require more gold and Salvage always loses ten percent', () => {
+    const game = makeGame()
+    game.save = parseSave({ xp: 20000, taughtBasics: true, armory: { salvage: 1 } })!
+    game.startLevel(huntLevel('ossuary'), 'normal', 'aldric', 'campaign', { hunt: 'ossuary', seed: 14 })
+    const gold = game.gold
+    game.buildTower('seraph', game.terrain!.plots[0])
+    const tower = game.towers[0]
+    expect(tower.upgradeOptions[0].cost).toBe(2200)
+    game.upgradeTower(tower, 0)
+    expect(tower.upgradeOptions[0].cost).toBe(3400)
+    game.upgradeTower(tower, 0)
+    expect(tower.level).toBe(2) // cannot afford tier three from the starting purse
+    game.sellTower(tower)
+    expect(game.gold).toBe(gold - 325)
+    const beforeTrap = game.gold
+    game.buildTrap('spike', game.terrain!.trapSpots[0])
+    const trap = game.traps[0]
+    expect(trap).toBeDefined()
+    game.sellTrap(trap)
+    expect(game.gold).toBe(beforeTrap - trap.def.cost + Math.round(trap.def.cost * .9))
+    game.disposeLevel()
+  })
+
+  it('Skyfall grounds a flyer, allows ground towers to target it, then releases it smoothly', () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 12 })
+    game.spawnEnemyAt('gargoyle', 0, 3, { hpMult: 100 })
+    const enemy = game.enemies[0], height = enemy.pos.y
+    const projectile = createProjectile({ kind: 'spear', from: enemy.pos.clone().add(new THREE.Vector3(-1, 0, 0)),
+      aim: enemy.pos.clone().add(new THREE.Vector3(2, 0, 0)), reach: 3, damage: 1, falloff: 1, hitsAir: true, skyfall: true, world: game })
+    projectile.update(.2)
+    expect(enemy.airborne).toBe(false)
+    game.buildTower('cannon', game.terrain!.plots[0])
+    const tower = game.towers[0] as Tower & { acquireTarget(world: Game): void, target: typeof enemy | null }
+    tower.pos.set(enemy.pos.x - 1, 0, enemy.pos.z)
+    tower.acquireTarget(game)
+    expect(tower.target).toBe(enemy)
+    ticks(game, 15)
+    expect(enemy.pos.y).toBeLessThan(height * .5)
+    ticks(game, 110)
+    expect(enemy.airborne).toBe(true)
+    tower.acquireTarget(game)
+    expect(tower.target).toBeNull()
+    expect(enemy.pos.y).toBeGreaterThan(height * .7)
+    game.disposeLevel()
+  })
+
+  it('Void beams pierce resistance while old battles keep their original damage', () => {
+    for (const balanceRuleset of [11, 12]) {
+      const game = makeGame()
+      game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 13, balanceRuleset })
+      game.buildTower('seraph', game.terrain!.plots[0])
+      for (let i = 0; i < 3; i++) game.upgradeTower(game.towers[0], i === 2 ? 1 : 0)
+      game.spawnEnemyAt('husk', 0, 3, { hpMult: 100 })
+      const enemy = game.enemies[0]; enemy.magicResistNow = .8
+      const hp = enemy.hp
+      ;(game.towers[0] as unknown as { fire(e: typeof enemy, world: Game): void }).fire(enemy, game)
+      const dealt = hp - enemy.hp
+      expect(dealt).toBeGreaterThan(balanceRuleset === 12 ? 64 : 12)
+      expect(dealt).toBeLessThan(balanceRuleset === 12 ? 100 : 20)
+      game.disposeLevel()
+    }
+  })
+
+  it('preserves an actual ruleset-eleven Seraph economy and original verified save', async () => {
+    const game = makeGame()
+    expect(await game.resumeSession(previousBattle as BattleSession)).toBe(true)
+    expect(game.balanceRuleset).toBe(11)
+    expect((game as unknown as Internals).sessionStateHash(11)).toBe(previousBattle.stateHash)
+    expect(game.towers[0].sellValue).toBe(4650)
+    expect(game.sellRefund).toBe(1)
+    expect(game.saveSession()).toBe(true)
+    const saved = readSession()!
+    expect(saved.balanceRuleset).toBe(11)
+    const before = snapshot(game)
+    expect(await game.resumeSession(saved)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    game.disposeLevel()
+  })
+
+  it('waits between rounds without granting early-call gold, and restores that setting', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'casual', 'aldric', 'campaign', { seed: 918 })
+    game.setAutoWaves(false)
+    const gold = game.gold
+    ticks(game, 1800)
+    expect(game.waves!.waveIndex).toBe(-1)
+    game.callWave()
+    expect(game.gold).toBe(gold)
+    ticks(game, 60)
+    game.callWave()
+    expect(game.waves!.waveIndex).toBe(0)
+    const session = game.exportBattleSession()!
+    const before = snapshot(game)
+    expect(await game.resumeSession(session)).toBe(true)
+    expect(game.autoWaves).toBe(false)
+    expect(snapshot(game)).toEqual(before)
+    game.disposeLevel()
+  })
+
+  it('buys only water towers on water and restores their full six-tier progression', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 919 })
+    const count = game.terrain!.plots.length
+    game.buildTower('tidecaller', game.terrain!.plots[0])
+    expect(game.towers).toHaveLength(0)
+    let cell: [number, number] | undefined
+    for (let r = 0; r < game.level!.height && !cell; r++) for (let c = 0; c < game.level!.width; c++)
+      if (game.terrain!.waterPlot(c, r)) { cell = [c, r]; break }
+    expect(cell).toBeDefined()
+    const water = game.terrain!.waterPlot(...cell!)!
+    game.buildTower('arrow', water)
+    expect(game.terrain!.plots).toHaveLength(count)
+    game.buildTower('tidecaller', water)
+    expect(game.terrain!.plots).toHaveLength(count + 1)
+    game.buildTower('tidecaller', water) // stale duplicate cannot add a second foundation
+    expect(game.towers).toHaveLength(1)
+    for (let i = 0; i < 5; i++) game.upgradeTower(game.towers[0], game.towers[0].level === 3 ? 1 : 0)
+    expect(game.towers[0].level).toBe(6)
+    expect(game.towers[0].def.name).toBe('Heart of Winter')
+    ticks(game, 60)
+    const before = snapshot(game), session = game.exportBattleSession()!
+    expect(await game.resumeSession(session)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    expect(game.towers[0].plot.water).toBe(true)
+    game.disposeLevel()
+  })
   it.each(['campaign', 'endless', 'bellfoundry', 'watches', 'daily', 'trial', 'hunt'] as const)(
     'retries %s with its own rules and resets those rules for the next campaign', mode => {
       const game = makeGame()

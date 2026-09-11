@@ -174,6 +174,10 @@ export class Enemy {
   state: EnemyState = 'walking'
   blockers: Soldier[] = []
   stunUntil = 0
+  groundedUntil = 0
+  private groundClock = 0
+  private landingBlend = 0
+  get airborne(): boolean { return !!this.def.flying && this.groundClock >= this.groundedUntil }
   private stunRecoveryUntil = 0
   poisons: { dps: number, until: number, credit?: KillCredit }[] = []
   slowUntil = 0
@@ -498,6 +502,13 @@ export class Enemy {
     world.particles.stunStars(this.pos.x, this.pos.y + this.barY, this.pos.z)
   }
 
+  ground(duration: number, world: World): void {
+    this.applyStun(duration, world)
+    this.groundClock = world.time
+    if (this.def.flying && this.alive && this.stunUntil > world.time)
+      this.groundedUntil = Math.max(this.groundedUntil, this.stunUntil)
+  }
+
   /** a weaker slow never overwrites a stronger active one; equal slows extend */
   applySlow(factor: number, duration: number, world: World): void {
     if (this.def.boss) factor = Math.max(0.65, factor)
@@ -635,6 +646,8 @@ export class Enemy {
     }
     if (this.state !== 'walking') return
 
+    this.groundClock = world.time
+    this.landingBlend += ((this.airborne ? 0 : 1) - this.landingBlend) * Math.min(1, dt * 12)
     const stunned = world.time < this.stunUntil
     // Stun stops travel; a hovering enemy still beats its wings.
     if (stunned && this.def.flying) this.animWalk(dt, 0)
@@ -854,7 +867,7 @@ export class Enemy {
       if (this.parts.wingL) this.parts.wingL.rotation.z = flap * span
       if (this.parts.wingR) this.parts.wingR.rotation.z = -flap * span
       if (big && this.parts.head) this.parts.head.rotation.x = Math.sin(t * 1.8) * 0.08
-      this.group.position.y = (this.def.yOffset ?? 0.85) + Math.sin(t * (big ? 1.7 : 2.2)) * (big ? 0.09 : 0.07)
+      this.group.position.y = ((this.def.yOffset ?? 0.85) + Math.sin(t * (big ? 1.7 : 2.2)) * (big ? 0.09 : 0.07)) * (1 - this.landingBlend)
       return
     }
     const cycle = Math.sin(t * (4.5 + speed * 5))
@@ -1143,7 +1156,7 @@ export class Soldier {
     }
 
     // acquire target (phased enemies slip free of melee)
-    if (this.target && (!this.target.targetable)) {
+    if (this.target && (!this.target.targetable || this.target.airborne)) {
       const bi = this.target.blockers.indexOf(this)
       if (bi >= 0) this.target.blockers.splice(bi, 1)
       this.target = null
@@ -1154,7 +1167,7 @@ export class Soldier {
       let best: Enemy | null = null
       let bestScore = Infinity
       for (const e of world.enemies) {
-        if (!e.targetable || e.def.flying || e.unreachable) continue
+        if (!e.targetable || e.airborne || e.unreachable) continue
         if (e.def.boss && this.def.shunBosses) continue
         if (e.blockers.length >= 3) continue
         const dHome = e.pos.distanceTo(this.home)

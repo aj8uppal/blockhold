@@ -12,9 +12,9 @@ import { familiesCompleted } from '../game/hold.ts'
  * actually flown, with the Hold raising a pennant for every family whose
  * both crowns are stamped. Cosmetic, deliberately - no power is behind it.
  */
-const FAMILIES: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks', 'ballista', 'beacon', 'seraph']
-const FAMILY_NAME: Record<TowerKind, string> = { arrow: 'Arrow', mage: 'Mage', cannon: 'Cannon', barracks: 'Barracks', beacon: 'Beacon', ballista: 'Ballista', seraph: 'Seraph' }
-const FAMILY_ICON: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm', beacon: 'flame', ballista: 'target', seraph: 'seraph' }
+const FAMILIES: TowerKind[] = ['arrow', 'mage', 'cannon', 'barracks', 'ballista', 'beacon', 'seraph', 'tidecaller']
+const FAMILY_NAME: Record<TowerKind, string> = { arrow: 'Arrow', mage: 'Mage', cannon: 'Cannon', barracks: 'Barracks', beacon: 'Beacon', ballista: 'Ballista', seraph: 'Seraph', tidecaller: 'Tidecaller' }
+const FAMILY_ICON: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm', beacon: 'flame', ballista: 'target', seraph: 'seraph', tidecaller: 'wave' }
 
 export const CAPSTONE_COUNT = FAMILIES.length * 2
 

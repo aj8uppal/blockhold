@@ -44,10 +44,11 @@ export interface EnemyDef {
   description: string
 }
 
-export type TowerKind = 'arrow' | 'mage' | 'cannon' | 'barracks' | 'beacon' | 'ballista' | 'seraph'
+export type TowerKind = 'arrow' | 'mage' | 'cannon' | 'barracks' | 'beacon' | 'ballista' | 'seraph' | 'tidecaller'
 
 /** the signature mechanic a tier-5 tower brings; one per capstone */
 export type CapstoneSignature =
+  | 'tidalSurge' | 'undertow'
   | 'crownVolley'      // every fifth attack sprays the lane
   | 'passThrough'      // a critical punches through to the enemy behind
   | 'convergenceRune'  // every fifth cast anchors a pulsing rune
@@ -78,6 +79,7 @@ export interface TowerLevelDef {
   damageType?: DamageType
   attackInterval?: number
   splash?: number            // explosion radius
+  slow?: { factor: number, duration: number }
   flying?: boolean           // can target flying
   /** Seraph fires this many independent beams at distinct enemies in range. */
   beamTargets?: number
@@ -229,6 +231,10 @@ export interface PerkDef {
 }
 
 export const PERKS: Record<TowerKind, [PerkDef, PerkDef]> = {
+  tidecaller: [
+    { id: 'radiance', name: 'Pressure Pump', icon: 'wave', description: '+20% damage.' },
+    { id: 'zenith', name: 'Long Current', icon: 'range', description: '+0.8 range.' },
+  ],
   arrow: [
     { id: 'hawkeye', name: 'Hawkeye', icon: 'eye', description: '+0.8 range.' },
     { id: 'serrated', name: 'Serrated Arrows', icon: 'blood', description: '+20% damage.' },
@@ -309,6 +315,8 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyMods> = {
 export type Rect = [number, number, number, number]
 
 export interface LevelDef {
+  /** Optional liquid override for themed encounters with freshwater reservoirs. */
+  liquid?: 'water' | 'lava'
   id: string
   name: string
   subtitle: string

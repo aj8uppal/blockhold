@@ -28,8 +28,9 @@
  *   9  Endless plot rewards, shared battle transfers and atomic bulk Overcharge.
  *  10  Sandbox commands, live tower unlocks, Seraph roles and mastery for every family.
  *  11  Pin recovered battles to their original combat rules.
+ *  12  Water towers, manual waves, grounding, resistance piercing and revised economics.
  */
-export const RULESET_VERSION = 11
+export const RULESET_VERSION = 12
 
 /** identifies a reproducible run */
 export interface RunStamp {

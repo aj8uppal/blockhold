@@ -1,9 +1,10 @@
+import { tidecallerTree } from './tidecaller.ts'
 import { mythicFor } from './mythics.ts'
 import { TowerTree, TowerKind, TowerLevelDef, SoldierDef } from './types.ts'
 
 export const towerTrees: Record<TowerKind, TowerTree> = {
   // beacon and ballista are assigned below, after their own definition
-  ...({} as Pick<Record<TowerKind, TowerTree>, 'beacon' | 'ballista' | 'seraph'>),
+  ...({} as Pick<Record<TowerKind, TowerTree>, 'beacon' | 'ballista' | 'seraph' | 'tidecaller'>),
   arrow: {
     kind: 'arrow',
     levels: [
@@ -362,12 +363,12 @@ const SERAPH: Record<'seraph', TowerTree> = {
         description: 'A winged idol that wakes when the road fills. Fires volleys of 3 separate beams from its heart, six times a second. Full damage to each target in range, flyers included.',
       },
       {
-        name: 'Seraph Ascendant', cost: 1500, model: 'seraph2', range: 4.0,
+        name: 'Seraph Ascendant', cost: 2200, model: 'seraph2', range: 4.0,
         damage: [12, 18], damageType: 'physical', attackInterval: 0.14, flying: true, beamTargets: 4,
         description: 'The idol rises off its plinth. Brighter, faster volleys send 4 separate beams to enemies in range.',
       },
       {
-        name: 'Seraph Sovereign', cost: 2100, model: 'seraph3', range: 4.4,
+        name: 'Seraph Sovereign', cost: 3400, model: 'seraph3', range: 4.4,
         damage: [20, 30], damageType: 'physical', attackInterval: 0.12, flying: true, beamTargets: 5,
         description: 'A colossus with a lance of light. Eight volleys a second, each firing 5 separate beams at enemies in range.',
       },
@@ -383,7 +384,7 @@ const SERAPH: Record<'seraph', TowerTree> = {
         name: 'Void Seraph', cost: 3600, model: 'seraph4b', range: 4.6,
         damage: [65, 85], damageType: 'magic', attackInterval: 0.17, flying: true, beamTargets: 3,
         special: { kind: 'armorShred', amount: 0.04 },
-        description: 'Focused force: 3 heavier void beams ignore armor and strip 4% from each target. Best against elites and small armored groups.',
+        description: '3 focused void beams pierce all magic resistance and ignore armor. Strip 4% armor per hit to help physical towers against elites.',
       },
     ],
     capstones: [
@@ -399,13 +400,13 @@ const SERAPH: Record<'seraph', TowerTree> = {
         damage: [125, 165], damageType: 'magic', attackInterval: 0.15, flying: true, beamTargets: 4,
         special: { kind: 'armorShred', amount: 0.06 },
         signature: 'eclipse',
-        description: 'Concentrates 4 heavy magic beams on fewer enemies. Every ten seconds, Eclipse stuns the four strongest foes in reach for 1.5s and strips a fifth of their armor and resistance.',
+        description: '4 heavy void beams pierce all magic resistance. Every ten seconds, Eclipse stuns the four strongest foes in reach for 1.5s and strips a fifth of their armor and resistance.',
       },
     ],
   },
 }
 
-Object.assign(towerTrees, SERAPH)
+Object.assign(towerTrees, SERAPH, { tidecaller: tidecallerTree })
 
 /** the tier-5 tower a given tier-4 branch leads to */
 export function resolveCapstone(kind: TowerKind, branch: 0 | 1): TowerLevelDef {

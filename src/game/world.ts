@@ -33,6 +33,7 @@ export interface MineSpec {
 export interface World {
   /** Recovered pre-rebalance battles keep their original combat definitions. */
   readonly legacyCombat?: boolean
+  readonly balanceRuleset?: number
   readonly legacyAccess?: boolean
   dynamic: THREE.Group           // container for entity meshes
   lanes: LanePath[]
@@ -84,7 +85,7 @@ export interface World {
 export type ProjectileSpec =
   | { kind: 'seraphBloom', at: THREE.Vector3, solar: boolean, world: World }
   | { kind: 'arrow', from: THREE.Vector3, target: Enemy, damage: number, crit: boolean, poison?: { dps: number, duration: number }, armorPierce?: number, credit?: KillCredit, world: World }
-  | { kind: 'bolt', from: THREE.Vector3, target: Enemy, damage: number, color: number, armorShred?: number, resistShred?: number, mrPierce?: number, credit?: KillCredit, world: World }
+  | { kind: 'bolt', from: THREE.Vector3, target: Enemy, damage: number, color: number, splash?: number, knockback?: number, slow?: { factor: number, duration: number }, armorShred?: number, resistShred?: number, mrPierce?: number, credit?: KillCredit, world: World }
   | { kind: 'bomb', from: THREE.Vector3, at: THREE.Vector3, damage: number, splash: number, cluster?: { count: number, damage: [number, number], radius: number }, burn?: { dps: number, duration: number, radius: number }, mine?: MineSpec, stunChance?: number, slow?: boolean, submunition?: boolean, credit?: KillCredit, world: World }
   | { kind: 'chain', from: THREE.Vector3, first: Enemy, damage: number, targets: number, falloff: number, stunChance: number, stunDur: number, mrPierce?: number, credit?: KillCredit, world: World }
   | { kind: 'warlockBolt', from: THREE.Vector3, target: Soldier, damage: number, world: World }
@@ -93,7 +94,7 @@ export type ProjectileSpec =
    * beam is drawn for a tenth of a second; at ten rays a second a travelling
    * projectile would be a swarm of meshes and a second of latency.
    */
-  | { kind: 'ray', from: THREE.Vector3, targets: Enemy[], damage: number, damageType: DamageType, color: number, width: number, crit?: boolean, armorShred?: number, credit?: KillCredit, world: World }
+  | { kind: 'ray', from: THREE.Vector3, targets: Enemy[], damage: number, damageType: DamageType, mrPierce?: number, color: number, width: number, crit?: boolean, armorShred?: number, credit?: KillCredit, world: World }
   | { kind: 'meteor', at: THREE.Vector3, damage: number, world: World }
   /** a Stormhowl's thrown axe: leaves a soldier's hand, tumbles, and hits a flyer */
   | { kind: 'axe', from: THREE.Vector3, target: Enemy, damage: number, armorPierce?: number, credit?: KillCredit, world: World }

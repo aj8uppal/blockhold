@@ -586,8 +586,8 @@ window.addEventListener('keydown', (e) => {
     case 'KeyP': game.togglePause(); break
     case 'KeyH':
     case 'Digit1': game.selectHero(true); break
-    case 'Digit3': game.setTargetMode(game.targetMode === 'meteor' ? null : 'meteor'); break
-    case 'Digit4': game.setTargetMode(game.targetMode === 'reinforce' ? null : 'reinforce'); break
+    case 'Digit3': game.setTargetMode(game.targetMode === 'reinforce' ? null : 'reinforce'); break
+    case 'Digit4': game.setTargetMode(game.targetMode === 'meteor' ? null : 'meteor'); break
     case 'Digit2': game.castHeroSignature(); break
     case 'KeyC': game.engine.resetView(game.level?.width, game.level?.height); break
     case 'Escape':

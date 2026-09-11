@@ -84,7 +84,8 @@ describe('the unlock ladder', () => {
       expect(unlockLevel(u.kind, u.id)).toBe(u.level)
     }
     expect(unlocksBetween(0, xpForLevel(10)).map(u => u.id)).toEqual(['liora', 'zephyra'])
-    expect(nextUnlock(10)?.id).toBe('ballista')
+    expect(nextUnlock(10)?.id).toBe('tidecaller')
+    expect(nextUnlock(12)?.id).toBe('ballista')
     expect(nextUnlock(99)).toBeNull()
   })
 

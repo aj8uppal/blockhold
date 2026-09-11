@@ -357,12 +357,12 @@ function generateReport(): { report: string, dpsPerGold: number, totalWaves: num
     '',
     '## Method',
     '',
-    `- Tower efficiency **X = ${formatNumber(dpsPerGold, 4)} DPS/gold**, the mean of 12 tier-1–3 entries: `
+    `- Tower efficiency **X = ${formatNumber(dpsPerGold, 4)} DPS/gold**, the mean of ${Object.values(towerTrees).filter(t => !t.levels[0].aura).length * 3} tier-1–3 entries: `
       + 'damage midpoint ÷ attack interval ÷ cumulative cost. Barracks count all deployed soldiers.',
     `- Affordable DPS before a wave = (start gold + prior bounties + ${EARLY_CALL_BONUS_PER_PREVIOUS_WAVE} early-call gold per prior wave) `
       + `× ${formatPercent(TOWER_SPEND_SHARE)} tower spend × X. Required DPS = authored wave HP ÷ ${ASSUMED_WAVE_SECONDS}s.`,
     '- Arrival pressure is the requested rough Σ(enemy HP × count ÷ group interval). HP shares use authored group HP.',
-    '- This deliberately static model excludes armor/MR from raw required DPS, lane coverage, travel time, splash, crowd control, healing, regen, phasing, surge empowerment, spawned/summoned adds, heroes, and armory bonuses.',
+    '- This deliberately static model excludes water-only placement restrictions, armor/MR from raw required DPS, lane coverage, travel time, splash, crowd control, healing, regen, phasing, surge empowerment, spawned/summoned adds, heroes, and armory bonuses.',
     `- The ${Object.keys(TRAP_DEFS).length} trap definitions (${Math.min(...trapCosts)}–${Math.max(...trapCosts)} gold), `
       + `${perkCount} ascension perk choices, and overcharge combat bonus are excluded from tower capacity; shard costs are analyzed separately.`,
     `- Across ${totalWaves} waves: **${capacityFlags} raw-DPS capacity flags**, **${earlyFlyingFlags} early-flying flags**, `

@@ -45,9 +45,10 @@ const assets = join(root, 'dist', 'assets')
 // unlock contributions add ~4.6 KiB total; sandbox controls remain lazy loaded.
 // Historical battle compatibility, full battle backups and XP receipts add ~1.4 KiB.
 // Mode-aware retries and confirmed victory transitions add ~0.3 KiB gzip.
-const APP_CHUNK_LIMIT = 161 * 1024
+// Tidecaller's nine models, wave controls and backwards-compatible balance add ~2.6 KiB.
+const APP_CHUNK_LIMIT = 164 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
-const TOTAL_JS_LIMIT = 297 * 1024
+const TOTAL_JS_LIMIT = 301 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

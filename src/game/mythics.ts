@@ -1,3 +1,4 @@
+import { tidecallerMythics } from './tidecaller.ts'
 import type { TowerKind, TowerLevelDef } from './types.ts'
 import { resolveCapstone } from './towerDefs.ts'
 
@@ -54,6 +55,7 @@ const transformations: Partial<Record<TowerKind, Partial<Record<0 | 1, Partial<T
       special: { kind: 'knockback', dist: 1.1, armorPierce: 0.7 },
       description: 'Ignores 70% of armor and drives whole ranks backward. Every fourth shot is a double-damage Great Bolt. Aim down the road.' },
   },
+  tidecaller: { 0: tidecallerMythics[0], 1: tidecallerMythics[1] },
   seraph: {
     0: {
       name: 'Helios Engine', cost: 15000, model: 'seraph6a', signature: 'solarStrike',
@@ -61,7 +63,7 @@ const transformations: Partial<Record<TowerKind, Partial<Record<0 | 1, Partial<T
     },
     1: {
       name: 'Event Horizon', cost: 16000, model: 'seraph6b', signature: 'eventHorizon',
-      description: 'Four heavy void beams. Every 14s opens a 2.2-tile rift beneath the strongest foe for 4s: enemies inside are revealed and take 30% more damage from the whole defense.',
+      description: 'Four heavy void beams pierce all magic resistance. Every 14s opens a 2.2-tile rift beneath the strongest foe for 4s: enemies inside are revealed and take 30% more damage from the whole defense.',
     },
   },
   barracks: {

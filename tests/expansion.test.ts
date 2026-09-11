@@ -7,6 +7,7 @@ import type { LevelDef } from '../src/game/types.ts'
 import { RAISE_HEIGHT } from '../src/game/earthworks.ts'
 import { availableExpansionPlots, earnedExpansionPlots, placeExpansionPlot } from '../src/game/expansion.ts'
 import { setSimSeed, simRandom } from '../src/core/utils.ts'
+import { HUNTS, huntLevel } from '../src/game/hunts.ts'
 
 const terrains: Terrain[] = []
 afterEach(() => { terrains.splice(0).forEach(t => t.dispose()); setSimSeed(null) })
@@ -25,6 +26,46 @@ function validCells(t: Terrain): [number, number][] {
 }
 
 describe('earned endless foundations', () => {
+  it('preserves all existing terrain geometry and elevations when adding foundations', () => {
+    const t = terrain()
+    const meshes: THREE.Mesh[] = []
+    t.group.traverse(o => { if (o instanceof THREE.Mesh) meshes.push(o) })
+    const before = meshes.map(m => ({ mesh: m, parent: m.parent, geometry: m.geometry,
+      bounds: new THREE.Box3().setFromObject(m).clone(), visible: m.visible }))
+    const cells = validCells(t).slice(0, 12), heights = cells.map(c => t.cellTop(...c))
+    for (const cell of cells) expect(t.addExpansionPlot(...cell)).not.toBeNull()
+    for (const old of before) {
+      expect(old.mesh.parent).toBe(old.parent)
+      expect(old.mesh.geometry).toBe(old.geometry)
+      expect(old.mesh.visible).toBe(old.visible)
+      expect(new THREE.Box3().setFromObject(old.mesh).equals(old.bounds)).toBe(true)
+    }
+    expect(cells.map(c => t.cellTop(...c))).toEqual(heights)
+  })
+
+  it('offers water sites on both mastery hunts and refuses lava, roads and dry land', () => {
+    for (const hunt of HUNTS) {
+      const t = terrain(huntLevel(hunt.id))
+      const sites = []
+      for (let r = 0; r < t.level.height; r++) for (let c = 0; c < t.level.width; c++) {
+        const plot = t.waterPlot(c, r)
+        if (plot) sites.push(plot)
+      }
+      expect(sites.length).toBeGreaterThan(0)
+      expect(sites.some(p => t.paths.lanes.some(l => {
+        for (let d = 0; d < l.length; d += .5) {
+          const point = l.sample(d)
+          if (Math.hypot(point.x - p.pos.x, point.z - p.pos.z) < 4.5) return true
+        }
+        return false
+      }))).toBe(true)
+    }
+    const t = terrain()
+    expect(t.waterPlot(2, 2)).not.toBeNull()
+    for (const cell of [[0, 6], [5, 4], [9, 0], [-1, 2]]) expect(t.waterPlot(...cell as [number, number])).toBeNull()
+    const lava = terrain({ ...t.level, theme: 'ember' })
+    expect(lava.waterPlot(2, 2)).toBeNull()
+  })
   it('earns a credit on every fifteenth completed endless wave, with no fractional or malformed grants', () => {
     for (const [completed, earned] of [[0, 0], [14, 0], [15, 1], [29, 1], [30, 2], [150, 10]]) expect(earnedExpansionPlots(completed)).toBe(earned)
     for (const invalid of [-1, 15.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) expect(earnedExpansionPlots(invalid)).toBe(0)

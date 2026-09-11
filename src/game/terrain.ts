@@ -99,6 +99,7 @@ export interface PlotInfo {
   bank?: THREE.Group
   /** Earned during endless play; authored foundations never spend expansion credits. */
   expanded?: boolean
+  water?: boolean
 }
 
 const inRects = (c: number, r: number, rects: Rect[]) =>
@@ -123,7 +124,7 @@ export class Terrain {
   private expansionObstacles: THREE.Box2[] = []
 
   constructor(readonly level: LevelDef, readonly paths: PathsInfo) {
-    this.theme = THEMES[level.theme]
+    this.theme = level.liquid === 'water' ? { ...THEMES[level.theme], waterDeep: 0x2e6f9e, waterShallow: 0x54aacd, waterGlow: 0 } : THEMES[level.theme]
     this.worldW = level.width
     const rng = seededRandom(level.seed)
     this.buildGround(rng)
@@ -553,6 +554,19 @@ export class Terrain {
   }
 
   canAddExpansionPlot(c: number, r: number): boolean { return this.expansionBlockReason(c, r) === null }
+
+  waterPlot(c: number, r: number, install = false): PlotInfo | null {
+    if (!Number.isInteger(c) || !Number.isInteger(r) || c < 0 || r < 0 || c >= this.level.width || r >= this.level.height
+      || (this.level.liquid === 'lava' || this.level.liquid !== 'water' && (this.level.theme === 'ember' || this.level.theme === 'ashfall'))
+      || this.cellKind(c, r) !== 'water' || this.plots.some(p => p.cell[0] === c && p.cell[1] === r)) return null
+    const [x, z] = gridToWorld(c, r, this.level.width, this.level.height)
+    if (this.expansionObstacles.some(b => x + .48 > b.min.x && x - .48 < b.max.x && z + .48 > b.min.y && z - .48 < b.max.y)) return null
+    const mesh = install ? buildModel({ parts: { base: [box(-4, 0, 0, .3, .3, 8, 0x89cbc7), box(4, 0, 0, .3, .3, 8, 0x89cbc7), box(0, 0, -4, 8, .3, .3, 0x89cbc7), box(0, 0, 4, 8, .3, .3, 0x89cbc7)] }, scale: .1 }, 'water-foundation') : new THREE.Group()
+    mesh.position.set(x, -.35, z)
+    const plot: PlotInfo = { index: install ? this.plots.length : -1, cell: [c, r], pos: new THREE.Vector3(x, -.3, z), occupied: false, raised: false, water: true, mesh }
+    if (install) { this.plots.push(plot); this.group.add(mesh) }
+    return plot
+  }
 
   /** Called after the earned-credit gate. Append order is the journal's stable index. */
   addExpansionPlot(c: number, r: number): PlotInfo | null {

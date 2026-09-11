@@ -41,7 +41,7 @@ test('portrait and 1 toggle hero selection; abilities follow 1, 2, 3, 4', async 
   }
   await expect(page.locator('.abilities > .ability .hotkey')).toHaveText(['1', '2', '3', '4'])
   const controls = [hero, page.getByRole('button', { name: 'Hero signature ability', exact: true }),
-    page.getByRole('button', { name: 'Meteor Storm', exact: true }), page.getByRole('button', { name: 'Reinforcements', exact: true })]
+    page.getByRole('button', { name: 'Reinforcements', exact: true }), page.getByRole('button', { name: 'Meteor Storm', exact: true })]
   let lastRight = 0
   for (const control of controls) {
     await expect(control).toBeInViewport({ ratio: 1 })
@@ -65,7 +65,7 @@ test('portrait and 1 toggle hero selection; abilities follow 1, 2, 3, 4', async 
   await controls[1].tap()
   await page.keyboard.press('Digit2')
   expect(await page.evaluate(() => document.documentElement.dataset.signatureCalls)).toBe('2')
-  for (const [index, mode, key] of [[2, 'meteor', 'Digit3'], [3, 'reinforce', 'Digit4']] as const) {
+  for (const [index, mode, key] of [[2, 'reinforce', 'Digit3'], [3, 'meteor', 'Digit4']] as const) {
     await controls[index].tap()
     expect(await page.evaluate(() => (window.vg.game as unknown as Game).targetMode)).toBe(mode)
     await page.keyboard.press(key)

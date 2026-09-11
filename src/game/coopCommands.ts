@@ -19,6 +19,7 @@ export type CoopCommand =
   | { kind: 'overcharge', plot: number }
   | { kind: 'overchargeAll' }
   | { kind: 'expand', c: number, r: number }
+  | { kind: 'waterBuild', c: number, r: number }
   | { kind: 'policy', plot: number }
   | { kind: 'trackline', plot: number }
   | { kind: 'holdline', plot: number, x: number, z: number }
@@ -28,6 +29,7 @@ export type CoopCommand =
   | { kind: 'earthwork', spot: number }
   | { kind: 'raise', plot: number }
   | { kind: 'wave' }
+  | { kind: 'autoWaves', on: boolean }
   | { kind: 'heroMove', x: number, z: number }
   | { kind: 'heroSig' }
   | { kind: 'heroRank' }

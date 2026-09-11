@@ -254,6 +254,8 @@ export class Tower {
       case 'crownVolley': return shots('Crown Volley', 5, 'attack')
       case 'convergenceRune': return shots('Convergence Rune', 5, 'cast')
       case 'greatbolt': return shots('Great Bolt', 4, 'shot')
+      case 'tidalSurge': return shots('Tidal Surge', 4, 'burst')
+      case 'undertow': return shots('Undertow', 5, 'pulse')
       case 'kindling': {
         const left = this.kindleAt === 0 ? 20 : Math.max(0, this.kindleAt - time)
         return { text: left < 1 ? 'Crownfire now' : `Crownfire in ${Math.ceil(left)}s`, next: left < 3 }
@@ -678,7 +680,7 @@ export class Tower {
 
   get upgradeOptions(): TowerLevelDef[] {
     const tree = towerTrees[this.kind]
-    if (this.level === 1 || this.level === 2) return [tree.levels[this.level]]
+    if (this.level === 1 || this.level === 2) return [this.combatDefinition(tree.levels[this.level], this.level + 1)]
     if (this.level === 3) return tree.branches.map((def, branch) => this.combatDefinition(def, 4, branch as 0 | 1))
     if (this.level === 4 && this.branch !== null) return [this.combatDefinition(resolveCapstone(this.kind, this.branch), 5)]
     if (this.level === 5 && this.branch !== null) {
@@ -690,7 +692,9 @@ export class Tower {
   }
 
   get sellValue(): number {
-    return Math.round(investedGold(this.kind, this.level, this.branch) * this.world.sellRefund)
+    const oldCost = this.kind === 'seraph' && (this.world.balanceRuleset ?? 12) <= 11
+      ? (this.level >= 2 ? 700 : 0) + (this.level >= 3 ? 1300 : 0) : 0
+    return Math.round((investedGold(this.kind, this.level, this.branch) - oldCost) * this.world.sellRefund)
   }
 
   /**
@@ -709,7 +713,9 @@ export class Tower {
   private revealT = 0
   private static readonly REVEAL_HOLD = 0.14
 
-  private combatDefinition(def: TowerLevelDef, level = this.level, branch = this.branch): TowerLevelDef {
+  private combatDefinition(def: TowerLevelDef, level: number = this.level, branch = this.branch): TowerLevelDef {
+    if (this.isSeraph && (this.world.balanceRuleset ?? 12) <= 11 && (level === 2 || level === 3))
+      def = { ...def, cost: level === 2 ? 1500 : 2100 }
     if (!this.world.legacyCombat || !this.isSeraph || level < 4) return def
     const solar = branch === 0, crowned = level >= 5
     return { ...def,
@@ -942,7 +948,7 @@ export class Tower {
    * terrace worth paying for and a hollow worth avoiding.
    */
   private canSee(e: Enemy, world: World): boolean {
-    if (e.def.flying) return true
+    if (e.airborne) return true
     return !world.sightBlocked(this.pos.x, this.pos.z, this.footing, e.pos.x, e.pos.z)
   }
 
@@ -950,7 +956,7 @@ export class Tower {
     if (this.target) {
       const t = this.target
       const inRange = t.targetable && Math.hypot(t.pos.x - this.pos.x, t.pos.z - this.pos.z) <= this.range + t.radius
-      if (!inRange || !this.canSee(t, world)) this.target = null
+      if (!inRange || !this.canSee(t, world) || t.airborne && !this.def.flying || this.def.airOnly && !t.airborne) this.target = null
     }
     if (this.target) return
     let best: Enemy | null = null
@@ -958,8 +964,8 @@ export class Tower {
     const line = this.holdLine
     for (const e of world.enemies) {
       if (!e.targetable) continue
-      if (e.def.flying && !this.def.flying) continue
-      if (this.def.airOnly && !e.def.flying) continue
+      if (e.airborne && !this.def.flying) continue
+      if (this.def.airOnly && !e.airborne) continue
       if (line) {
         // a held line ignores the targeting policy entirely: the first body to
         // step into the corridor is what the bolt was already aimed at
@@ -1250,6 +1256,15 @@ export class Tower {
     const from = this.muzzle()
     switch (this.kind) {
       case 'beacon': break   // a beacon never reaches fire(); guarded in update()
+      case 'tidecaller': {
+        const empowered = this.level >= 5 && ++this.signatureCount >= (this.branch === 0 ? 4 : 5)
+        if (empowered) { this.signatureCount = 0; this.signatureFired(world) }
+        world.fireProjectile({ kind: 'bolt', from, target, damage: dmg * (empowered && this.branch === 0 ? 1.5 : 1), color: this.branch === 1 ? 0xbcecff : 0x62dfca,
+          splash: def.splash! * (empowered && this.branch === 0 ? 1.3 : 1), slow: def.slow,
+          knockback: empowered && this.branch === 1 ? .7 : undefined, credit: this, world })
+        world.sfx('magic', .5)
+        break
+      }
       case 'seraph': {
         // Every beam starts at the idol. Pick all targets before damage can
         // alter the enemy list; every secondary obeys the tower's own reach.
@@ -1264,7 +1279,8 @@ export class Tower {
         world.fireProjectile({
           kind: 'ray', from, targets, damage: dmg * (crit ? special!.mult : 1),
           damageType: def.damageType ?? 'physical', color, width: this.level >= 5 ? 0.09 : this.level >= 4 ? 0.07 : 0.05,
-          crit: crit || undefined, armorShred: shred, credit: this, world,
+          crit: crit || undefined, armorShred: shred,
+          mrPierce: this.branch === 1 && (world.balanceRuleset ?? 12) >= 12 ? 1 : undefined, credit: this, world,
         })
         if (def.signature === 'solarStrike' && !this.isGhost && !this.mythicAt) {
           this.mythicCharge += targets.length
@@ -1344,7 +1360,7 @@ export class Tower {
           const extras: Enemy[] = []
           for (const e of world.enemies) {
             if (!e.targetable || e === target) continue
-            if (e.def.flying && !def.flying) continue
+            if (e.airborne && !def.flying) continue
             if (Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) > this.range + e.radius) continue
             extras.push(e)
           }
