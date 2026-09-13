@@ -320,3 +320,106 @@ describe('hero endgame progression', () => {
     }
   })
 })
+
+describe('weapon presentation and air volleys', () => {
+  it('uses the visible crystal, barrel, or bow at every firing tier, including old saves', () => {
+    for (const rules of [16, 17]) for (const kind of ['mage', 'cannon', 'ballista', 'tidecaller'] as const) for (const branch of [0, 1]) {
+      const w = world(); w.balanceRuleset = rules
+      const t = new Tower(kind, { index: 0, cell: [0, 0], pos: new THREE.Vector3(0, 2, 0), occupied: true, mesh: new THREE.Group(), raised: true }, w)
+      w.towers.push(t); w.dynamic.add(t.group)
+      for (let tier = 1; tier <= 6; tier++) {
+        if (tier > 1) t.upgrade(tier === 4 ? branch : 0, w)
+        t.update(2, w)
+        const turret = t.model.getObjectByName('turret'); if (turret) turret.rotation.y = .7
+        const emitter = t.model.getObjectByName('emitter') ?? t.model.getObjectByName('muzzle') ?? t.model.getObjectByName('crystal')!
+        let at = emitter.getWorldPosition(new THREE.Vector3())
+        const enemy = foe(3); w.enemies = [enemy]; w.shots.length = 0
+        ;(t as unknown as { fire(e: Enemy, w: World): void }).fire(enemy, w)
+        const shot = w.shots[0]
+        expect(shot, `${rules}:${t.def.model}`).toBeTruthy()
+        if (kind === 'cannon') {
+          const muzzles = ['emitter', 'emitter2', 'muzzle', 'muzzle2', 'muzzle3'].map(name => t.model.getObjectByName(name)).filter(Boolean)
+          at = muzzles.map(o => o!.getWorldPosition(new THREE.Vector3())).sort((a, b) => a.distanceTo(shot.visualFrom!) - b.distanceTo(shot.visualFrom!))[0]
+        }
+        expect(shot.visualFrom?.distanceTo(at), `${rules}:${t.def.model}`).toBeLessThan(1e-8)
+        const projectile = createProjectile(shot)
+        if (shot.kind !== 'chain') {
+          expect(projectile.mesh.position.distanceTo(at)).toBeLessThan(1e-8)
+          projectile.update(.001)
+          expect(projectile.mesh.position.distanceTo(at)).toBeLessThan(.03)
+        }
+        projectile.dispose?.(); w.enemies = []
+      }
+      t.dismantle(w, true)
+    }
+  })
+
+  it('keeps moving-projectile damage and lifetime identical when only the rendering origin changes', () => {
+    for (const kind of ['arrow', 'axe', 'bolt', 'bomb', 'spear', 'warlockBolt'] as const) {
+      const w = world(), old = world(), a = foe(3), b = foe(3)
+      w.enemies = [a]; old.enemies = [b]
+      const source = tower(w, 'barracks', 1).soldiers[0], baseline = tower(old, 'barracks', 1).soldiers[0]
+      source.group.position.set(3, 0, 0); baseline.group.position.copy(source.group.position)
+      const common = { from: new THREE.Vector3(0, 3, 0), damage: 10, world: w }
+      const shot = {
+        arrow: { ...common, kind: 'arrow', target: a, crit: false },
+        axe: { ...common, kind: 'axe', target: a },
+        bolt: { ...common, kind: 'bolt', target: a, color: 0x99ccff },
+        bomb: { ...common, kind: 'bomb', at: a.pos.clone(), splash: 1 },
+        spear: { ...common, kind: 'spear', aim: a.pos.clone(), reach: 5, falloff: .5, hitsAir: true },
+        warlockBolt: { ...common, kind: 'warlockBolt', target: source },
+      }[kind] as ProjectileSpec
+      const visualFrom = new THREE.Vector3(.3, .7, .4)
+      const newer = createProjectile({ ...shot, visualFrom })
+      const original = createProjectile({ ...shot, world: old, ...('target' in shot ? { target: kind === 'warlockBolt' ? baseline : b } : {}) } as ProjectileSpec)
+      expect(newer.mesh.position.distanceTo(visualFrom)).toBeLessThan(1e-8)
+      for (let tick = 0; tick < 300 && !original.done; tick++) {
+        newer.update(1 / 60); original.update(1 / 60)
+        expect(newer.done, kind).toBe(original.done)
+        expect(a.hp, kind).toBe(b.hp)
+        expect(source.hp, kind).toBe(baseline.hp)
+      }
+      expect(newer.done).toBe(true)
+      newer.dispose?.(); original.dispose?.()
+    }
+  })
+
+  it('rotates the squad’s visible thrower without adding shots, and releases from the animated hand', () => {
+    const w = world(), t = tower(w, 'barracks', 1), target = foe(2, 'veilempress')
+    t.soldiers.forEach((s, i) => s.group.position.set(i * .3, 0, 0))
+    const seen = new Set<number>()
+    for (let i = 0; i < t.soldiers.length; i++) {
+      w.shots.length = 0
+      ;(t as unknown as { fire(e: Enemy, w: World): void }).fire(target, w)
+      expect(w.shots).toHaveLength(1)
+      const shot = w.shots[0]
+      expect(shot.kind).toBe('axe')
+      const actor = t.soldiers[i]
+      expect(shot.visualFrom?.distanceTo(actor.weaponPos)).toBeLessThan(1e-8)
+      expect(actor.group.getObjectByName('weaponR')!.scale.x).toBe(0)
+      seen.add(i)
+      for (let j = 0; j < 30; j++) { w.time += 1 / 60; actor.update(1 / 60, w) }
+      expect(actor.group.getObjectByName('weaponR')!.scale.x).toBe(1)
+    }
+    expect(seen.size).toBe(t.soldiers.length)
+    const actor = t.soldiers[0]
+    actor.showThrow(target.pos); actor.die(w); actor.revive(new THREE.Vector3())
+    expect(actor.group.getObjectByName('weaponR')!.scale.x).toBe(1)
+    expect(actor.group.getObjectByName('armR')!.rotation.x).toBe(0)
+    t.soldiers.forEach(s => s.die(w)); w.shots.length = 0
+    ;(t as unknown as { fire(e: Enemy, w: World): void }).fire(target, w)
+    expect(w.shots[0].visualFrom?.distanceTo(t.model.getObjectByName('campEmitter')!.getWorldPosition(new THREE.Vector3()))).toBeLessThan(1e-8)
+  })
+
+  it('answers an airborne Empress, stops for her phasing/landing, and resumes when she is visible in range', () => {
+    const w = world(), t = tower(w, 'barracks', 1), empress = foe(2, 'veilempress')
+    w.enemies = [empress]
+    const tick = () => { w.shots.length = 0; for (let i = 0; i < 120; i++) { w.time += 1 / 60; t.update(1 / 60, w) } return w.shots.filter(s => s.kind === 'axe').length }
+    expect(tick()).toBeGreaterThan(0)
+    Object.assign(empress, { phased: true }); expect(tick()).toBe(0)
+    Object.assign(empress, { phased: false }); expect(tick()).toBeGreaterThan(0)
+    empress.pos.x = t.range + 2; expect(tick()).toBe(0)
+    w.enemies = [foe(2, 'veilempressLanded')]; expect(tick()).toBe(0)
+    w.enemies = [foe(2, 'veilempress')]; expect(tick()).toBeGreaterThan(0)
+  })
+})

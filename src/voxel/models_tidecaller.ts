@@ -25,5 +25,7 @@ export function tidecallerModel(tier: number, branch = 0): VoxModel {
   }
   if (tier >= 5) for (const side of [-1, 1]) parts.base.push(box(side * 2.5, 2, 2, .6, 1.3, .5, light, true))
   if (tier === 6) parts.base.push(box(0, 2.3, -2.5, 5.8, .4, .7, brass), box(-2.6, height, -2.5, .7, height, .7, stone), box(2.6, height, -2.5, .7, height, .7, stone))
-  return { parts, pivots: { turret: [0, height - 1, 0], crystal: [0, height, 0] }, scale: .1 }
+  return { parts, sockets: { emitter: tier >= 4 && !ice
+    ? { part: 'turret', at: [0, height - .7, 4.15] }
+    : { part: 'crystal', at: [0, tier < 4 ? height + .9 : height, 0] } }, pivots: { turret: [0, height - 1, 0], crystal: [0, height, 0] }, scale: .1 }
 }

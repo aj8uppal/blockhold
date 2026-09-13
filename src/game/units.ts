@@ -829,6 +829,7 @@ export class Enemy {
             this.hitCount++
             world.fireProjectile({
               kind: 'warlockBolt',
+              visualFrom: this.group.getObjectByName('emitter')?.getWorldPosition(new THREE.Vector3()),
               from: this.pos.clone().add(new THREE.Vector3(0, 0.45, 0)),
               target: victim,
               damage: randRange(...this.def.attackDamage),
@@ -1024,6 +1025,8 @@ export class Soldier {
   private healPulseTimer = 0
   /** 1 at the moment an axe leaves the hand, decaying: the throw pose */
   private throwT = 0
+  private throwPrep: { amount: number, yaw: number, until: number } | null = null
+  private throwYaw = 0
   /** world time before which this soldier cannot take a new block */
   reengageAt = 0
   /** how much room this soldier takes up, so fighters do not stand inside each other */
@@ -1105,6 +1108,10 @@ export class Soldier {
     this.dead = false
     this.musterConsumed = false
     this.strikeT = 0
+    this.throwT = 0
+    this.throwPrep = null
+    this.group.getObjectByName('weaponR')?.scale.setScalar(1)
+    for (const name of ['armL', 'armR', 'body', 'legL', 'legR', 'head']) this.part(name)?.rotation.set(0, 0, 0)
     this.hp = this.maxHp
     this.flash = 0
     setFlash(this.group, 0)
@@ -1118,10 +1125,39 @@ export class Soldier {
    * axe, so the arm goes back and snaps forward as the projectile appears -
    * the axe visibly comes from somebody rather than from the roof.
    */
-  throwAxe(at?: THREE.Vector3): void {
-    this.throwT = 1
+  throwAxe(at?: THREE.Vector3, show = true): void {
+    if (show) this.showThrow(at)
     // face what is being thrown at, and hold that facing for the throw
     if (at) this.faceUntil = { yaw: Math.atan2(at.x - this.group.position.x, at.z - this.group.position.z), t: 0.6 }
+  }
+
+  /** The squad shares one attack clock; a rotating member performs each throw. */
+  prepareThrow(at: THREE.Vector3, amount: number, until: number): void {
+    this.throwPrep = { amount, yaw: Math.atan2(at.x - this.group.position.x, at.z - this.group.position.z), until }
+  }
+
+  showThrow(at?: THREE.Vector3): void {
+    this.throwPrep = null
+    this.throwT = 1
+    this.throwYaw = at ? Math.atan2(at.x - this.group.position.x, at.z - this.group.position.z) : this.group.rotation.y
+    this.applyThrowPose(0)
+    this.group.rotation.y = this.throwYaw
+  }
+
+  /** The release pose is applied before reading the hand socket. */
+  private applyThrowPose(recovery: number): void {
+    const weight = 1 - recovery * recovery * (3 - 2 * recovery)
+    const arm = this.part('armR'), brace = this.part('armL'), body = this.part('body')
+    // The hand is below its shoulder: negative pitch sends it forward.
+    if (arm) arm.rotation.x += (-1.35 - arm.rotation.x) * weight
+    if (brace) brace.rotation.x += (-.45 - brace.rotation.x) * weight
+    if (body) body.rotation.x += (.12 - body.rotation.x) * weight
+    const weapon = this.group.getObjectByName('weaponR')
+    if (weapon) weapon.scale.setScalar(clamp((recovery - .55) / .35, 0, 1))
+  }
+
+  get weaponPos(): THREE.Vector3 {
+    return this.group.getObjectByName('emitter')?.getWorldPosition(new THREE.Vector3()) ?? this.handPos
   }
 
   /** a facing the throw holds, overriding the walk/idle facing while it lasts */
@@ -1257,6 +1293,7 @@ export class Soldier {
           if (this.def.lifesteal) this.hp = Math.min(this.maxHp, this.hp + dealt * this.def.lifesteal)
           this.strikeT = 1
           this.hitCount++
+          this.animFight(dt)
           world.sfx('hit', 0.4)
         }
       }
@@ -1272,18 +1309,14 @@ export class Soldier {
         this.animIdle()
       }
     }
-    if (this.throwT > 0) {
-      // A full overhand throw: the arm goes right back over the shoulder in
-      // the first third and whips through past horizontal in the rest, with
-      // the body leaning into it. Big on purpose - a subtle throw at the scale
-      // the game is played at is an invisible throw.
-      const k = 1 - this.throwT
-      const armR = this.part('armR')
-      if (armR) armR.rotation.x = k < 0.35 ? -2.6 * (k / 0.35) : -2.6 + (k - 0.35) / 0.65 * 4.0
-      const armL = this.part('armL')
-      if (armL) armL.rotation.x = -0.8 * Math.sin(k * Math.PI)
-      const body = this.part('body')
-      if (body) body.rotation.x = k < 0.35 ? -0.25 : 0.35 * Math.sin((k - 0.35) / 0.65 * Math.PI)
+    if (this.throwT > 0) this.applyThrowPose(1 - this.throwT)
+    else if (this.throwPrep && world.time <= this.throwPrep.until) {
+      const arm = this.part('armR')
+      const k = this.throwPrep.amount * this.throwPrep.amount * (3 - 2 * this.throwPrep.amount)
+      if (arm) arm.rotation.x += ((k < .6 ? .75 : .75 - (k - .6) / .4 * 2.1) - arm.rotation.x) * Math.min(1, k * 4)
+    } else {
+      this.throwPrep = null
+      this.group.getObjectByName('weaponR')?.scale.setScalar(1)
     }
     if (this.faceUntil) {
       this.faceUntil.t -= dt
@@ -1291,6 +1324,8 @@ export class Soldier {
       if (this.faceUntil.t <= 0) this.faceUntil = null
     }
     this.group.rotation.y = this.yaw
+    if (this.throwT > 0) this.group.rotation.y = lerpAngle(this.yaw, this.throwYaw, Math.min(1, this.throwT * 3))
+    else if (this.throwPrep) this.group.rotation.y = lerpAngle(this.yaw, this.throwPrep.yaw, this.throwPrep.amount)
     // height is composed here and nowhere else: the ground under the unit plus
     // whatever its walk cycle adds, so a terrace lifts it and a hop stays a hop
     this.baseY = world.groundY(pos.x, pos.z)
@@ -1315,24 +1350,23 @@ export class Soldier {
 
   /** strike-synced swings with per-soldier character */
   private animFight(_dt: number): void {
-    const p = clamp(1 - this.attackTimer / this.def.attackInterval, 0, 1)
+    const p = clamp(1 - this.attackTimer / (this.def.attackInterval / this.supportRate), 0, 1)
     const snap = Math.sin(Math.min(1, this.strikeT) * Math.PI / 2)
     const armR = this.part('armR'), armL = this.part('armL'), body = this.part('body')
     const m = this.def.model
     if (m === 'berserker') {
-      // frenzied alternating axes
-      const [a, b] = this.hitCount % 2 ? [armL, armR] : [armR, armL]
-      if (a) a.rotation.x = -0.5 - p * 1.3 + snap * 2.2
-      if (b) b.rotation.x = -0.3 + snap * 0.4
+      // The axe is in the right hand; the empty hand braces the swing.
+      if (armR) armR.rotation.x = -.5 - p * .7 + snap * 1.9
+      if (armL) armL.rotation.x = -.35 - snap * .25
     } else if (m === 'paladin') {
-      // two-handed consecrated slam
-      for (const a of [armL, armR]) {
-        if (a) a.rotation.x = -0.4 - p * 1.6 + snap * 2.4
-      }
+      if (armR) armR.rotation.x = -.4 - p * 1.1 + snap * 2.0
+      if (armL) armL.rotation.x = -.55
+    } else if (m === 'militia' || m === 'reinforcement') {
+      if (armR) armR.rotation.x = .65 + snap * .7 - p * .2
+      if (armL) armL.rotation.x = -.5
     } else {
-      // sword raised as the blow winds up, shield braced
-      if (armR) armR.rotation.x = -0.4 - p * 1.1 + snap * 1.9
-      if (armL) armL.rotation.x = -0.55
+      if (armR) armR.rotation.x = -.4 - p * 1.1 + snap * 1.9
+      if (armL) armL.rotation.x = -.55
     }
     if (body) body.rotation.x = snap * 0.17
     const legL = this.part('legL'), legR = this.part('legR')

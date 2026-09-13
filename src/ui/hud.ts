@@ -1263,7 +1263,7 @@ export class HUD {
           chip('Axes vs air', `${icon('feather')} ${lo}–${hi}`, 'wide') +
           chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`) +
           chip('Reach', `${icon('range')} ${fmtNum(tower.range)}`))
-        el('div', 'tp-traits', p, `${icon('feather')} The camp hurls axes at anything airborne within its reach - the only barracks that can`)
+        el('div', 'tp-traits', p, `${icon('feather')} Shared axe attack · targets visible flyers within the camp’s range. Grounded foes are fought in melee.`)
       }
     } else {
       el('div', 'stat-chips tp-combat-stats', p, this.combatStats(tower))
@@ -1322,8 +1322,10 @@ export class HUD {
       const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, primary) as HTMLButtonElement
       const mythicLock = this.game.mythicLock(tower)
       if (!mythicLock) btn.dataset.cost = `${opt.cost}`
-      btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span><span class="u-desc">${opt.description}</span>` +
-        `<span class="u-delta">${deltaLines(tower, opt, m)}</span><span class="u-need"></span>`
+      btn.classList.add('has-preview')
+      btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span>` +
+        `<span class="u-overview"><span class="u-copy"><span class="u-desc">${opt.description}</span><span class="u-delta">${deltaLines(tower, opt, m)}</span></span>` +
+        `<img class="u-model" src="art/towers/${opt.model}.webp" width="384" height="384" alt="${opt.name} tower preview" decoding="async"></span><span class="u-need"></span>`
       // show what the upgrade actually buys in range terms, on both pointers:
       // hover for a mouse, and the first tap for touch (which arms before it
       // commits, so the preview is visible before any gold is spent)

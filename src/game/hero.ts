@@ -416,9 +416,11 @@ export class Hero extends Soldier {
         .sort((a, b) => this.specialization === 'hawkeye' ? b.maxHp - a.maxHp || a.remaining - b.remaining : a.remaining - b.remaining)
       if (!victims.length) return false
       this.abilityCooldown = this.signatureCooldown
+      this.rangedCastAnim()
       for (const v of victims.slice(0, this.specialization === 'hawkeye' ? 3 : 7 + this.signatureRank * 2)) {
         world.fireProjectile({
           kind: 'arrow',
+          visualFrom: this.weaponPos,
           from: pos.clone().add(new THREE.Vector3(0, 0.5, 0)),
           target: v,
           damage: randRange(...this.def.damage) * (this.specialization === 'hawkeye' ? 3.2 : 1.25) * this.signaturePower,
@@ -543,15 +545,17 @@ export class Hero extends Soldier {
       if (this.rangedAttackTimer <= 0) {
         this.rangedAttackTimer = this.def.attackInterval
         const from = pos.clone().add(new THREE.Vector3(0, 0.45, 0))
+        this.rangedCastAnim()
+        const visualFrom = this.weaponPos
         if (this.heroDef.projectile === 'bolt') {
-          if (this.signatureRank >= 4) world.fireProjectile({ kind: 'chain', from, first: best, damage: randRange(...this.def.damage), targets: 3, falloff: .8, stunChance: 0, stunDur: 0, credit: this, world })
-          else world.fireProjectile({ kind: 'bolt', from, target: best, damage: randRange(...this.def.damage), color: 0x9fe8ff, credit: this, world })
+          if (this.signatureRank >= 4) world.fireProjectile({ kind: 'chain', from, visualFrom, first: best, damage: randRange(...this.def.damage), targets: 3, falloff: .8, stunChance: 0, stunDur: 0, credit: this, world })
+          else world.fireProjectile({ kind: 'bolt', from, visualFrom, target: best, damage: randRange(...this.def.damage), color: 0x9fe8ff, credit: this, world })
           world.sfx('magic', 0.6)
         } else {
-          world.fireProjectile({ kind: 'arrow', from, target: best, damage: randRange(...this.def.damage), armorPierce: this.signatureRank >= 4 ? .5 : undefined, crit: false, credit: this, world })
+          world.fireProjectile({ kind: 'arrow', from, visualFrom, target: best, damage: randRange(...this.def.damage), armorPierce: this.signatureRank >= 4 ? .5 : undefined, crit: false, credit: this, world })
           if (this.signatureRank >= 4) {
             const second = world.enemies.filter(e => e !== best && e.targetable && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < range).sort((a, b) => a.remaining - b.remaining)[0]
-            if (second) world.fireProjectile({ kind: 'arrow', from, target: second, damage: randRange(...this.def.damage), armorPierce: .5, crit: false, credit: this, world })
+            if (second) world.fireProjectile({ kind: 'arrow', from, visualFrom, target: second, damage: randRange(...this.def.damage), armorPierce: .5, crit: false, credit: this, world })
           }
           world.sfx('arrow', 0.7)
         }

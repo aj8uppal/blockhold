@@ -51,7 +51,7 @@ export class GroundFire {
           // Sample the shape on a small grid. The silhouette and the hot core
           // share the same cells, so this reads as block fire, not a smooth
           // flame with pixel noise painted over it. Time remains continuous.
-          vec2 cell = (floor(vUv * vec2(8.0, 14.0)) + 0.5) / vec2(8.0, 14.0);
+          vec2 cell = (floor(vUv * vec2(20.0, 36.0)) + 0.5) / vec2(20.0, 36.0);
           float y = cell.y, t = uTime * 1.65;
           vec2 flow = vec2(cell.x * 3.8 + vSeed, y * 5.2 - t * 1.6);
           float n = noise(flow) * 0.7 + noise(flow * 2.1 - t * 0.4) * 0.3;
@@ -63,9 +63,13 @@ export class GroundFire {
           float tip = 1.0 - smoothstep(0.92, 0.98, y + (n - 0.5) * 0.3);
           float alpha = body * tip * uFade;
           if (abs(cell.x - 0.5) > 0.43 || alpha < 0.015) discard;
-          vec3 color = vec3(0.94, 0.24, 0.035);
-          if (shape > 0.28 && y < 0.7) color = vec3(1.0, 0.46, 0.07);
-          if (shape > 0.60 && y < 0.4) color = vec3(1.0, 0.79, 0.29);
+          // Fine cells carry their own heat, from copper edges to a pale core.
+          // Quantized shading keeps the small facets readable as they rise.
+          float heat = clamp(shape * 0.85 + (1.0 - y) * 0.38 + n * 0.12, 0.0, 1.0);
+          heat = floor(heat * 8.0) / 8.0;
+          vec3 color = mix(vec3(0.68, 0.095, 0.018), vec3(1.0, 0.40, 0.055), smoothstep(0.05, 0.48, heat));
+          color = mix(color, vec3(1.0, 0.73, 0.22), smoothstep(0.40, 0.78, heat));
+          color = mix(color, vec3(1.0, 0.94, 0.64), smoothstep(0.72, 1.0, heat));
           gl_FragColor = vec4(color, alpha * 0.95);
           #include <colorspace_fragment>
         }`,
@@ -91,7 +95,7 @@ export class GroundFire {
         varying vec2 vUv;
         ${noise}
         void main() {
-          vec2 cell = (floor(vUv * 20.0) + 0.5) / 20.0;
+          vec2 cell = (floor(vUv * 32.0) + 0.5) / 32.0;
           float n = noise(cell * 8.0);
           float edge = 1.0 - smoothstep(0.65, 1.0, length(vUv * 2.0 - 1.0) + (n - 0.5) * 0.2);
           float ember = smoothstep(0.57, 0.83, n) * (0.7 + 0.3 * sin(uTime * 3.0 + n * 20.0));

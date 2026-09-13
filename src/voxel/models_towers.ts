@@ -1,3 +1,4 @@
+import { berserkerModel } from './models_units.ts'
 import { fireArtillery, worldshakerModel } from './models_artillery.ts'
 import { mythicArchitecture, mythicVessel } from './models_mythic.ts'
 import { crystalWings, sacredStone } from './models_seraph_suites.ts'
@@ -257,7 +258,7 @@ function cannonTower(level: 1 | 2 | 3): VoxModel {
     box(0, ty + 1.2, barrelLen / 2 - 0.5, 1.6 + level * 0.15, 1.6 + level * 0.15, barrelLen, W.iron),
     box(0, ty + 1.2, barrelLen - 0.3, 1.9 + level * 0.15, 1.9 + level * 0.15, 0.8, 0x353942), // muzzle ring
   ]
-  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] } }
+  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] }, sockets: { emitter: { part: 'turret', at: [0, ty + 1.2, barrelLen + .1] } } }
 }
 
 function dragonfireMortar(): VoxModel { return fireArtillery(4) }
@@ -277,7 +278,7 @@ function clusterBombard(): VoxModel {
     box(1.1, ty + 1.2, 3.6, 1.8, 1.8, 0.7, 0x353942),
     box(0, ty + 2.4, 0, 2.0, 1.4, 2.0, 0x5c4a42),          // ammo hopper
   ]
-  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] } }
+  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] }, sockets: { emitter: { part: 'turret', at: [-1.1, ty + 1.2, 3.95] }, emitter2: { part: 'turret', at: [1.1, ty + 1.2, 3.95] } } }
 }
 
 // ---------------- Barracks ----------------
@@ -585,7 +586,7 @@ function ballistaTower(level: 1 | 2 | 3): VoxModel {
   }
   const ty = baseH + 1.6
   const turret = ballistaBow(4.6 + level * 0.5, 2.0 + level * 0.3, W.woodDark, W.iron).map(b => ({ ...b, y: b.y + ty }))
-  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] } }
+  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] }, sockets: { emitter: { part: 'turret', at: [0, ty + 1.55, (4.6 + level * .5) * .5 + .6] } } }
 }
 
 function skyharrow(): VoxModel {
@@ -603,7 +604,7 @@ function skyharrow(): VoxModel {
   const turret = ballistaBow(6.2, 3.2, 0x3d5a8f, W.iron, 0x7fd4ff).map(b => ({ ...b, y: b.y + ty }))
   // the bow is canted upward: raise the head end
   turret.push(box(0, ty + 2.6, 3.4, 0.5, 0.5, 1.2, 0x7fd4ff, true))
-  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] } }
+  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] }, sockets: { emitter: { part: 'turret', at: [0, ty + 2.6, 4] } } }
 }
 
 function wallbreaker(): VoxModel {
@@ -618,7 +619,7 @@ function wallbreaker(): VoxModel {
   const ty = 4.6
   const turret = ballistaBow(5.8, 2.6, 0x4a3527, 0x353942).map(b => ({ ...b, y: b.y + ty }))
   turret.push(box(0, ty + 2.45, 3.3, 1.3, 1.3, 0.8, W.iron))   // the ram head on the bolt
-  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] } }
+  return { parts: { base, turret }, pivots: { turret: [0, ty, 0] }, sockets: { emitter: { part: 'turret', at: [0, ty + 2.45, 3.7] } } }
 }
 
 function heavensplitter(): VoxModel {
@@ -700,9 +701,25 @@ const factories: Record<TowerModelId, () => VoxModel> = {
 }
 
 const modelCache = new Map<TowerModelId, VoxModel>()
+/** A visible reserve thrower explains why a camp can cover its fallen squad. */
+function addCampSentry(m: VoxModel): void {
+  const unit = berserkerModel(), scale = .85
+  const roof = Math.max(...m.parts.base.filter(b => Math.abs(b.x) < .1 && b.sy < 1.5 && b.sx > 2.8 && b.sz > 3).map(b => b.y + b.sy / 2))
+  const transform = (b: VoxBox): VoxBox => ({ ...b, x: b.x * scale, y: roof + b.y * scale, z: b.z * scale - 1, sx: b.sx * scale, sy: b.sy * scale, sz: b.sz * scale })
+  m.parts.sentry = Object.entries(unit.parts).filter(([key]) => key !== 'armR' && key !== 'weaponR').flatMap(([, boxes]) => boxes.map(transform))
+  m.parts.sentryArm = [...unit.parts.armR, ...unit.parts.weaponR].map(transform)
+  m.pivots = { ...m.pivots, sentry: [0, roof, -1], sentryArm: [1.55 * scale, roof + 3.5 * scale, -1] }
+  m.parents = { ...m.parents, sentryArm: 'sentry' }
+  m.sockets = { ...m.sockets, campEmitter: { part: 'sentryArm', at: [1.55 * scale, roof + 1.65 * scale, .75 * scale - 1] } }
+}
+
 export function towerModel(id: TowerModelId): VoxModel {
   let m = modelCache.get(id)
-  if (!m) { m = factories[id](); modelCache.set(id, m) }
+  if (!m) {
+    m = factories[id]()
+    if (id === 'barracks5b' || id === 'barracks6b') addCampSentry(m)
+    modelCache.set(id, m)
+  }
   return m
 }
 

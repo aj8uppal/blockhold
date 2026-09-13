@@ -971,6 +971,25 @@ export class Tower {
     return this.pos.clone().add(new THREE.Vector3(0, muzzleHeights[this.def.model] * this.sizeMult, 0))
   }
 
+  /** A presentation origin for every model, independent of old combat rules. */
+  private visualMuzzle(index = 0): THREE.Vector3 {
+    const suffix = index ? String(index + 1) : ''
+    const part = this.model.getObjectByName('campEmitter') ?? this.model.getObjectByName(`emitter${suffix}`)
+      ?? this.model.getObjectByName(`muzzle${suffix}`)
+      ?? this.model.getObjectByName('emitter') ?? this.model.getObjectByName('muzzle')
+      ?? getPart(this.model, 'heart') ?? getPart(this.model, 'crystal')
+    return part ? part.getWorldPosition(new THREE.Vector3()) : this.muzzle()
+  }
+  private visualBarrel = 0
+  private visualThrower = 0
+  private reserveThrow = 0
+  private nextThrower(): Soldier | undefined {
+    for (let i = 0; i < this.soldiers.length; i++) {
+      const soldier = this.soldiers[(this.visualThrower + i) % this.soldiers.length]
+      if (soldier.alive) return soldier
+    }
+  }
+
   /**
    * Targeting was a single hardcoded sort on remaining distance, so every
    * tower in the game always shot whatever was closest to the gate. The
@@ -1123,6 +1142,9 @@ export class Tower {
     }
 
     if (this.isBarracks) {
+      this.reserveThrow = Math.max(0, this.reserveThrow - dt * 3.2)
+      const arm = this.model.getObjectByName('sentryArm')
+      if (arm) arm.rotation.x = -1.35 * this.reserveThrow * this.reserveThrow * (3 - 2 * this.reserveThrow)
       this.updateBarracks(dt, world)
       // Stormhowl Warcamp keeps going: its soldiers hold the road while the
       // camp itself throws. Every other barracks stops here.
@@ -1221,6 +1243,10 @@ export class Tower {
       } else {
         this.stallT = 0
       }
+      if (this.kind === 'barracks' && this.cooldown > 0 && this.cooldown < .2) {
+        const thrower = this.nextThrower()
+        thrower?.prepareThrow(t.pos, 1 - this.cooldown / .2, world.time + dt + .02)
+      }
       if (this.cooldown <= 0 && aimDiff < 0.35) {
         this.stallT = 0
         // overcharge and riftlight don't stack — the stronger boost wins
@@ -1277,7 +1303,7 @@ export class Tower {
       : undefined
     // Saved battles retain their original flight timing, but every visible
     // arrow must leave the current archer's bow, including volleys and echoes.
-    const visualFrom = this.model.getObjectByName('muzzle')?.getWorldPosition(new THREE.Vector3())
+    const visualFrom = this.visualMuzzle()
     world.fireProjectile({ kind: 'arrow', from, visualFrom, target, damage, crit, poison, credit: this, world,
       armorPierce: Math.max(def.armorPierce ?? 0, this.has('enchanted') ? 0.3 : 0) })
   }
@@ -1300,12 +1326,13 @@ export class Tower {
     if (this.perk?.id === 'radiance') dmg *= 1.2
     dmg *= 1 + this.auraDamage
     const from = this.muzzle()
+    const visualFrom = this.visualMuzzle()
     switch (this.kind) {
       case 'beacon': break   // a beacon never reaches fire(); guarded in update()
       case 'tidecaller': {
         const empowered = this.level >= 5 && ++this.signatureCount >= (this.branch === 0 ? 4 : 5)
         if (empowered) { this.signatureCount = 0; this.signatureFired(world) }
-        world.fireProjectile({ kind: 'bolt', from, target, damage: dmg * (empowered && this.branch === 0 ? 1.5 : 1), color: this.branch === 1 ? 0xbcecff : 0x62dfca,
+        world.fireProjectile({ kind: 'bolt', from, visualFrom, target, damage: dmg * (empowered && this.branch === 0 ? 1.5 : 1), color: this.branch === 1 ? 0xbcecff : 0x62dfca,
           splash: def.splash! * (empowered && this.branch === 0 ? 1.3 : 1), slow: def.slow,
           knockback: empowered && this.branch === 1 ? .7 : undefined, credit: this, world })
         world.sfx('magic', .5)
@@ -1313,7 +1340,7 @@ export class Tower {
       }
       case 'seraph': {
         if (this.branch === 1 && def.splash) {
-          world.fireProjectile({ kind: 'voidPulse', from, at: target.pos.clone(), damage: dmg,
+          world.fireProjectile({ kind: 'voidPulse', from, visualFrom, at: target.pos.clone(), damage: dmg,
             splash: def.splash * world.splashMult(), armorShred: def.special?.kind === 'armorShred' ? def.special.amount : undefined,
             credit: this, world })
           this.seraphPulse = 1
@@ -1331,7 +1358,7 @@ export class Tower {
         const shred = special?.kind === 'armorShred' ? special.amount : undefined
         const color = SERAPH_LIGHT[def.model] ?? 0xfff1b0
         world.fireProjectile({
-          kind: 'ray', from, targets, damage: dmg * (crit ? special!.mult : 1),
+          kind: 'ray', from, visualFrom, targets, damage: dmg * (crit ? special!.mult : 1),
           damageType: def.damageType ?? 'physical', color, width: this.level >= 5 ? 0.09 : this.level >= 4 ? 0.07 : 0.05,
           crit: crit || undefined, armorShred: shred,
           mrPierce: this.branch === 1 && (world.balanceRuleset ?? 12) >= 12 ? 1 : undefined, credit: this, world,
@@ -1367,7 +1394,7 @@ export class Tower {
         const great = def.signature === 'greatbolt' && ++this.signatureCount >= 4
         if (great) { this.signatureCount = 0; this.signatureFired(world) }
         world.fireProjectile({
-          kind: 'spear', from, aim, reach: this.range + 0.6,
+          kind: 'spear', from, visualFrom, aim, reach: this.range + 0.6,
           damage: dmg * (great ? 2 : 1), falloff: 0.55, pierceAll: great,
           hitsAir: !!def.flying, airMult,
           armorPierce: knock?.armorPierce ?? (this.has('enchanted') ? 0.3 : undefined),
@@ -1376,8 +1403,8 @@ export class Tower {
           credit: this, world,
         })
         world.sfx('arrow', great ? 1 : 0.85)
-        world.particles.buildDust(from.x, from.y, from.z)
-        if (great) world.particles.magicImpact(from.x, from.y + 0.2, from.z, 0xffd24a)
+        world.particles.buildDust(visualFrom.x, visualFrom.y, visualFrom.z)
+        if (great) world.particles.magicImpact(visualFrom.x, visualFrom.y + 0.2, visualFrom.z, 0xffd24a)
         break
       }
       case 'barracks': {
@@ -1392,14 +1419,25 @@ export class Tower {
           if (d < best) { best = d; thrower = s }
         }
         const origin = thrower ? thrower.handPos : from
-        thrower?.throwAxe(target.pos)
+        // Keep the historical combat facing and timing separate from the actor.
+        thrower?.throwAxe(target.pos, false)
+        const actor = this.nextThrower()
+        actor?.showThrow(target.pos)
+        if (!actor) {
+          this.reserveThrow = 1
+          const sentry = this.model.getObjectByName('sentry'), arm = this.model.getObjectByName('sentryArm')
+          if (sentry) sentry.rotation.y = Math.atan2(target.pos.x - this.pos.x, target.pos.z - this.pos.z)
+          if (arm) arm.rotation.x = -1.35
+        }
+        if (actor) this.visualThrower = (this.soldiers.indexOf(actor) + 1) % this.soldiers.length
         world.fireProjectile({
-          kind: 'axe', from: origin, target, damage: dmg, credit: this, world,
+          kind: 'axe', from: origin, visualFrom: actor?.weaponPos ?? this.visualMuzzle(), target, damage: dmg, credit: this, world,
           armorPierce: Math.max(def.armorPierce ?? 0, this.has('enchanted') ? 0.3 : 0),
         })
         // the release is marked where it happens, so the eye is drawn to the
         // thrower's hand and not to the roof of the building
-        world.particles.hitSpark(origin.x, origin.y, origin.z, 0xff8c42)
+        const release = actor?.weaponPos ?? this.visualMuzzle()
+        world.particles.hitSpark(release.x, release.y, release.z, 0xff8c42)
         world.sfx('arrow', 0.8)
         break
       }
@@ -1421,7 +1459,7 @@ export class Tower {
           for (const e of extras.slice(0, 5)) this.fireArrowAt(e, dmg * 0.75, from, world)
           if (extras.length > 0) {
             world.sfx('arrow', 0.9)
-            world.particles.magicImpact(from.x, from.y + 0.3, from.z, 0xffe89f)
+            world.particles.magicImpact(visualFrom.x, visualFrom.y + 0.3, visualFrom.z, 0xffe89f)
           }
         }
         break
@@ -1430,7 +1468,7 @@ export class Tower {
         const mrPierce = this.perk?.id === 'deepveil' ? 0.5 : undefined
         if (def.special?.kind === 'chain') {
           world.fireProjectile({
-            kind: 'chain', from, first: target, damage: dmg,
+            kind: 'chain', from, visualFrom, first: target, damage: dmg,
             targets: def.special.targets, falloff: def.special.falloff,
             stunChance: def.special.stunChance, stunDur: def.special.stunDur, mrPierce, credit: this, world,
           })
@@ -1444,10 +1482,10 @@ export class Tower {
             resistShred = shred
             if (target.armor <= 0.001 && target.magicResistNow <= 0.001) boltDamage *= 1.3
           }
-          world.fireProjectile({ kind: 'bolt', from, target, damage: boltDamage, color: boltColors[def.model] ?? 0x8f5aff, armorShred: shred, resistShred, mrPierce, credit: this, world })
+          world.fireProjectile({ kind: 'bolt', from, visualFrom, target, damage: boltDamage, color: boltColors[def.model] ?? 0x8f5aff, armorShred: shred, resistShred, mrPierce, credit: this, world })
           world.sfx('magic', 0.7)
         }
-        world.particles.magicImpact(from.x, from.y, from.z, boltColors[def.model] ?? 0x8f5aff)
+        world.particles.magicImpact(visualFrom.x, visualFrom.y, visualFrom.z, boltColors[def.model] ?? 0x8f5aff)
         // Convergence Rune: every fifth cast anchors a pulsing rune (echoes don't count)
         if (def.signature === 'convergenceRune' && !isEcho && ++this.signatureCount >= 5) {
           this.signatureCount = 0
@@ -1461,6 +1499,9 @@ export class Tower {
         break
       }
       case 'cannon': {
+        const barrels = this.model.getObjectByName('muzzle3') ? 3 : this.model.getObjectByName('muzzle2') || this.model.getObjectByName('emitter2') ? 2 : 1
+        const barrel = def.signature === 'twinShells' ? 0 : this.visualBarrel++ % barrels
+        const release = this.visualMuzzle(barrel)
         // lead the target
         const flightTime = Math.max(0.25, Math.hypot(target.pos.x - this.pos.x, target.pos.z - this.pos.z) / 6)
         const predicted = target.lane.sample(
@@ -1481,7 +1522,7 @@ export class Tower {
         const burn = def.special?.kind === 'burnGround' ? def.special : undefined
         const splashMult = world.splashMult() * (this.perk?.id === 'napalm' ? 1.3 : 1)
         world.fireProjectile({
-          kind: 'bomb', from, at, damage: dmg, splash: def.splash! * splashMult, slow: this.has('runic'),
+          kind: 'bomb', from, visualFrom: release, at, damage: dmg, splash: def.splash! * splashMult, slow: this.has('runic'),
           cluster: cluster ? { count: cluster.count, damage: cluster.damage, radius: cluster.radius * splashMult } : undefined,
           burn: burn ? { dps: burn.dps, duration: burn.duration, radius: burn.radius * splashMult } : undefined,
           // Faultline Arsenal: every shell buries a seismic charge in the crater
@@ -1499,7 +1540,7 @@ export class Tower {
           const twinAt = this.pendingTwin
           this.pendingTwin = null
           world.fireProjectile({
-            kind: 'bomb', from: this.muzzle(true), at: twinAt, damage: dmg, splash: def.splash! * splashMult, slow: this.has('runic'),
+            kind: 'bomb', from: this.muzzle(true), visualFrom: this.visualMuzzle(1), at: twinAt, damage: dmg, splash: def.splash! * splashMult, slow: this.has('runic'),
             burn: burn ? { dps: burn.dps, duration: burn.duration, radius: burn.radius * splashMult } : undefined,
             stunChance: this.perk?.id === 'tremor' ? 0.3 : undefined,
             credit: this,
@@ -1507,7 +1548,7 @@ export class Tower {
           })
         }
         world.sfx('cannon', 0.85)
-        world.particles.explosion(from.x + Math.sin(this.turretYaw) * 0.3, from.y + 0.12, from.z + Math.cos(this.turretYaw) * 0.3, 0.35)
+        world.particles.explosion(release.x, release.y, release.z, 0.35)
         break
       }
     }

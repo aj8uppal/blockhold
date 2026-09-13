@@ -21,6 +21,8 @@ export interface VoxModel {
   /** rotation pivot per part, voxel units, model space. Parts author boxes in
    *  absolute model space; the builder re-bases them around the pivot. */
   pivots?: Record<string, [number, number, number]>
+  /** Parts may follow another animated part; pivots remain model-space. */
+  parents?: Record<string, string>
   scale?: number // world units per voxel unit, default 0.1
   /** Named emission points, authored in model-space voxel units. */
   sockets?: Record<string, { part: string, at: [number, number, number] }>
@@ -120,6 +122,13 @@ export function buildModel(model: VoxModel, cacheKey: string, opts: {
     marker.name = name
     marker.position.set(...socket.at.map((v, i) => (v - pivot[i]) * scale) as [number, number, number])
     part.add(marker)
+  }
+  for (const [name, parentName] of Object.entries(model.parents ?? {})) {
+    const child = group.getObjectByName(name), parent = group.getObjectByName(parentName)
+    if (!child || !parent || child === parent) continue
+    const a = model.pivots?.[name] ?? [0, 0, 0], b = model.pivots?.[parentName] ?? [0, 0, 0]
+    child.position.set(...a.map((v, i) => (v - b[i]) * scale) as [number, number, number])
+    parent.add(child)
   }
   return group
 }

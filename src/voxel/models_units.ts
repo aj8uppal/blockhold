@@ -62,14 +62,15 @@ export function humanoid(o: HumanoidOpts): VoxModel {
     armL.push(box(-2.15, 2.6, 0.3, 0.3, 2.4, 1.9, o.shield))
     armL.push(box(-2.32, 2.6, 0.3, 0.12, 1.2, 0.9, o.shieldTrim ?? 0xd8b64a))
   }
+  const weaponR: VoxBox[] = []
   switch (o.weapon ?? 'none') {
     case 'sword':
       armR.push(box(1.55, 3.1, 0.75, 0.28, 2.6, 0.28, 0xc8cdd6)) // blade up
       armR.push(box(1.55, 1.85, 0.75, 0.85, 0.25, 0.4, 0x7a5a30)) // guard
       break
     case 'axe':
-      armR.push(box(1.55, 2.9, 0.75, 0.3, 2.8, 0.3, 0x7a5a30))
-      armR.push(box(1.55, 3.9, 1.15, 0.34, 1.0, 1.1, 0xb7bcc4))
+      weaponR.push(box(1.55, 2.9, 0.75, 0.3, 2.8, 0.3, 0x7a5a30))
+      weaponR.push(box(1.55, 3.9, 1.15, 0.34, 1.0, 1.1, 0xb7bcc4))
       break
     case 'spear':
       armR.push(box(1.55, 3.2, 0.75, 0.26, 4.4, 0.26, 0x8a6a3c))
@@ -91,11 +92,18 @@ export function humanoid(o: HumanoidOpts): VoxModel {
   }
   return {
     scale: s,
-    parts: { body, head, legL, legR, armL, armR },
+    parts: { body, head, legL, legR, armL, armR, ...(weaponR.length ? { weaponR } : {}) },
+    parents: weaponR.length ? { weaponR: 'armR' } : undefined,
+    sockets: {
+      hand: { part: 'armR', at: [1.55, 1.65, .75] },
+      emitter: o.weapon === 'staff' ? { part: 'armR', at: [1.55, 5.3, .75] }
+        : o.weapon === 'bow' ? { part: 'armL', at: [-1.6, 2.7, 1.05] }
+        : { part: 'armR', at: [1.55, 1.65, .75] },
+    },
     pivots: {
       head: [0, 3.6, 0],
       legL: [-0.62, 1.6, 0], legR: [0.62, 1.6, 0],
-      armL: [-1.55, 3.5, 0], armR: [1.55, 3.5, 0],
+      armL: [-1.55, 3.5, 0], armR: [1.55, 3.5, 0], weaponR: [1.55, 3.5, 0],
     },
   }
 }

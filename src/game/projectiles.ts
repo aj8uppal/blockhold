@@ -143,13 +143,15 @@ class BoltProjectile implements Projectile {
   mesh: THREE.Object3D
   done = false
   private pos: THREE.Vector3
+  private visualOffset: THREE.Vector3
   /** where the target was last seen; the point the bolt flies to if it dies */
   private lastAim: THREE.Vector3
   constructor(private spec: Extract<ProjectileSpec, { kind: 'bolt' }>) {
     this.mesh = buildModel(env.boltProjectile(spec.color), `proj:bolt:${spec.color}`, { castShadow: false })
     this.pos = spec.from.clone()
+    this.visualOffset = (spec.visualFrom ?? spec.from).clone().sub(spec.from)
     this.lastAim = spec.target.pos.clone().setY(spec.target.pos.y + 0.35)
-    this.mesh.position.copy(this.pos)
+    this.mesh.position.copy(this.pos).add(this.visualOffset)
   }
   update(dt: number): void {
     const { target, world } = this.spec
@@ -161,7 +163,7 @@ class BoltProjectile implements Projectile {
     const to = this.lastAim
     const d = this.pos.distanceTo(to)
     const step = 7.5 * dt
-    world.particles.trail(this.pos.x, this.pos.y, this.pos.z, this.spec.color, 0.22)
+    world.particles.trail(this.mesh.position.x, this.mesh.position.y, this.mesh.position.z, this.spec.color, 0.22)
     if (d <= step) {
       this.done = true
       if (this.spec.splash) {
@@ -191,7 +193,8 @@ class BoltProjectile implements Projectile {
       return
     }
     this.pos.lerp(to, step / d)
-    this.mesh.position.copy(this.pos)
+    this.visualOffset.multiplyScalar(1 - step / d)
+    this.mesh.position.copy(this.pos).add(this.visualOffset)
     this.mesh.lookAt(to)
   }
 }
@@ -211,7 +214,7 @@ class AxeProjectile extends Ballistic {
   constructor(private spec: Extract<ProjectileSpec, { kind: 'axe' }>) {
     super(
       buildModel(env.axeProjectile(), 'proj:axe', { castShadow: false }),
-      spec.from,
+      spec.visualFrom ?? spec.from,
       spec.from.distanceTo(spec.target.pos),
       // slower and higher than an arrow: it is thrown, and it has to be
       // in the air long enough to be seen tumbling
@@ -219,6 +222,7 @@ class AxeProjectile extends Ballistic {
       1.0,
     )
     this.mesh.scale.setScalar(1.45)
+    this.mesh.lookAt(this.targetPos())
   }
   protected targetPos(): THREE.Vector3 {
     const t = this.spec.target
@@ -252,7 +256,7 @@ class BombProjectile extends Ballistic {
   constructor(private spec: Extract<ProjectileSpec, { kind: 'bomb' }>, arcOverride?: number, speed = 6) {
     super(
       buildModel(env.bombProjectile(), 'proj:bomb', { castShadow: false }),
-      spec.from,
+      spec.visualFrom ?? spec.from,
       spec.from.distanceTo(spec.at),
       speed,
       arcOverride ?? 0.9,
@@ -327,18 +331,20 @@ class WarlockBolt implements Projectile {
   mesh: THREE.Object3D
   done = false
   private pos: THREE.Vector3
+  private visualOffset: THREE.Vector3
   constructor(private spec: Extract<ProjectileSpec, { kind: 'warlockBolt' }>) {
     this.mesh = buildModel(env.boltProjectile(0xff4f6b), 'proj:bolt:warlock', { castShadow: false })
     this.mesh.scale.setScalar(0.8)
     this.pos = spec.from.clone()
-    this.mesh.position.copy(this.pos)
+    this.visualOffset = (spec.visualFrom ?? spec.from).clone().sub(spec.from)
+    this.mesh.position.copy(this.pos).add(this.visualOffset)
   }
   update(dt: number): void {
     const { target, world, damage } = this.spec
     const to = target.group.position.clone().setY(0.35)
     const d = this.pos.distanceTo(to)
     const step = 5.5 * dt
-    world.particles.trail(this.pos.x, this.pos.y, this.pos.z, 0xff4f6b, 0.18)
+    world.particles.trail(this.mesh.position.x, this.mesh.position.y, this.mesh.position.z, 0xff4f6b, 0.18)
     if (d <= step) {
       this.done = true
       if (target.alive) target.takeDamage(damage, world)
@@ -346,7 +352,8 @@ class WarlockBolt implements Projectile {
       return
     }
     this.pos.lerp(to, step / d)
-    this.mesh.position.copy(this.pos)
+    this.visualOffset.multiplyScalar(1 - step / d)
+    this.mesh.position.copy(this.pos).add(this.visualOffset)
   }
 }
 
@@ -373,7 +380,7 @@ class ChainLightning implements Projectile {
       if (!next) break
       hits.push(next)
     }
-    let from = spec.from
+    let from = spec.visualFrom ?? spec.from
     for (const e of hits) {
       const to = e.pos.clone().setY(e.pos.y + 0.35)
       this.mesh.add(makeLightningMesh(from, to))
@@ -479,6 +486,7 @@ class SpearProjectile implements Projectile {
   done = false
   private pos: THREE.Vector3
   private dir: THREE.Vector3
+  private visualOffset: THREE.Vector3
   private travelled = 0
   private hits = 0
   private struck = new Set<Enemy>()
@@ -488,12 +496,12 @@ class SpearProjectile implements Projectile {
   constructor(private spec: Extract<ProjectileSpec, { kind: 'spear' }>) {
     this.mesh = buildModel(env.spearProjectile(spec.pierceAll ? 0xffd24a : 0xc8cdd6), `proj:spear:${spec.pierceAll ? 'great' : 'bolt'}`, { castShadow: false })
     this.pos = spec.from.clone()
+    this.visualOffset = (spec.visualFrom ?? spec.from).clone().sub(spec.from)
     this.dir = spec.aim.clone().sub(spec.from)
     this.dir.y = 0
     if (this.dir.lengthSq() < 1e-6) this.dir.set(0, 0, 1)
     this.dir.normalize()
-    this.mesh.position.copy(this.pos)
-    this.mesh.lookAt(this.pos.clone().add(this.dir))
+    this.draw()
   }
 
   update(dt: number): void {
@@ -510,7 +518,7 @@ class SpearProjectile implements Projectile {
     }
     this.pos.copy(next)
     this.travelled += step
-    this.mesh.position.copy(this.pos)
+    this.draw()
     if (this.travelled >= this.spec.reach) {
       this.done = true
       // it lands somewhere: a bolt that hit nothing still thuds into the dirt
@@ -519,6 +527,12 @@ class SpearProjectile implements Projectile {
         world.sfx('hit', 0.18)
       }
     }
+  }
+
+  private draw(): void {
+    const remaining = Math.max(0, 1 - this.travelled / this.spec.reach)
+    this.mesh.position.copy(this.pos).addScaledVector(this.visualOffset, remaining)
+    this.mesh.lookAt(this.mesh.position.clone().add(this.dir).addScaledVector(this.visualOffset, -1 / this.spec.reach))
   }
 
   private strike(e: Enemy): void {
@@ -575,7 +589,8 @@ class VoidPulse implements Projectile {
   private ring: THREE.Mesh
   private radius: number
   constructor(spec: Extract<ProjectileSpec, { kind: 'voidPulse' }>) {
-    const { world, from, at } = spec
+    const { world, at } = spec
+    const from = spec.visualFrom ?? spec.from
     this.mesh.name = 'void-pulse'
     const mat = (color: number) => {
       const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0,
@@ -644,7 +659,8 @@ class RayProjectile implements Projectile {
   private edge: THREE.InstancedMesh
   private core: THREE.InstancedMesh
   constructor(spec: Extract<ProjectileSpec, { kind: 'ray' }>) {
-    const { world, from } = spec
+    const { world } = spec
+    const from = spec.visualFrom ?? spec.from
     const hits = [...new Set(spec.targets)].filter(e => e.targetable)
     const material = (color: number, opacity: number) => new THREE.MeshBasicMaterial({
       color, transparent: true, opacity, toneMapped: false, depthWrite: false,
