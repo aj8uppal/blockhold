@@ -38,6 +38,11 @@ jobs:
         run: npm test
         working-directory: server
 
+      - name: Sync service container
+        run: |
+          docker build -f server/Dockerfile -t blockhold-sync .
+          docker run --rm blockhold-sync node --input-type=module -e 'await import("./server/src/app.ts")'
+
       # what a first-time visitor downloads before anything is playable
       - name: Bundle budget
         run: npm run bundle:budget

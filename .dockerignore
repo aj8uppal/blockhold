@@ -12,4 +12,5 @@
 !server/src/
 !server/src/**
 !src/core/saveMerge.ts
+!src/core/gameSpeed.ts
 !src/game/ruleset.ts
