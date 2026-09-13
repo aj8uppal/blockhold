@@ -33,8 +33,9 @@
  *  14  Tactical shorelines give water towers useful road coverage.
  *  15  Boats use authored moorings instead of unrestricted water cells.
  *  16  Late-tier roster balance, Ballista range ascension and expanded room speeds.
+ *  17  Mythic battlefield powers, hero mastery and authored weapon origins.
  */
-export const RULESET_VERSION = 16
+export const RULESET_VERSION = 17
 
 /** identifies a reproducible run */
 export interface RunStamp {

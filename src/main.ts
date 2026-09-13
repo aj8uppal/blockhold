@@ -22,6 +22,7 @@ import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
 import { levelById, levels } from './game/levels.ts'
 import { audio } from './core/audio.ts'
 import './style.css'
+import './ui/theme.css'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
 

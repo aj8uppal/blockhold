@@ -82,7 +82,7 @@ export function sacredStone(tier: number, branch: number): VoxModel {
       wing.push(box(side*x,y,-.9,1.25,tier===1?2.1:2.9-i*.15,.9,stone),box(side*x,y-.65,-.35,.6,1.7,.18,shade))
       if(solar && tier>=5) wing.push(box(side*(x+.15),y-2.6,-1.2,1.0,2.0,.75,stone))
     }
-    if(tier===6 && dark){
+    if(tier===6){
       const low:VoxBox[]=[]
       parts[side<0?'wingLowL':'wingLowR']=low
       for(let i=0;i<4;i++)low.push(box(side*(2.3+i*.8),shoulder-2.1-i*.65,-.8,1.2,2.4,.75,stone))
@@ -186,6 +186,13 @@ export function crystalWings(tier:number,branch:number):VoxModel{
   const edge=dark?0x9481ac:0xe6d5ad,shade=dark?0x211b35:solar?0xc79641:0x838caf
   const cy=tier===1?7.6:tier===2?8.7:10+rank*.35
   const parts:VoxModel['parts']={base:foundation(dark),figure:[],heart:[],wingL:[],wingR:[],halo:[]}
+  if (tier === 6 && dark) {
+    // An eclipsed moon and two swept crown blades distinguish the final
+    // transformation without adding a cloud of orbiting shards.
+    disk(parts.halo,cy+3.3,-1.8,2.35,0x111020)
+    ring(parts.halo,0,cy+3.3,-1.47,2.45,0x8e71ba,.2,true)
+    for (const side of [-1,1]) blade(parts.figure,side*1.0,cy+3.0,side*3.6,cy+7.2,1.4,-1.1,shade,edge)
+  }
   gem(parts.figure,0,cy,0,tier===1?2.35:1.3+rank*.1,tier===1?8.4:8+rank*.5,core,face)
   if(tier===1){gem(parts.heart,0,cy,1.25,.9,3.1,0xc2d8ff,0xf0f4ff,true)}
   else{

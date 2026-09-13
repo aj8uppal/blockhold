@@ -11,6 +11,9 @@ const DARK = 'rgba(20, 12, 4, 0.45)'
 const LIGHT = 'rgba(255, 255, 255, 0.35)'
 
 const defs: Record<string, string> = {
+  arrowRight: `<path ${S} d="M4 12h15m-6-6 6 6-6 6"/>`,
+  check: `<path ${S} d="m5 12 4 4L19 6"/>`,
+  compass: `<circle ${S} cx="12" cy="12" r="9"/><path ${S} d="m16 8-2 6-6 2 2-6Z"/>`,
   // ---- resources & stats ----
   heart: `<path fill="currentColor" d="M12 20.5C7.6 16.9 4 13.8 4 9.9 4 7.4 6 5.4 8.4 5.4c1.4 0 2.8.7 3.6 1.9.8-1.2 2.2-1.9 3.6-1.9C18 5.4 20 7.4 20 9.9c0 3.9-3.6 7-8 10.6Z"/>`,
   coin: `<circle cx="12" cy="12" r="8.4" fill="currentColor"/><circle cx="12" cy="12" r="4.7" fill="none" stroke="${DARK}" stroke-width="2"/>`,

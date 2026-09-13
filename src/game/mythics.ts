@@ -2,6 +2,8 @@ import { originalTowerDef, retuneTower } from './lateBalance.ts'
 import { tidecallerMythics } from './tidecaller.ts'
 import type { TowerKind, TowerLevelDef } from './types.ts'
 import { resolveCapstone } from './towerDefs.ts'
+import { MYTHIC_POWERS, MYTHIC_POWER_MODELS } from './mythicPowers.ts'
+import { RULESET_VERSION } from './ruleset.ts'
 
 /** Every family has two mastery branches. Prices are additional run gold. */
 export const MYTHIC_ACCOUNT_LEVEL = 30
@@ -81,8 +83,13 @@ const transformations: Partial<Record<TowerKind, Partial<Record<0 | 1, Partial<T
 }
 
 /** Mastery preserves each branch’s role and signature unless explicitly replaced. */
-export function mythicFor(kind: TowerKind, branch: 0 | 1): TowerLevelDef | null {
+export function mythicFor(kind: TowerKind, branch: 0 | 1, ruleset = RULESET_VERSION): TowerLevelDef | null {
   const change = transformations[kind]?.[branch]
   if (!change) return null
-  return retuneTower({ ...originalTowerDef(resolveCapstone(kind, branch)), ...change })
+  const def = retuneTower({ ...originalTowerDef(resolveCapstone(kind, branch)), ...change })
+  const ability = ruleset >= 17 ? MYTHIC_POWER_MODELS[def.model] : undefined
+  if (!ability) return def
+  return { ...def, mythicAbility: ability,
+    description: `${MYTHIC_POWERS[ability].description} Retains its tier-five weapon.`,
+    ...(ability === 'bloodOath' ? { soldier: { ...def.soldier!, cleave: .45 } } : {}) }
 }

@@ -63,6 +63,8 @@ export interface World {
   onEnemyLeaked(e: Enemy): void
   spawnEnemyAt(id: string, laneIndex: number, dist: number, opts?: { surged?: boolean, eliteRoll?: boolean, hpScale?: number, phaseHealthMult?: number, waveTag?: number, noReward?: boolean }): void
   fireProjectile(p: ProjectileSpec): void
+  /** Treasury payout, through Game so journal totals and shared cooldowns agree. */
+  rewardMythicReserve?(shards: number): void
   /** Second Wind: multiplier on hero respawn time (0.5 when bought) */
   readonly heroReviveMult: number
   /** fraction of invested gold returned on a sell (Full Salvage raises it to 1) */
@@ -85,7 +87,7 @@ export interface World {
 export type ProjectileSpec =
   | { kind: 'voidPulse', from: THREE.Vector3, at: THREE.Vector3, damage: number, splash: number, armorShred?: number, credit?: KillCredit, world: World }
   | { kind: 'seraphBloom', at: THREE.Vector3, solar: boolean, world: World }
-  | { kind: 'arrow', from: THREE.Vector3, target: Enemy, damage: number, crit: boolean, poison?: { dps: number, duration: number }, armorPierce?: number, credit?: KillCredit, world: World }
+  | { kind: 'arrow', from: THREE.Vector3, target: Enemy, damage: number, crit: boolean, poison?: { dps: number, duration: number }, armorPierce?: number, trueDamage?: number, markDuration?: number, credit?: KillCredit, world: World }
   | { kind: 'bolt', from: THREE.Vector3, target: Enemy, damage: number, color: number, splash?: number, knockback?: number, slow?: { factor: number, duration: number }, armorShred?: number, resistShred?: number, mrPierce?: number, credit?: KillCredit, world: World }
   | { kind: 'bomb', from: THREE.Vector3, at: THREE.Vector3, damage: number, splash: number, cluster?: { count: number, damage: [number, number], radius: number }, burn?: { dps: number, duration: number, radius: number }, mine?: MineSpec, stunChance?: number, slow?: boolean, submunition?: boolean, credit?: KillCredit, world: World }
   | { kind: 'chain', from: THREE.Vector3, first: Enemy, damage: number, targets: number, falloff: number, stunChance: number, stunDur: number, mrPierce?: number, credit?: KillCredit, world: World }

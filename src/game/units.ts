@@ -308,6 +308,11 @@ export class Enemy {
   private raiseRing: THREE.Mesh | null = null
   revealedUntil = 0
   mythicExposedUntil = 0
+  markedUntil = 0
+  nullifiedUntil = 0
+  healBlockedUntil = 0
+  brittleUntil = 0
+  wardBrokenUntil = 0
   get targetable(): boolean { return this.alive && (!this.phased || this.revealed) }
   /** perched out of melee reach (soldiers must not chase a hexing imp) */
   get unreachable(): boolean { return this.hexTarget !== null }
@@ -342,7 +347,7 @@ export class Enemy {
    * healers and a stronger source arriving after a weaker one.
    */
   receiveAuraHealing(hps: number, world: World): void {
-    if (!this.alive || hps <= 0) return
+    if (!this.alive || hps <= 0 || world.time < this.healBlockedUntil) return
     if (world.time >= this.auraHealUntil) {
       this.auraHealUntil = world.time + 0.6
       this.auraHealStrength = 0
@@ -359,16 +364,18 @@ export class Enemy {
   takeDamage(amount: number, type: DamageType, world: World, opts: { crit?: boolean, silent?: boolean, mrPierce?: number, armorPierce?: number, credit?: KillCredit, flavor?: DeathFlavor } = {}): number {
     if (!this.alive || (this.phased && !this.revealed)) return 0
     let mult = 1
-    if (type === 'physical') mult = 1 - this.armor * (1 - (opts.armorPierce ?? 0))
-    else if (type === 'magic') mult = 1 - this.magicResistNow * (1 - (opts.mrPierce ?? 0))
+    if (type === 'physical') mult = world.time < this.brittleUntil ? 1 : 1 - this.armor * (1 - (opts.armorPierce ?? 0))
+    else if (type === 'magic') mult = world.time < this.nullifiedUntil ? 1 : 1 - this.magicResistNow * (1 - (opts.mrPierce ?? 0))
     // a wardbearer's banner half-shields the horde ahead of it
-    if (world.time < this.wardedUntil) {
+    if (world.time < this.wardedUntil && world.time >= this.nullifiedUntil && world.time >= this.wardBrokenUntil) {
       mult *= 0.5
       if (!opts.silent && Math.random() < 0.35) {
         world.particles.magicImpact(this.pos.x, this.pos.y + 0.45, this.pos.z, 0x8fdfff)
       }
     }
+    // Vulnerability sources use the strongest active mark, never multiply.
     if (world.time < this.mythicExposedUntil) mult *= 1.3
+    else if (world.time < this.markedUntil) mult *= 1.25
     if (this.inCutting) mult *= 1 + CUTTING_VULN
     const dealt = Math.max(0, amount * mult)
     if (opts.credit) {
@@ -623,7 +630,7 @@ export class Enemy {
     }
 
     // boss summons
-    if (this.def.summons && this.state === 'walking') {
+    if (this.def.summons && this.state === 'walking' && world.time >= this.nullifiedUntil) {
       this.summonTimer += dt
       if (this.summonTimer >= this.def.summons.interval) {
         this.summonTimer = 0
@@ -665,7 +672,16 @@ export class Enemy {
       }
       if (dps > 0) {
         // the ward halves poison the same as every other damage source
-        if (world.time < this.wardedUntil) dps *= 0.5
+        if (world.time < this.wardedUntil && world.time >= this.nullifiedUntil && world.time >= this.wardBrokenUntil) dps *= 0.5
+        if ((world.balanceRuleset ?? 0) >= 17) {
+          if (world.time < this.mythicExposedUntil) dps *= 1.3
+          else if (world.time < this.markedUntil) dps *= 1.25
+          if (strongest) {
+            const damage = Math.min(Math.max(0, this.hp), dps * dt)
+            strongest.damage += damage
+            if (strongest.support) strongest.support.supportedDamage += damage
+          }
+        }
         this.hp -= dps * dt
         if (Math.random() < dt * 6) world.particles.poisonDrip(this.pos.x, this.pos.y + 0.3, this.pos.z)
         if (this.hp <= 0) {
@@ -675,8 +691,8 @@ export class Enemy {
         }
       }
     }
-    if (this.def.regen && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + this.def.regen * dt)
-    if (this.def.healAura) {
+    if (this.def.regen && this.hp < this.maxHp && world.time >= this.healBlockedUntil) this.hp = Math.min(this.maxHp, this.hp + this.def.regen * dt)
+    if (this.def.healAura && world.time >= this.nullifiedUntil) {
       this.healAuraTimer -= dt
       if (this.healAuraTimer <= 0) {
         this.healAuraTimer = 0.6
@@ -727,7 +743,7 @@ export class Enemy {
 
     // wardbearer: the banner half-shields everyone marching ahead of it
     // (marked at 4Hz so a crowd of bearers stays cheap in deep endless)
-    if (this.def.wardAura) {
+    if (this.def.wardAura && world.time >= this.nullifiedUntil) {
       this.wardTimer -= dt
       if (this.wardTimer <= 0) {
         this.wardTimer = 0.25
@@ -746,7 +762,7 @@ export class Enemy {
     // direction rather than only forward, and dies with it. It reuses the ward
     // rather than inventing a second shield mechanic, so a player who has
     // already learned "kill the banner" reads this instantly.
-    if (this.affix?.id === 'commander') {
+    if (this.affix?.id === 'commander' && world.time >= this.nullifiedUntil) {
       this.wardTimer -= dt
       if (this.wardTimer <= 0) {
         this.wardTimer = 0.25
@@ -1034,10 +1050,13 @@ export class Soldier {
 
   get alive(): boolean { return !this.dead }
 
+  oathUntil = 0
+
   takeDamage(amount: number, world: World): void {
     if (this.dead) return
     const dealt = Math.max(1, amount * (1 - this.def.armor))
     this.hp -= dealt
+    if (world.time < this.oathUntil) this.hp = Math.max(1, this.hp)
     this.flash = 0.14
     setFlash(this.group, 0.6)
     world.particles.bloodHit(this.group.position.x, this.group.position.y + 0.35, this.group.position.z)
@@ -1226,7 +1245,15 @@ export class Soldier {
         if (this.attackTimer <= 0) {
           this.attackTimer = this.def.attackInterval / this.supportRate
           const dmg = randRange(...this.def.damage) * this.supportDamage
-          const dealt = this.target.takeDamage(dmg, 'physical', world, { credit: this.credit ?? undefined, armorPierce: this.def.armorPierce })
+          const struck = this.target
+          const dealt = struck.takeDamage(dmg, 'physical', world, { credit: this.credit ?? undefined, armorPierce: this.def.armorPierce })
+          if (this.def.cleave) {
+            for (const e of world.enemies) {
+              if (e === struck || !e.targetable || e.airborne || e.unreachable) continue
+              if (Math.hypot(e.pos.x - struck.pos.x, e.pos.z - struck.pos.z) <= .95 + e.radius)
+                e.takeDamage(dmg * this.def.cleave, 'physical', world, { credit: this.credit ?? undefined, armorPierce: this.def.armorPierce })
+            }
+          }
           if (this.def.lifesteal) this.hp = Math.min(this.maxHp, this.hp + dealt * this.def.lifesteal)
           this.strikeT = 1
           this.hitCount++

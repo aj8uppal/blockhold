@@ -1,3 +1,5 @@
+import { fireArtillery, worldshakerModel } from './models_artillery.ts'
+import { mythicArchitecture, mythicVessel } from './models_mythic.ts'
 import { crystalWings, sacredStone } from './models_seraph_suites.ts'
 import { tidecallerModel } from './models_tidecaller.ts'
 import { VoxModel, VoxBox, box } from './builder.ts'
@@ -97,7 +99,7 @@ function arrowTower(level: 1 | 2 | 3): VoxModel {
     }
   }
   const fig = archerFigure(h + 0.8, level === 3 ? 0x4a7a3f : 0x8a6a4a, level === 3 ? 0x2f4f28 : 0x6d4f2a)
-  return { parts: { base, turret: fig.part }, pivots: { turret: fig.pivot } }
+  return { parts: { base, turret: fig.part }, pivots: { turret: fig.pivot }, sockets: { muzzle: { part: 'turret', at: [-.5, fig.pivot[1] + .2, 1.05] } } }
 }
 
 function sharpshooterTower(): VoxModel {
@@ -121,7 +123,7 @@ function sharpshooterTower(): VoxModel {
     box(1.9, h + 4.0, -0.75, 0.9, 0.7, 0.3, 0x7fe8ff, true),      // lens
   ]
   const fig = archerFigure(h + 0.9, 0x2f4f28, 0x1e3319)
-  return { parts: { base, turret: fig.part }, pivots: { turret: fig.pivot } }
+  return { parts: { base, turret: fig.part }, pivots: { turret: fig.pivot }, sockets: { muzzle: { part: 'turret', at: [-.5, fig.pivot[1] + .2, 1.05] } } }
 }
 
 function galeTower(): VoxModel {
@@ -141,7 +143,7 @@ function galeTower(): VoxModel {
     box(3.0, h + 3.9, 3.0, 1.0, 0.5, 0.2, 0x9fdf8f, true),
   ]
   const fig = archerFigure(h + 0.8, 0x7f9f5a, 0x55703e)
-  return { parts: { base, turret: fig.part }, pivots: { turret: fig.pivot } }
+  return { parts: { base, turret: fig.part }, pivots: { turret: fig.pivot }, sockets: { muzzle: { part: 'turret', at: [-.5, fig.pivot[1] + .2, 1.05] } } }
 }
 
 // ---------------- Mage towers ----------------
@@ -258,24 +260,7 @@ function cannonTower(level: 1 | 2 | 3): VoxModel {
   return { parts: { base, turret }, pivots: { turret: [0, ty, 0] } }
 }
 
-function dragonfireMortar(): VoxModel {
-  const base: VoxBox[] = [
-    box(0, 0.6, 0, 7.6, 1.2, 7.6, 0x4d3f38),
-    box(0, 2.2, 0, 6.4, 2.2, 6.4, 0x5c4a42),
-    ...crenels(0, 3.7, 0, 5.6, 5.6, 0x4d3f38),
-    box(-2.6, 4.6, -2.6, 0.7, 2.4, 0.7, W.iron),
-    box(-2.6, 6.0, -2.6, 1.0, 0.6, 0.6, 0xff7a3c, true),   // brazier
-    box(2.6, 4.6, 2.6, 0.7, 2.4, 0.7, W.iron),
-    box(2.6, 6.0, 2.6, 1.0, 0.6, 0.6, 0xff7a3c, true),
-  ]
-  const turret: VoxBox[] = [
-    box(0, 4.4, 0, 3.6, 1.8, 3.6, W.iron),
-    box(0, 6.2, 0.7, 3.0, 3.2, 3.0, 0x353942),             // fat mortar tube, angled feel
-    box(0, 7.9, 1.0, 3.4, 0.8, 3.4, 0x2a2d35),
-    box(0, 7.6, 1.0, 2.2, 0.7, 2.2, 0xff5a3c, true),       // glowing throat
-  ]
-  return { parts: { base, turret }, pivots: { turret: [0, 4.4, 0] } }
-}
+function dragonfireMortar(): VoxModel { return fireArtillery(4) }
 
 function clusterBombard(): VoxModel {
   const base: VoxBox[] = [
@@ -411,7 +396,8 @@ function convergenceMonolith(branch: 0 | 1): VoxModel {
 }
 
 function faultlineArsenal(branch: 0 | 1): VoxModel {
-  const m = branch === 0 ? dragonfireMortar() : clusterBombard()
+  if (branch === 0) return fireArtillery(5)
+  const m = clusterBombard()
   // seismic charge stockpiles by the walls
   m.parts.base.push(
     box(-2.9, 1.7, 0.6, 1.1, 1.0, 1.1, 0x2b2333),
@@ -420,8 +406,7 @@ function faultlineArsenal(branch: 0 | 1): VoxModel {
     box(2.9, 2.4, -0.6, 0.8, 0.5, 0.8, 0xff7a3c, true),
   )
   // gilded reinforcement bands on the gun
-  if (branch === 0) m.parts.turret.push(box(0, 7.2, 0.7, 3.4, 0.6, 3.4, W.gold))
-  else m.parts.turret.push(box(-1.1, 5.8, 3.0, 1.8, 1.8, 0.5, W.gold), box(1.1, 5.8, 3.0, 1.8, 1.8, 0.5, W.gold))
+  m.parts.turret.push(box(-1.1, 5.8, 3.0, 1.8, 1.8, 0.5, W.gold), box(1.1, 5.8, 3.0, 1.8, 1.8, 0.5, W.gold))
   return m
 }
 
@@ -673,20 +658,6 @@ export type TowerModelId =
   | 'seraph6a' | 'seraph6b'
   | 'seraph1' | 'seraph2' | 'seraph3' | 'seraph4a' | 'seraph4b' | 'seraph5a' | 'seraph5b'
 
-/** One architectural accent at mastery, retaining the working parts and footprint. */
-function masteryModel(model: VoxModel, family: string, branch: number): VoxModel {
-  const trim = branch === 0 ? W.gold : 0x83bac7
-  const base = model.parts.base ?? (model.parts.base = [])
-  base.push(box(0, 0.45, 0, 8.2, 0.3, 8.2, trim))
-  const top = family === 'mage' ? 13 : family === 'arrow' ? 11 : family === 'beacon' ? 10 : 7
-  model.parts.mastery = [
-    box(-3.4, top / 2, -2.8, 0.55, top, 0.8, trim),
-    box(3.4, top / 2, -2.8, 0.55, top, 0.8, trim),
-    box(0, top, -2.8, 7.3, 0.45, 0.8, trim),
-  ]
-  return model
-}
-
 const factories: Record<TowerModelId, () => VoxModel> = {
   tidecaller1: () => tidecallerModel(1, 0),
   tidecaller2: () => tidecallerModel(2, 0),
@@ -695,16 +666,16 @@ const factories: Record<TowerModelId, () => VoxModel> = {
   tidecaller4b: () => tidecallerModel(4, 1),
   tidecaller5a: () => tidecallerModel(5, 0),
   tidecaller5b: () => tidecallerModel(5, 1),
-  tidecaller6a: () => tidecallerModel(6, 0),
-  tidecaller6b: () => tidecallerModel(6, 1),
+  tidecaller6a: () => mythicVessel(false),
+  tidecaller6b: () => mythicVessel(true),
 
-  arrow6a: () => masteryModel(crownwingAerie(0), 'arrow', 0), arrow6b: () => masteryModel(crownwingAerie(1), 'arrow', 1),
-  mage6a: () => masteryModel(convergenceMonolith(0), 'mage', 0), mage6b: () => masteryModel(convergenceMonolith(1), 'mage', 1),
-  cannon6a: () => masteryModel(faultlineArsenal(0), 'cannon', 0), cannon6b: () => masteryModel(faultlineArsenal(1), 'cannon', 1),
-  barracks6b: () => masteryModel(oathgateCitadel(1), 'barracks', 1),
-  beacon6a: () => masteryModel(crownfire(), 'beacon', 0), beacon6b: () => masteryModel(exchequer(), 'beacon', 1),
-  ballista6a: () => masteryModel(heavensplitter(), 'ballista', 0), ballista6b: () => masteryModel(godsbaneRam(), 'ballista', 1),
-  barracks6a: lastLegion, seraph6a: () => sacredStone(6, 0), seraph6b: () => crystalWings(6, 1),
+  arrow6a: () => mythicArchitecture('arrow', 0, crownwingAerie(0)), arrow6b: () => mythicArchitecture('arrow', 1, crownwingAerie(1)),
+  mage6a: () => mythicArchitecture('mage', 0, convergenceMonolith(0)), mage6b: () => mythicArchitecture('mage', 1, convergenceMonolith(1)),
+  cannon6a: () => fireArtillery(6), cannon6b: () => worldshakerModel(),
+  barracks6b: () => mythicArchitecture('barracks', 1, oathgateCitadel(1)),
+  beacon6a: () => mythicArchitecture('beacon', 0, crownfire()), beacon6b: () => mythicArchitecture('beacon', 1, exchequer()),
+  ballista6a: () => mythicArchitecture('ballista', 0, heavensplitter()), ballista6b: () => mythicArchitecture('ballista', 1, godsbaneRam()),
+  barracks6a: () => mythicArchitecture('barracks', 0, lastLegion()), seraph6a: () => sacredStone(6, 0), seraph6b: () => crystalWings(6, 1),
   arrow1: () => arrowTower(1), arrow2: () => arrowTower(2), arrow3: () => arrowTower(3),
   arrow4a: sharpshooterTower, arrow4b: galeTower,
   arrow5a: () => crownwingAerie(0), arrow5b: () => crownwingAerie(1),

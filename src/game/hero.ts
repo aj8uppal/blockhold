@@ -5,13 +5,17 @@ import { HeroDef, HeroId, SoldierDef } from './types.ts'
 import { lerpAngle, randRange, simRandom } from '../core/utils.ts'
 import { icon } from '../ui/icons.ts'
 import { heroPath, type HeroPathId } from './heroPaths.ts'
+import { RULESET_VERSION } from './ruleset.ts'
 
 const RESPAWN_TIME = 16
 const XP_LEVELS = [0, 60, 150, 280, 450, 660, 920, 1240, 1620, 2100]
+const MASTERY_XP = [...XP_LEVELS, 2900, 3900, 5100, 6500, 8100, 9900, 11900, 14100, 16500, 19100]
 
 /** how far a signature can be sharpened, and what each rank costs in shards */
-export const HERO_RANK_MAX = 3
-export const heroRankCost = (rank: number): number => 4 + rank * 2
+export const HERO_RANK_MAX = 6
+export const heroRankCost = (rank: number): number => [4, 6, 8, 10, 14, 20][rank] ?? Infinity
+export const heroRankGold = (rank: number): number => [0, 0, 0, 1000, 3000, 6500][rank] ?? Infinity
+export const heroRankLevel = (rank: number): number => [1, 1, 1, 10, 13, 16][rank] ?? Infinity
 
 export const HERO_DEFS: Record<HeroId, HeroDef> = {
   aldric: {
@@ -100,7 +104,12 @@ export class Hero extends Soldier {
   } | null = null
 
   get abilityName(): string { return heroPath(this.heroDef.id, this.specialization)?.abilityName ?? this.heroDef.ability.name }
-  get abilityBlurb(): string { return heroPath(this.heroDef.id, this.specialization)?.blurb ?? this.heroDef.ability.blurb }
+  get abilityBlurb(): string {
+    const path = heroPath(this.heroDef.id, this.specialization)
+    if (path) return path.blurb
+    if (this.heroDef.id === 'liora') return `Looses arrows at up to ${7 + this.signatureRank * 2} foes, gate-runners first.`
+    return this.heroDef.ability.blurb
+  }
   get hasActiveField(): boolean { return this.signatureField !== null }
 
   /** Selection is validated again at the entity boundary, including imported loadouts. */
@@ -127,7 +136,7 @@ export class Hero extends Soldier {
     return Math.max(0, this.abilityCooldown / this.heroDef.ability.cooldown)
   }
 
-  constructor(readonly heroDef: HeroDef, spawnPos: THREE.Vector3) {
+  constructor(readonly heroDef: HeroDef, spawnPos: THREE.Vector3, readonly ruleset = RULESET_VERSION) {
     const soldierDef: SoldierDef = {
       name: heroDef.name, hp: heroDef.hp, damage: [...heroDef.damage],
       attackInterval: heroDef.attackInterval, armor: heroDef.armor,
@@ -139,17 +148,20 @@ export class Hero extends Soldier {
   }
 
   get ranged(): boolean { return this.heroDef.attackRange !== undefined }
+  get rankMax(): number { return this.ruleset >= 17 ? HERO_RANK_MAX : 3 }
+  get levelMax(): number { return this.ruleset >= 17 ? MASTERY_XP.length : XP_LEVELS.length }
+  get attackRange(): number { return (this.heroDef.attackRange ?? 1.9) + (this.signatureRank >= 4 ? .6 : 0) }
 
   /** radius the hero holds: melee leash around the post, or attack range */
-  get guardRange(): number { return this.heroDef.attackRange ?? 1.9 }
+  get guardRange(): number { return this.attackRange }
 
   get xpToNext(): number {
-    return this.level >= XP_LEVELS.length ? Infinity : XP_LEVELS[this.level]
+    return this.level >= this.levelMax ? Infinity : MASTERY_XP[this.level]
   }
 
   get xpProgress(): { into: number, span: number } {
     if (this.xpToNext === Infinity) return { into: 1, span: 1 }
-    const floor = XP_LEVELS[this.level - 1]
+    const floor = MASTERY_XP[this.level - 1]
     return { into: this.xp - floor, span: this.xpToNext - floor }
   }
 
@@ -158,14 +170,16 @@ export class Hero extends Soldier {
   }
 
   gainXp(amount: number, world: World): void {
-    if (this.level >= XP_LEVELS.length) return
+    if (this.level >= this.levelMax) return
     this.xp += amount
-    while (this.level < XP_LEVELS.length && this.xp >= XP_LEVELS[this.level]) {
+    while (this.level < this.levelMax && this.xp >= MASTERY_XP[this.level]) {
       this.level++
-      this.maxHp = Math.round(this.maxHp * 1.14)
+      const late = this.level > 10
+      this.maxHp = Math.round(this.maxHp * (late ? 1.18 : 1.14))
       this.hp = this.maxHp
       const d = this.def as { damage: [number, number] }
-      d.damage = [Math.round(d.damage[0] * 1.13), Math.round(d.damage[1] * 1.13)]
+      d.damage = [Math.round(d.damage[0] * (late ? 1.2 : 1.13)), Math.round(d.damage[1] * (late ? 1.2 : 1.13))]
+      if (late) this.def.regen = Math.round((this.def.regen ?? 0) * 1.1)
       world.particles.healSparkle(this.group.position.x, 0.6, this.group.position.z)
       world.floater(this.group.position.x, 1.1, this.group.position.z, `${icon('swords')} Level ${this.level}!`, 'gold')
       world.sfx('heroLevel')
@@ -273,17 +287,66 @@ export class Hero extends Soldier {
    */
   signatureRank = 0
 
+  get rankTitle(): string {
+    return this.signatureRank < 3 ? `Sharpen ${this.abilityName}`
+      : this.signatureRank === 3 ? 'Champion weapons'
+        : this.signatureRank === 4 ? 'Battle-hardened' : `Legendary ${this.abilityName}`
+  }
+
+  get rankDescription(): string {
+    if (this.signatureRank < 3) return '+28% signature power, +18% reach, faster recharge.'
+    if (this.signatureRank === 3) return this.heroDef.id === 'aldric' ? '+50% attack damage, +20% health. Sword strikes cleave nearby ground foes.'
+      : this.heroDef.id === 'liora' ? '+50% attack damage, +20% health. Fire at two foes and ignore half of armor.'
+        : '+50% attack damage, +20% health. Basic spells chain through three foes.'
+    if (this.signatureRank === 4) return '+60% health and regeneration, +12% armor, +35% attack damage and faster attacks.'
+    return this.legendaryBlurb
+  }
+
+  get legendaryBlurb(): string {
+    if (this.heroDef.id === 'aldric') return this.specialization === 'vanguard'
+      ? 'Breachmaker wounds bosses for a share of their maximum health and marks them for the defense. Aldric cannot fall for 2.5s after a slam.'
+      : 'Slam wounds enemies for a share of maximum health and protects nearby allies from death for 2.5s. Guardian Standard also heals 5% maximum health each pulse.'
+    if (this.heroDef.id === 'liora') return this.specialization === 'gale'
+      ? 'Wind Corridor wounds enemies for a share of maximum health and marks the pack for 25% more allied damage.'
+      : 'Signature arrows wound enemies for a share of maximum health and mark survivors for 25% more allied damage for 4s.'
+    return this.specialization === 'riftbinder'
+      ? 'Rift Anchor wounds enemies for a share of maximum health and suppresses magic resistance, wards and healing inside it.'
+      : 'Signature lightning wounds enemies for a share of maximum health and strips 10% magic resistance on each pulse.'
+  }
+
+  /** Costs live in Game; this boundary also validates the rank and required battle level. */
+  upgradeSignature(): boolean {
+    if (this.signatureRank >= this.rankMax || this.level < heroRankLevel(this.signatureRank)) return false
+    this.signatureRank++
+    const rank = this.signatureRank
+    if (rank === 4 || rank === 5) {
+      const fraction = this.dead ? 0 : this.hp / this.maxHp
+      const power = rank === 4 ? 1.5 : 1.35
+      this.maxHp = Math.round(this.maxHp * (rank === 4 ? 1.2 : 1.6))
+      this.hp = this.maxHp * fraction
+      this.def.damage = [Math.round(this.def.damage[0] * power), Math.round(this.def.damage[1] * power)]
+      if (rank === 4 && !this.ranged) this.def.cleave = .55
+      if (rank === 5) {
+        this.def.armor = Math.min(.65, this.def.armor + .12)
+        this.def.regen = Math.round((this.def.regen ?? 0) * 1.6)
+        this.def.attackInterval *= .82
+      }
+    }
+    if (this.ruleset >= 17) this.abilityCooldown = Math.min(this.abilityCooldown, this.signatureCooldown)
+    return true
+  }
+
   get signatureCooldown(): number {
-    return this.heroDef.ability.cooldown * (1 - this.signatureRank * 0.12)
+    return this.heroDef.ability.cooldown * (1 - Math.min(3, this.signatureRank) * 0.12 - Math.max(0, this.signatureRank - 3) * .045)
   }
 
   /** how much wider and harder the signature lands at this rank */
   get signaturePower(): number {
-    return 1 + this.signatureRank * 0.28
+    return 1 + Math.min(3, this.signatureRank) * .28 + Math.max(0, this.signatureRank - 3) * .5
   }
 
   get signatureReach(): number {
-    return 1 + this.signatureRank * 0.18
+    return 1 + Math.min(3, this.signatureRank) * .18 + Math.max(0, this.signatureRank - 3) * .07
   }
 
   /** the hero's signature is the player's to spend, not the AI's */
@@ -326,6 +389,14 @@ export class Hero extends Soldier {
         if (v === priority) v.shredArmor(0.2)
         v.takeDamage(dmg * (v === priority ? 2 : 1) * (0.85 + simRandom() * 0.3), 'true', world, { credit: this })
         v.applyStun(0.8, world)
+        if (this.signatureRank >= 6) {
+          v.takeDamage(v.maxHp * (v.def.boss ? .012 : .08), 'true', world, { credit: this })
+          if (this.specialization === 'vanguard') v.markedUntil = Math.max(v.markedUntil, world.time + 4)
+        }
+      }
+      if (this.signatureRank >= 6) for (const s of world.soldiers) {
+        if (s.alive && (s === this || this.specialization !== 'vanguard' && s.group.position.distanceTo(pos) < 2.2 * this.signatureReach))
+          s.oathUntil = Math.max(s.oathUntil, world.time + 2.5)
       }
       if (this.specialization === 'bulwark') {
         this.plantSignatureField('bulwark', world, 2.2 * this.signatureReach)
@@ -339,7 +410,7 @@ export class Hero extends Soldier {
       return true
     }
     if (kind === 'volley') {
-      const range = this.heroDef.attackRange ?? 3
+      const range = this.ruleset >= 17 ? this.attackRange * this.signatureReach : this.heroDef.attackRange ?? 3
       const victims = world.enemies
         .filter(e => e.targetable && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < range + 0.5)
         .sort((a, b) => this.specialization === 'hawkeye' ? b.maxHp - a.maxHp || a.remaining - b.remaining : a.remaining - b.remaining)
@@ -352,6 +423,8 @@ export class Hero extends Soldier {
           target: v,
           damage: randRange(...this.def.damage) * (this.specialization === 'hawkeye' ? 3.2 : 1.25) * this.signaturePower,
           armorPierce: this.specialization === 'hawkeye' ? 0.65 : undefined,
+          trueDamage: this.signatureRank >= 6 ? v.maxHp * (v.def.boss ? .012 : .08) : undefined,
+          markDuration: this.signatureRank >= 6 ? 4 : undefined,
           crit: true,
           credit: this,
           world,
@@ -369,6 +442,10 @@ export class Hero extends Soldier {
     for (const v of victims) {
       v.takeDamage(dmg * (0.85 + simRandom() * 0.3), 'magic', world, { credit: this })
       v.applySlow(0.45, 2.5, world)
+      if (this.signatureRank >= 6) {
+        v.takeDamage(v.maxHp * (v.def.boss ? .012 : .08), 'true', world, { credit: this })
+        v.shredResist(.1)
+      }
     }
     world.particles.magicImpact(pos.x, 0.4, pos.z, 0x9fe8ff)
     world.particles.explosion(pos.x, 0.2, pos.z, 0.5)
@@ -421,7 +498,7 @@ export class Hero extends Soldier {
     if (field.kind === 'bulwark') {
       for (const soldier of new Set([this, ...world.soldiers])) {
         if (!soldier.alive || !contains(soldier.group.position) || soldier.hp >= soldier.maxHp) continue
-        soldier.hp = Math.min(soldier.maxHp, soldier.hp + (12 + this.level * 2) * field.power)
+        soldier.hp = Math.min(soldier.maxHp, soldier.hp + (12 + this.level * 2) * field.power + (this.signatureRank >= 6 ? soldier.maxHp * .05 : 0))
         world.particles.healSparkle(soldier.group.position.x, 0.5, soldier.group.position.z)
       }
       return
@@ -431,6 +508,14 @@ export class Hero extends Soldier {
       if (!enemy.targetable || !contains(enemy.pos, radius)) continue
       enemy.takeDamage(amount, 'magic', world, { credit: this })
       if (field.kind !== 'riftbinder') enemy.applySlow(field.kind === 'gale' ? 0.6 : 0.5, 1.15, world)
+      if (this.signatureRank >= 6) {
+        enemy.takeDamage(enemy.maxHp * (enemy.def.boss ? .003 : .02), 'true', world, { credit: this })
+        if (field.kind === 'gale') enemy.markedUntil = Math.max(enemy.markedUntil, world.time + 1.2)
+        else if (field.kind === 'riftbinder') {
+          enemy.nullifiedUntil = Math.max(enemy.nullifiedUntil, world.time + 1.1)
+          enemy.healBlockedUntil = Math.max(enemy.healBlockedUntil, world.time + 1.1)
+        } else enemy.shredResist(.1)
+      }
     }
     world.particles.magicImpact(field.center.x, 0.25, field.center.z, field.kind === 'riftbinder' ? 0xbc8cff : 0x91dcff)
   }
@@ -443,7 +528,7 @@ export class Hero extends Soldier {
     if (this.def.regen && this.hp < this.maxHp) {
       this.hp = Math.min(this.maxHp, this.hp + this.def.regen * dt * 0.6)
     }
-    const range = this.heroDef.attackRange!
+    const range = this.attackRange
     // nearest targetable enemy in range — flyers included, that's her niche
     let best = null as import('./units.ts').Enemy | null
     let bestD = Infinity
@@ -459,10 +544,15 @@ export class Hero extends Soldier {
         this.rangedAttackTimer = this.def.attackInterval
         const from = pos.clone().add(new THREE.Vector3(0, 0.45, 0))
         if (this.heroDef.projectile === 'bolt') {
-          world.fireProjectile({ kind: 'bolt', from, target: best, damage: randRange(...this.def.damage), color: 0x9fe8ff, credit: this, world })
+          if (this.signatureRank >= 4) world.fireProjectile({ kind: 'chain', from, first: best, damage: randRange(...this.def.damage), targets: 3, falloff: .8, stunChance: 0, stunDur: 0, credit: this, world })
+          else world.fireProjectile({ kind: 'bolt', from, target: best, damage: randRange(...this.def.damage), color: 0x9fe8ff, credit: this, world })
           world.sfx('magic', 0.6)
         } else {
-          world.fireProjectile({ kind: 'arrow', from, target: best, damage: randRange(...this.def.damage), crit: false, credit: this, world })
+          world.fireProjectile({ kind: 'arrow', from, target: best, damage: randRange(...this.def.damage), armorPierce: this.signatureRank >= 4 ? .5 : undefined, crit: false, credit: this, world })
+          if (this.signatureRank >= 4) {
+            const second = world.enemies.filter(e => e !== best && e.targetable && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < range).sort((a, b) => a.remaining - b.remaining)[0]
+            if (second) world.fireProjectile({ kind: 'arrow', from, target: second, damage: randRange(...this.def.damage), armorPierce: .5, crit: false, credit: this, world })
+          }
           world.sfx('arrow', 0.7)
         }
         this.rangedCastAnim()

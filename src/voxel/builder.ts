@@ -13,6 +13,7 @@ export interface VoxBox {
   sx: number; sy: number; sz: number   // size, voxel units
   c: number                            // color
   glow?: boolean                       // unlit bright material (crystals, magic)
+  rx?: number                          // static pitch, e.g. a raised mortar barrel
 }
 
 export interface VoxModel {
@@ -21,6 +22,8 @@ export interface VoxModel {
    *  absolute model space; the builder re-bases them around the pivot. */
   pivots?: Record<string, [number, number, number]>
   scale?: number // world units per voxel unit, default 0.1
+  /** Named emission points, authored in model-space voxel units. */
+  sockets?: Record<string, { part: string, at: [number, number, number] }>
 }
 
 export const box = (
@@ -45,6 +48,7 @@ function buildGeometry(boxes: VoxBox[], scale: number, pivot: [number, number, n
   const color = new THREE.Color()
   for (const b of boxes) {
     const g = new THREE.BoxGeometry(b.sx * scale, b.sy * scale, b.sz * scale)
+    if (b.rx) g.rotateX(b.rx)
     g.translate((b.x - pivot[0]) * scale, (b.y - pivot[1]) * scale, (b.z - pivot[2]) * scale)
     const count = g.attributes.position.count
     const colors = new Float32Array(count * 3)
@@ -107,6 +111,15 @@ export function buildModel(model: VoxModel, cacheKey: string, opts: {
       partGroup.add(mesh)
     }
     group.add(partGroup)
+  }
+  for (const [name, socket] of Object.entries(model.sockets ?? {})) {
+    const part = group.getObjectByName(socket.part)
+    if (!part) continue
+    const pivot = model.pivots?.[socket.part] ?? [0, 0, 0]
+    const marker = new THREE.Object3D()
+    marker.name = name
+    marker.position.set(...socket.at.map((v, i) => (v - pivot[i]) * scale) as [number, number, number])
+    part.add(marker)
   }
   return group
 }

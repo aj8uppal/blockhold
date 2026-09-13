@@ -49,11 +49,14 @@ const assets = join(root, 'dist', 'assets')
 // Late-tier combat compatibility, animated mortar fire, 1–4x controls and
 // recoverable co-op sync diagnostics add about 2 KiB of app code in ruleset 16.
 // Procedural fire and seamless tidal shores replace tile/cone effects: ~2 KiB gzip, no downloaded textures.
-const APP_CHUNK_LIMIT = 168 * 1024
+// Ruleset 17 adds thirteen distinct Mythic powers, sixteen authored capstones,
+// level-20 hero progression and the campaign browser: measured +9.7 KiB gzip.
+// Keep less than 3 KiB headroom; all new fire/model assets remain procedural.
+const APP_CHUNK_LIMIT = 180 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 // Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.
 // The how-to sheet now loads on demand; the initial app budget stays unchanged.
-const TOTAL_JS_LIMIT = 307 * 1024
+const TOTAL_JS_LIMIT = 320 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

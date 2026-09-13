@@ -36,6 +36,16 @@ const THEME_ART: Record<string, string> = {
   tidal: 'linear-gradient(160deg, #9fd0cf 0%, #3f97a8 55%, #1d3f4e 100%)',
 }
 
+// Later battlefields use an illustrated theme treatment until they have key art.
+// Never request a missing image: a gradient is a deliberate fallback, not a 404.
+const PAINTED_MAPS = new Set(['greenhollow', 'frostmere', 'emberwastes', 'mistfen', 'shatteredcrown', 'cinderwake', 'veilscar'])
+const THEME_ICONS: Record<string, string> = { forest: 'tree', winter: 'frost', ember: 'volcano', swamp: 'mushroom', void: 'rune', highland: 'castle', ashfall: 'flame', tidal: 'wave' }
+
+function mapArt(level: typeof levels[number]): string {
+  const gradient = THEME_ART[level.theme]
+  return PAINTED_MAPS.has(level.id) ? `url(art/card-${level.id}.webp) center / cover, ${gradient}` : gradient
+}
+
 /**
  * Escape a string that came from somewhere other than this codebase.
  *
@@ -195,24 +205,31 @@ export class Screens {
 
   private renderMenu(): void {
     const save = this.save()
-    const wrap = el('div', 'screen menu-screen', this.root)
-    const card = el('div', 'menu-hero main-menu', wrap)
+    const pieces = holdPieces(save)
+    const wrap = el('div', 'screen menu-screen home-screen', this.root)
+    const masthead = el('header', 'home-masthead', wrap)
+    el('div', 'home-brand', masthead, `${icon('castle')} <span>BLOCKHOLD</span>`)
+    el('span', 'home-edition', masthead, 'A voxel tower defense')
+    if (pieces.towers > 0) {
+      const hold = el('button', 'menu-account hold-view', masthead, `${icon('castle')} Your Hold`)
+      hold.setAttribute('aria-pressed', 'false')
+      hold.onclick = () => hold.setAttribute('aria-pressed', String(wrap.classList.toggle('viewing-hold')))
+    }
+    const layout = el('div', 'home-layout', wrap)
+    const card = el('div', 'menu-hero main-menu', layout)
+    el('div', 'eyebrow menu-eyebrow', card, 'The kingdom is counting on you')
     const head = el('div', 'menu-heading', card)
-    // Keep the key art behind the wordmark, fading to a quiet surface under
-    // the actions. Inline so the artwork URL resolves at runtime.
-    card.style.background =
-      'linear-gradient(180deg, rgba(20, 23, 28, 0.62), rgba(24, 26, 30, 0.96) 36%, #181a1e 70%), ' +
-      'url(art/title.webp) center / cover'
-    el('div', 'menu-crest', head, icon('castle', 'gilded'))
     el('h1', 'game-title', head, 'Blockhold')
     el('div', 'game-tagline', card, 'Hold the line, block by block.')
+    el('p', 'menu-description', card, 'Raise your towers. Rally your champion.<br>Build a defense that stands against the dark.')
     // A newcomer has nothing to choose between yet, and a link-shared game has
     // about ten seconds. Drop them straight into the first battle; the level
     // select, heroes and difficulty appear once they have played one.
     const fresh = isFirstRun(save)
     const actions = el('div', 'menu-primary-actions', card)
     const play = el('button', 'btn primary big', actions,
-      `${icon('swords')} &nbsp;${fresh ? 'Play' : 'To Battle'}`) as HTMLButtonElement
+      `${icon('swords')} <span>${fresh ? 'Play' : 'To Battle'}<small>${fresh ? 'Your campaign begins in Greenhollow' : 'Choose your next battlefield'}</small></span>${icon('arrowRight')}`) as HTMLButtonElement
+    play.setAttribute('aria-label', fresh ? 'Play' : 'To Battle')
     play.onclick = () => {
       if (fresh) this.onPlayLevel(levels[0].id, 'normal', 'aldric', 'campaign')
       else this.show('levels')
@@ -223,6 +240,7 @@ export class Screens {
     if (session && sessionLevel) {
       play.classList.replace('primary', 'ghost')
       play.textContent = 'New battle'
+      play.setAttribute('aria-label', 'New battle')
       const resume = el('button', 'btn primary menu-resume', actions, `<span>Continue<small>${sessionLevel} · Wave ${Math.max(1, session.wave)}</small></span><span aria-hidden="true">→</span>`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
       play.before(resume)
@@ -240,13 +258,18 @@ export class Screens {
         : `${icon('respawn')} Resume ${cpLevel.name} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
       play.classList.replace('primary', 'ghost'); play.textContent = 'New battle'; play.before(resume)
+      play.setAttribute('aria-label', 'New battle')
     }
+    const navigation = el('div', 'menu-navigation', card)
+    const campaign = el('button', 'btn ghost', navigation, `${icon('flag')} Campaign`)
+    campaign.onclick = () => this.show('levels')
     if (coopEnabled()) {
-      const coop = el('button', 'btn ghost', actions, `${icon('helmPlume')} Co-op`) as HTMLButtonElement
+      const coop = el('button', 'btn ghost', navigation, `${icon('helmPlume')} Co-op`) as HTMLButtonElement
       coop.onclick = () => this.show('coop')
     }
     const explore = el('button', 'menu-explore', card,
-      `<span>Explore modes<small>Sandbox, boss hunts & daily challenges</small></span><span aria-hidden="true">›</span>`)
+      `${icon('compass')}<span>Explore modes<small>Sandbox, boss hunts & daily challenges</small></span>${icon('arrowRight')}`)
+    explore.setAttribute('aria-label', 'Explore modes')
     let openingModes = false
     explore.onclick = async () => {
       if (openingModes) return
@@ -266,7 +289,7 @@ export class Screens {
     }
     if (cloud.enabled) {
       const st = cloud.status()
-      const acct = el('button', 'menu-account', head,
+      const acct = el('button', 'menu-account', masthead,
         `${st.provider ? 'Account' : 'Sign in'}`) as HTMLButtonElement
       acct.onclick = () => this.renderAccount()
     }
@@ -280,10 +303,10 @@ export class Screens {
       const install = el('button', 'btn ghost', utilities, `${icon('fullscreen')} Play fullscreen`) as HTMLButtonElement
       install.onclick = () => this.renderInstallGuide()
     }
-    const footer = el('div', 'menu-footer', settings, holdSummary(holdPieces(save)))
+    const footer = el('div', 'menu-footer', settings, holdSummary(pieces))
     // A keep nobody else can see is not a trophy. Offered only once there is
     // something standing, so a bare Hold never invites a picture of nothing.
-    if (holdPieces(save).towers > 0) {
+    if (pieces.towers > 0) {
       const shot = el('button', 'hold-share', footer, `${icon('share')} Share my Hold`) as HTMLButtonElement
       shot.onclick = async () => {
         shot.disabled = true
@@ -301,6 +324,15 @@ export class Screens {
       }
     }
     this.renderPrivacyRow(settings)
+    const cleared = pieces.towers
+    const story = el('aside', 'home-story', layout)
+    el('span', 'eyebrow', story, 'A small kingdom. A mighty defense.')
+    el('p', '', story, 'Make your stand.')
+    el('div', 'home-campaign-progress', story,
+      `${icon('flag')} <span>${cleared} of ${levels.length} battlefields conquered</span><span class="home-progress-track"><i style="width:${cleared / levels.length * 100}%"></i></span>`)
+    const foot = el('footer', 'home-footer', wrap)
+    el('span', '', foot, `${icon('shield')} ${cloud.signedIn ? 'Account connected' : 'Progress saved on this device'}`)
+    el('span', '', foot, 'Build. Defend. Prevail.')
   }
 
   /**
@@ -317,6 +349,11 @@ export class Screens {
     const bar = el('span', 'level-bar', row)
     const fill = el('i', '', bar)
     fill.style.width = `${Math.round(level >= MAX_LEVEL ? 100 : Math.min(1, into / span) * 100)}%`
+    bar.setAttribute('role', 'progressbar')
+    bar.setAttribute('aria-label', `Level ${level} progress`)
+    bar.setAttribute('aria-valuemin', '0')
+    bar.setAttribute('aria-valuemax', String(span))
+    bar.setAttribute('aria-valuenow', String(level >= MAX_LEVEL ? span : Math.min(into, span)))
     el('span', 'level-xp', row, level >= MAX_LEVEL ? `${save.xp.toLocaleString()} XP` : `${(span - into).toLocaleString()} XP to Level ${level + 1}`)
     if (next) {
       el('span', 'level-next', row, `${icon(next.kind === 'hero' ? 'helmPlume' : 'castle')} ${next.name} at ${next.level}`)
@@ -335,7 +372,6 @@ export class Screens {
    */
   private renderPrivacyRow(wrap: HTMLElement): void {
     const row = el('div', 'menu-privacy', wrap)
-    const on = telemetryAllowed()
     const btn = el('button', 'privacy-toggle', row) as HTMLButtonElement
     const paint = () => {
       const isOn = telemetryAllowed()
@@ -345,28 +381,14 @@ export class Screens {
     }
     btn.title = 'Sends which wave you reached and which towers you built. No account, no cookies, no advertising, and never anything that identifies you.'
     btn.onclick = () => { setTelemetryAllowed(!telemetryAllowed()); paint() }
-    void on
     paint()
   }
 
   /** iOS has no fullscreen API — walk the player through installing instead */
-  renderInstallGuide(): void {
-    const overlay = el('div', 'help-overlay', this.root)
-    const card = el('div', 'help-card install-card', overlay)
-    el('h2', '', card, `${icon('fullscreen')} Play fullscreen`)
-    el('div', 'install-intro', card,
-      'Safari fullscreen is a bad home for a game: iPhones don\'t allow it at all, and on iPad it blocks input and quits when you swipe. An installed Blockhold launches like a real app instead — true fullscreen, offline, no quirks. Takes ten seconds:')
-    const steps = el('div', 'install-steps', card)
-    const step = (n: number, ico: string, html: string) => {
-      const s = el('div', 'install-step', steps)
-      s.innerHTML = `<span class="is-num">${n}</span><span class="is-icon">${icon(ico, 'plain')}</span><span class="is-text">${html}</span>`
-    }
-    step(1, 'share', 'Tap the <b>Share</b> button — bottom bar on iPhone, top right on iPad. (Same button in Chrome, next to the address bar.)')
-    step(2, 'plusSquare', 'Scroll down the share sheet and tap <b>Add to Home Screen</b>, then <b>Add</b>.')
-    step(3, 'castle', 'Launch <b>Blockhold</b> from your Home Screen. That\'s the fullscreen app — this tab can stay behind.')
-    const close = el('button', 'btn primary', card, 'Got it') as HTMLButtonElement
-    close.onclick = () => overlay.remove()
-    bindDialog(overlay, card, () => overlay.remove())
+  async renderInstallGuide(): Promise<void> {
+    const current = this.current
+    const { renderInstallGuide } = await import('./help.ts')
+    if (this.current === current) renderInstallGuide(this.root)
   }
 
   // ---------------- co-op lobby ----------------
@@ -397,27 +419,40 @@ export class Screens {
     const head = el('div', 'levels-head', wrap)
     const back = el('button', 'btn ghost small', head, '← Back') as HTMLButtonElement
     back.onclick = () => this.show('menu')
-    el('h2', 'levels-title', head, sandbox ? 'Sandbox · choose a map' : 'Choose your battlefield')
-    const armoryBtn = el('button', 'btn ghost small', head, `${icon('swords')} Armory · ${starsAvailable(save)}★`) as HTMLButtonElement
+    el('div', 'levels-nav-label', head, `${icon(sandbox ? 'castle' : 'flag')} ${sandbox ? 'Sandbox' : 'Campaign'}`)
+    const collection = el('div', 'levels-collection', head)
+    const armoryBtn = el('button', 'btn ghost small', collection, `${icon('swords')} Armory <span class="nav-count">${starsAvailable(save)}★</span>`) as HTMLButtonElement
     armoryBtn.onclick = () => this.renderArmory()
-    const cardsBtn = el('button', 'btn ghost small', head, `${icon('crown')} Cards · ${(save.capstones ?? []).length}/14`) as HTMLButtonElement
+    const cardsBtn = el('button', 'btn ghost small', collection, `${icon('crown')} Cards <span class="nav-count">${(save.capstones ?? []).length}/14</span>`) as HTMLButtonElement
     cardsBtn.title = 'Capstone cards: one for every crown you have flown to a campaign win'
     cardsBtn.onclick = async () => { const { renderCapstoneCards } = await import('./capstoneCards.ts'); renderCapstoneCards(this.root, save.capstones ?? [], () => {}) }
+    const intro = el('div', 'campaign-heading', wrap)
+    const titles = el('div', '', intro)
+    el('div', 'eyebrow', titles, sandbox ? 'Your rules. Your battlefield.' : 'The campaign')
+    el('h2', 'levels-title', titles, sandbox ? 'A place to experiment.' : 'Choose your battlefield')
+    el('p', 'campaign-description', titles, sandbox ? 'Every map, tower and champion. Build freely and test your defense.' : 'From the meadow road to the edge of the Veil. Every stand counts.')
+    const cleared = holdPieces(save).towers
+    el('div', 'campaign-summary', intro, sandbox ? `${icon('castle')}<span><b>${levels.length}</b> open maps</span>` : `${icon('flag')}<span><b>${cleared} / ${levels.length}</b> conquered</span><span><b>${levels.reduce((sum, level) => sum + (save.stars[level.id] ?? 0), 0)}</b> campaign stars</span>`)
     const grid = el('div', 'levels-grid', wrap)
     levels.forEach((lvl, i) => {
       const locked = !sandbox && i >= save.unlocked
       const stars = save.stars[lvl.id] ?? 0
       const card = el('button', `level-card${locked ? ' locked' : ''}`, grid) as HTMLButtonElement
-      const art = el('div', 'level-art', card, locked ? icon('lock', 'plain') : '')
-      // painted card over the theme gradient (which shows until the image lands)
-      art.style.background = `url(art/card-${lvl.id}.webp) center / cover, ${THEME_ART[lvl.theme]}`
-      el('div', 'level-name', card, `${i + 1}. ${lvl.name}`)
-      el('div', 'level-sub', card, lvl.subtitle)
-      el('div', 'level-meta', card, `${sandbox ? 'Free building' : `${lvl.waves.length} waves`} · ${lvl.lanes.length === 1 ? 'single road' : `${lvl.lanes.length} roads`}`)
+      card.disabled = locked
+      card.setAttribute('aria-label', `${lvl.name}${locked ? `, locked. Complete ${levels[i - 1].name} to unlock` : sandbox ? ', open sandbox' : `, ${stars} of 3 stars`}`)
+      const art = el('div', `level-art${PAINTED_MAPS.has(lvl.id) ? '' : ' theme-art'}`, card)
+      art.style.background = mapArt(lvl)
+      if (!PAINTED_MAPS.has(lvl.id)) el('span', 'theme-emblem', art, icon(THEME_ICONS[lvl.theme]))
+      el('span', 'level-chapter', art, `CHAPTER ${String(i + 1).padStart(2, '0')}`)
+      el('span', `level-status${locked ? '' : ' available'}`, art, locked ? `${icon('lock')} Locked` : stars > 0 ? `${icon('check')} Conquered` : sandbox ? 'Free build' : 'Available')
+      const body = el('div', 'level-card-body', card)
+      el('div', 'level-name', body, lvl.name)
+      el('div', 'level-sub', body, lvl.subtitle)
+      el('div', 'level-meta', body, `${icon('wave')} ${sandbox ? 'Free building' : `${lvl.waves.length} waves`} <span>·</span> ${lvl.lanes.length === 1 ? 'Single road' : `${lvl.lanes.length} roads`}`)
       const best = save.bestEndless[lvl.id] ?? 0
       const held = Math.max(...(['casual', 'normal', 'veteran'] as const).map(d => save.bestFreeplay?.[`${lvl.id}:${d}`] ?? 0))
       const medals = save.medals[lvl.id] ?? []
-      if (!sandbox) el('div', 'level-stars', card, '★'.repeat(stars) + '<span class="dim">' + '★'.repeat(3 - stars) + '</span>' +
+      if (!sandbox) el('div', 'level-stars', body, '★'.repeat(stars) + '<span class="dim">' + '★'.repeat(3 - stars) + '</span>' +
         (medals.includes('noleak') ? `<span class="level-medal" title="Flawless: won without a single leak"> ${icon('medal')}</span>` : '') +
         (medals.includes('veteran') ? `<span class="level-medal" title="Conquered on Veteran"> ${icon('medal', 'vet')}</span>` : '') +
         (trialsWon(save.trials, lvl.id).length ? `<span class="level-medal" title="Trials won"> ${icon('flag')}${trialsWon(save.trials, lvl.id).length}</span>` : '') +
@@ -431,8 +466,9 @@ export class Screens {
           : !medals.includes('veteran') ? 'Conquer it on Veteran'
           : best === 0 ? 'Enter the Long Night'
           : `Survive past wave ${best} in the Long Night`
-        el('div', 'level-goal', card, `➤ ${goal}`)
+        el('div', 'level-goal', body, `${goal} ${icon('arrowRight')}`)
       }
+      else el('div', 'level-goal locked-goal', body, `Complete ${levels[i - 1].name} ${icon('lock')}`)
       if (!locked) card.onclick = () => this.showDifficultyPicker(lvl.id, lvl.name, sandbox)
     })
   }
@@ -612,8 +648,17 @@ export class Screens {
     const best = save.bestEndless[levelId] ?? 0
     const overlay = el('div', 'help-overlay', this.root)
     const card = el('div', 'help-card difficulty-card', overlay)
-    el('h2', '', card, levelName)
-    if (sandbox) el('p', 'diff-sub', card, 'Free building. All towers and heroes. Send enemies when you choose. No account rewards.')
+    const level = levelById(levelId)
+    const heading = el('header', 'setup-heading', card)
+    const artwork = el('div', 'setup-art', heading)
+    artwork.style.background = mapArt(level)
+    const title = el('div', 'setup-title', heading)
+    el('div', 'eyebrow', title, sandbox ? 'Sandbox setup' : 'Prepare your defense')
+    el('h2', '', title, levelName)
+    el('p', '', title, sandbox ? 'All towers and heroes · No account rewards' : `${level.waves.length} waves · ${level.lanes.length === 1 ? 'Single road' : `${level.lanes.length} roads`} · ${level.subtitle}`)
+    const close = el('button', 'tp-close', heading, '×')
+    close.setAttribute('aria-label', 'Close battle setup')
+    close.onclick = () => overlay.remove()
 
     if (beaten) {
       const modeRow = el('div', 'mode-row', card)
@@ -915,8 +960,8 @@ export class Screens {
     const rerender = () => {
       const crowns = crownStars(save)
       const trialN = trialStars(save)
-      starsLine.innerHTML = `<b>${starsAvailable(save)}★</b> to spend · ${starsEarned(save)}★ of ${ARMORY_TOTAL_COST} earned` +
-        (crowns ? ` <span class="dim">(${crowns} crown ${crowns === 1 ? 'star' : 'stars'} from Veteran clears${trialN ? `, ${trialN} from trials` : ''})</span>` : ' <span class="dim">· a Veteran clear adds a fourth crown star, and each map\'s two trials add two more</span>')
+      starsLine.innerHTML = `<b>${starsAvailable(save)}★</b> to spend · ${starsEarned(save)} / ${ARMORY_TOTAL_COST} earned` +
+        `<small>Includes ${crowns}★ from Veteran clears and ${trialN}★ from bonus trials.</small>`
       grid.innerHTML = ''
       for (const track of visibleTracks(save)) {
         const tier = armoryTier(save, track.id)  // clamped to the track's real tier count

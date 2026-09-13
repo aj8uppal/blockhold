@@ -1,4 +1,5 @@
 import type { TowerModelId } from '../voxel/models_towers.ts'
+import type { MythicPowerId } from './mythicPowers.ts'
 
 export type DamageType = 'physical' | 'magic' | 'true'
 
@@ -66,6 +67,7 @@ export type CapstoneSignature =
   | 'eclipse'          // on a timer, a nova stuns everything in reach and strips its defenses
 
 export interface TowerLevelDef {
+  mythicAbility?: MythicPowerId
   /** Fraction of physical armor ignored by this weapon. */
   armorPierce?: number
   name: string
@@ -126,6 +128,8 @@ export type TowerSpecial =
   | { kind: 'knockback', dist: number, armorPierce: number }
 
 export interface SoldierDef {
+  /** Fraction of a melee hit dealt to nearby ground foes. */
+  cleave?: number
   armorPierce?: number
   name: string
   hp: number

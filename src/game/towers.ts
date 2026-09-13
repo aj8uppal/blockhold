@@ -1,4 +1,5 @@
 import { originalTowerDef } from './lateBalance.ts'
+import { MythicAbility } from './mythicAbility.ts'
 import * as THREE from 'three'
 import {
   TowerKind, TowerLevelDef, PerkDef, PERKS,
@@ -168,6 +169,7 @@ const SERAPH_LIGHT: Record<string, number> = {
 }
 
 export class Tower {
+  readonly mythicAbility = new MythicAbility(this)
   group: THREE.Group
   model!: THREE.Group
   def!: TowerLevelDef
@@ -247,6 +249,7 @@ export class Tower {
    * null.
    */
   signatureReadout(time: number): { text: string, next: boolean } | null {
+    if (!this.isGhost && this.def.mythicAbility) return this.mythicAbility.readout(time)
     const sig = this.def.signature
     if (!sig || this.isGhost) return null
     const shots = (name: string, every: number, unit: string) => {
@@ -515,6 +518,7 @@ export class Tower {
   private crystalT = Math.random() * 10
 
   constructor(readonly kind: TowerKind, readonly plot: PlotInfo, private readonly world: World) {
+    if ((world.balanceRuleset ?? RULESET_VERSION) >= 17) this.crystalT = (plot.index * .61803398875) % 10
     this.group = new THREE.Group()
     this.group.position.copy(plot.pos)
     this.applyLevel(towerTrees[kind].levels[0], world, true)
@@ -653,6 +657,14 @@ export class Tower {
 
   /** Crownfire's gift: five free seconds of Overcharge, no shard, no cooldown */
   kindle(world: World): void {
+    if ((world.balanceRuleset ?? RULESET_VERSION) >= 17) {
+      const previousEnd = this.overchargeUntil, previousCooldown = this.overchargeCdUntil
+      if (!this.chargeRing) this.overcharge(world)
+      this.overchargeUntil = Math.max(previousEnd, world.time + 5)
+      this.overchargeCdUntil = previousCooldown
+      this.chargeRing!.visible = true
+      return
+    }
     this.overchargeUntil = Math.max(this.overchargeUntil, world.time + 5)
     if (!this.chargeRing) this.overcharge(world)   // builds the ring; then undo the cooldown it set
     this.overchargeUntil = Math.max(this.overchargeUntil, world.time + 5)
@@ -698,7 +710,7 @@ export class Tower {
     if (this.level === 4 && this.branch !== null) return [this.combatDefinition(resolveCapstone(this.kind, this.branch), 5)]
     if (this.level === 5 && this.branch !== null) {
       if (this.world.legacyAccess && this.kind !== 'seraph' && !(this.kind === 'barracks' && this.branch === 0)) return []
-      const mythic = mythicFor(this.kind, this.branch)
+      const mythic = mythicFor(this.kind, this.branch, this.world.balanceRuleset ?? RULESET_VERSION)
       return mythic ? [this.combatDefinition(mythic, 6)] : []
     }
     return []
@@ -794,7 +806,7 @@ export class Tower {
       world.particles.magicImpact(this.pos.x, this.pos.y + 1.0, this.pos.z, 0xffe89f)
     }
     else if (this.level === 5 && this.branch !== null) {
-      const mythic = mythicFor(this.kind, this.branch)
+      const mythic = mythicFor(this.kind, this.branch, this.world.balanceRuleset ?? RULESET_VERSION)
       if (!mythic) return
       this.level = 6
       this.applyLevel(mythic, world)
@@ -806,6 +818,7 @@ export class Tower {
   }
 
   dismantle(world: World, silent = false): void {
+    this.mythicAbility.clearField()
     this.clearMythicMarker(world)
     for (const s of this.soldiers) {
       if (s.alive) {
@@ -946,7 +959,11 @@ export class Tower {
 
   // ---------------- combat ----------------
 
-  private muzzle(): THREE.Vector3 {
+  private muzzle(second = false): THREE.Vector3 {
+    if ((this.world.balanceRuleset ?? RULESET_VERSION) >= 17) {
+      const socket = this.model.getObjectByName(second ? 'muzzle2' : 'muzzle')
+      if (socket) return socket.getWorldPosition(new THREE.Vector3())
+    }
     if (this.isSeraph) {
       const heart = getPart(this.model, 'heart')
       if (heart) return heart.getWorldPosition(new THREE.Vector3())
@@ -1085,7 +1102,10 @@ export class Tower {
 
     if (this.isSeraph) { this.animateSeraph(dt, world); this.updateSeraphSignature(world) }
 
-    if (this.level === 6 && !this.isGhost) this.updateMythic(dt, world)
+    if (this.level === 6 && !this.isGhost) {
+      this.updateMythic(dt, world)
+      this.mythicAbility.update(dt, world)
+    }
 
     // ascension sigil + overcharge ring
     if (this.crownMesh) {
@@ -1164,8 +1184,11 @@ export class Tower {
     } else if (!this.target && turret && this.kind !== 'mage') {
       this.idleScanT -= dt
       if (this.idleScanT <= 0) {
-        this.idleScanT = 3 + Math.random() * 5
-        this.idleScanGoal = (Math.random() - 0.5) * 1.2
+        // Weapon sockets now follow the visible bow/barrel. Their pose must
+        // reproduce in co-op and saved journals without consuming combat RNG.
+        const stable = (world.balanceRuleset ?? RULESET_VERSION) >= 17
+        this.idleScanT = 3 + (stable ? (Math.sin(world.time * .51 + this.plot.index * 2.317) + 1) * .5 : Math.random()) * 5
+        this.idleScanGoal = (stable ? Math.sin(world.time * .77 + this.plot.index * .3) * .5 : Math.random() - .5) * 1.2
       }
       this.idleScan += (this.idleScanGoal - this.idleScan) * Math.min(1, dt * 1.6)
     } else {
@@ -1473,7 +1496,7 @@ export class Tower {
           const twinAt = this.pendingTwin
           this.pendingTwin = null
           world.fireProjectile({
-            kind: 'bomb', from, at: twinAt, damage: dmg, splash: def.splash! * splashMult, slow: this.has('runic'),
+            kind: 'bomb', from: this.muzzle(true), at: twinAt, damage: dmg, splash: def.splash! * splashMult, slow: this.has('runic'),
             burn: burn ? { dps: burn.dps, duration: burn.duration, radius: burn.radius * splashMult } : undefined,
             stunChance: this.perk?.id === 'tremor' ? 0.3 : undefined,
             credit: this,

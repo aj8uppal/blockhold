@@ -106,6 +106,81 @@ function setupFor(battle: BattleSession): CoopSetup {
 }
 
 describe('actual Game session recovery', () => {
+  it('replays a live Mythic battlefield with its powers, poison, weapon sockets and hero orders intact', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'zephyra', 'sandbox', { seed: 17017 })
+    for (const [i, kind] of (['arrow', 'mage', 'cannon', 'ballista', 'beacon'] as const).entries()) {
+      game.buildTower(kind, game.terrain!.plots[i])
+      for (let level = 1; level < 6; level++) game.upgradeTower(game.towers[i], level === 3 ? i % 2 : 0)
+    }
+    for (let i = 0; i < 3; i++) game.upgradeHeroSignature()
+    issue(game, { kind: 'sandboxSpawn', enemy: 'juggernaut', count: 20, lane: 0, hp: 100 })
+    issue(game, { kind: 'sandboxSpawn', enemy: 'gargoyle', count: 10, lane: 0, hp: 100 })
+    ticks(game, 1200)
+    game.castHeroSignature()
+    ticks(game, 75)
+    const before = snapshot(game), journal = game.exportBattleSession()!
+    expect(journal.balanceRuleset).toBe(17)
+    expect(journal.commands.length).toBeGreaterThan(25)
+    expect(game.towers.some(t => t.mythicAbility.readyAt > 3)).toBe(true)
+    expect(await game.resumeSession(journal)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    game.disposeLevel()
+  })
+
+  it('keeps a ruleset-sixteen Mythic save on the old combat, XP and signature-rank rules', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'liora', 'sandbox', { seed: 16161, balanceRuleset: 16 })
+    game.buildTower('arrow', game.terrain!.plots[0])
+    for (let level = 1; level < 6; level++) game.upgradeTower(game.towers[0], level === 3 ? 1 : 0)
+    for (let i = 0; i < 3; i++) game.upgradeHeroSignature()
+    issue(game, { kind: 'sandboxSpawn', enemy: 'juggernaut', count: 20, lane: 0, hp: 100 })
+    ticks(game, 780)
+    const journal = game.exportBattleSession()!
+    journal.ruleset = 16
+    journal.stateHash = (game as unknown as Internals).sessionStateHash(16)
+    const before = snapshot(game)
+    expect(await game.resumeSession(journal)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    expect(game.hero!.rankMax).toBe(3)
+    expect(game.hero!.levelMax).toBe(10)
+    expect(game.towers[0].def.mythicAbility).toBeUndefined()
+    game.disposeLevel()
+  })
+
+  it('validates battle-level gates and both currencies before charging for a hero mastery', () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 1717 })
+    const hero = game.hero!
+    for (let i = 0; i < 3; i++) game.upgradeHeroSignature()
+    game.isSandbox = false // exercise paid purchases; sandbox deliberately refills both currencies
+    game.gold = 999; game.shards = 10
+    hero.level = 9
+    const hp = hero.maxHp
+    game.upgradeHeroSignature()
+    expect(hero.signatureRank).toBe(3); expect(game.shards).toBe(10)
+    hero.level = 10; game.upgradeHeroSignature()
+    expect(hero.signatureRank).toBe(3); expect(hero.maxHp).toBe(hp)
+    game.gold = 1000; game.upgradeHeroSignature()
+    expect(hero.signatureRank).toBe(4); expect(game.gold).toBe(0); expect(game.shards).toBe(0)
+    expect(hero.def.cleave).toBe(.55)
+    game.disposeLevel()
+  })
+
+  it('awards hero XP across the battlefield, including during recovery, but never for summons', () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 1727 })
+    game.hero!.group.position.set(100, 0, 100); game.hero!.dead = true
+    game.spawnEnemyAt('husk', 0, 1)
+    const e = game.enemies[0], xp = game.hero!.xp
+    game.onEnemyKilled(e)
+    expect(game.hero!.xp).toBe(xp + e.def.bounty)
+    e.noReward = true
+    game.onEnemyKilled(e)
+    expect(game.hero!.xp).toBe(xp + e.def.bounty)
+    game.disposeLevel()
+  })
+
   it('replays a ruleset-fifteen arsenal with its original damage and Windlass perk', async () => {
     const game = makeGame()
     expect(await game.resumeSession(previousArsenalBattle as BattleSession)).toBe(true)

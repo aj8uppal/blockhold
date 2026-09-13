@@ -29,7 +29,7 @@ import { starsFor, starThresholds } from './stars.ts'
 import { battleXp, isUnlocked, levelForXp, unlocksBetween, type UnlockDef } from './progress.ts'
 import { campaignScale } from './balanceModel.ts'
 import { OnboardingDirector } from './onboarding.ts'
-import { HERO_RANK_MAX, heroRankCost } from './hero.ts'
+import { heroRankCost, heroRankGold, heroRankLevel } from './hero.ts'
 import { levels, generateEndlessWaves, generateFreeplayChunk, ladderRung } from './levels.ts'
 import { trialLevel, type TrialDef, type TrialKind } from './trials.ts'
 import { stateHash, type CoopCommand } from './coopCommands.ts'
@@ -126,6 +126,11 @@ export class Game implements World {
     }
     if (ruleset >= 11) values.push(this.combatRuleset ?? ruleset, this.legacyCommandCount)
     if (ruleset >= 12) values.push(this.balanceRuleset, this.autoWaves ? 1 : 0, ...this.enemies.map(e => e.groundedUntil))
+    if (ruleset >= 17) {
+      for (const t of this.towers) values.push(...t.mythicAbility.state(this))
+      for (const e of this.enemies) values.push(e.markedUntil, e.nullifiedUntil, e.healBlockedUntil, e.brittleUntil, e.wardBrokenUntil)
+      for (const s of this.soldiers) values.push(s.oathUntil)
+    }
     return stateHash(values)
   }
 
@@ -405,6 +410,7 @@ export class Game implements World {
 
   onEnemyKilled(e: Enemy): void {
     this.killCount++
+    if (this.balanceRuleset >= 17) for (const t of this.towers) t.mythicAbility.onKill(e, this)
     // summoned-while-alive enemies pay nothing: stalling a summoner must not be a gold farm
     if (!e.noReward) {
       // the live bar climbs with every kill; freeplay only counts past the end
@@ -429,7 +435,7 @@ export class Game implements World {
         this.floater(e.pos.x, e.pos.y + e.barY + 0.25, e.pos.z, `+${shardGain}${icon('gem')}`, 'shard')
         this.particles.magicImpact(e.pos.x, e.pos.y + 0.4, e.pos.z, 0x8fdfff)
       }
-      if (this.hero && this.hero.alive && this.hero.group.position.distanceTo(e.pos) < (this.hero.ranged ? 2.5 : 1.7)) {
+      if (this.hero && (this.balanceRuleset >= 17 || this.hero.alive && this.hero.group.position.distanceTo(e.pos) < (this.hero.ranged ? 2.5 : 1.7))) {
         if (!this.trial) this.hero.gainXp(e.def.bounty, this)
       }
       // the payment lands a beat after the kill, so the death reads first
@@ -971,13 +977,17 @@ export class Game implements World {
   upgradeHeroSignature(): void {
     const h = this.hero
     if (this.paused || !h) return
-    if (h.signatureRank >= HERO_RANK_MAX) { this.sfx('error'); return }
+    if (h.signatureRank >= h.rankMax) { this.sfx('error'); return }
     if (this.trial) { this.sfx('error'); this.hud.showToast(`${this.trial.name}: the champion fights as he is`, 2.4); return }
     if (this.route({ kind: 'heroRank' })) return
     const cost = heroRankCost(h.signatureRank)
+    const gold = heroRankGold(h.signatureRank), level = heroRankLevel(h.signatureRank)
+    if (h.level < level) { this.sfx('error'); this.hud.showToast(`Requires hero level ${level}`, 2); return }
     if (this.shards < cost) { this.sfx('error'); this.hud.showToast(`Needs ${cost} shards`, 2); return }
+    if (this.gold < gold) { this.sfx('error'); this.hud.showToast(`Needs ${gold.toLocaleString()} gold`, 2); return }
+    if (!h.upgradeSignature()) return
     this.shards -= cost
-    h.signatureRank++
+    this.gold -= gold
     this.sfx('upgrade')
     this.particles.healSparkle(h.group.position.x, h.group.position.y + 1, h.group.position.z)
     this.hud.showToast(`${h.abilityName} sharpened to rank ${h.signatureRank}`, 3)
@@ -1739,7 +1749,7 @@ export class Game implements World {
     const lane0 = this.lanes[0]
     const hs = lane0.sample(lane0.length * 0.62, 0.7)
     const heroDef = HERO_DEFS[heroId] ?? HERO_DEFS.aldric
-    this.hero = new Hero(heroDef, new THREE.Vector3(hs.x, 0, hs.z))
+    this.hero = new Hero(heroDef, new THREE.Vector3(hs.x, 0, hs.z), this.balanceRuleset)
     if (!this.trial && !this.isDaily && !this.isWatches && !this.isBellfoundry) {
       const path = this.roster.heroPaths?.[heroId]
       const index = HERO_PATHS[heroId].findIndex(p => p.id === path)
@@ -3351,6 +3361,15 @@ export class Game implements World {
   }
   /** the Exchequer's count toward its next shard */
   private titheKills = 0
+
+  rewardMythicReserve(shards: number): void {
+    this.shards += shards
+    this.shardsEarned += shards
+    if (this.hero) this.hero.abilityCooldown = 0
+    this.abilities.meteor.cooldown = 0
+    this.abilities.reinforce.cooldown = 0
+    this.floater(this.hero?.group.position.x ?? 0, 1.2, this.hero?.group.position.z ?? 0, `Reserves ready · +${shards} shards`, 'shard')
+  }
 
   mythicLock(tower: Tower): string | null {
     if (this.isSandbox) return null

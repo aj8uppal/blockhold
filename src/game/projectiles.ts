@@ -117,6 +117,8 @@ class ArrowProjectile extends Ballistic {
     const { target, world, damage, crit, poison, credit, armorPierce } = this.spec
     if (target.alive) {
       const dealt = target.takeDamage(damage, 'physical', world, { crit, credit, armorPierce })
+      if (dealt > 0 && this.spec.trueDamage) target.takeDamage(this.spec.trueDamage, 'true', world, { credit })
+      if (dealt > 0 && this.spec.markDuration) target.markedUntil = Math.max(target.markedUntil, world.time + this.spec.markDuration)
       if (dealt > 0 && poison) target.applyPoison(poison.dps, poison.duration, world, credit)
       if (dealt > 0) {
         world.particles.hitSpark(target.pos.x, target.pos.y + 0.4, target.pos.z)
@@ -770,6 +772,21 @@ export function updateBurnZones(dt: number, world: World): void {
 /** One visual update per rendered frame, even when combat runs at 4×. */
 export function updateBurnVisuals(world: World): void {
   for (const zone of burnZones) if (!zone.done) zone.visual.update(world.time)
+}
+
+/** Flashover consumes only this Sunforge's live patches; no duplicate blast from retired fire. */
+export function detonateBurnZones(world: World, owner: KillCredit): number {
+  let count = 0
+  for (const z of burnZones) {
+    if (z.done || z.credit !== owner || z.until <= world.time) continue
+    count++
+    const damage = 450 + z.dps * Math.max(0, z.until - world.time) * 2
+    removeBurnZone(world, z)
+    for (const e of world.enemies) if (e.targetable && !e.airborne && Math.hypot(e.pos.x - z.pos.x, e.pos.z - z.pos.z) <= z.radius + .45 + e.radius)
+      e.takeDamage(damage, 'true', world, { credit: owner, flavor: 'fire' })
+    world.particles.explosion(z.pos.x, world.groundY(z.pos.x, z.pos.z) + .15, z.pos.z, z.radius)
+  }
+  return count
 }
 
 export function clearBurnZones(world: World): void {

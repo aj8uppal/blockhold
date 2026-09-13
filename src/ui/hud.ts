@@ -19,7 +19,7 @@ import { isPortalMode } from '../core/platform.ts'
 import { EARTHWORK_DEFS, raiseCost, type EarthworkSpot, type Earthwork, RAMPART_DAMAGE_BONUS, RAMPART_RANGE_BONUS } from '../game/earthworks.ts'
 import { beatIndex, BEATS_PER_BAR } from '../game/beat.ts'
 import { traitsOf, counterFor } from '../game/dossier.ts'
-import { HERO_RANK_MAX, heroRankCost } from '../game/hero.ts'
+import { heroRankCost, heroRankGold, heroRankLevel } from '../game/hero.ts'
 import type { EnemyDef, TowerAura } from '../game/types.ts'
 import { icon, BOSS_ART } from './icons.ts'
 import { unlockLevel, levelForXp, levelProgress, MAX_LEVEL } from '../game/progress.ts'
@@ -167,6 +167,10 @@ export class HUD {
     this.shardsEl = el('div', 'stat shards', left, `${icon('gem')} <b>0</b>`)
     this.shardsEl.title = 'Veilshards — dropped by Shardbacks, elites, and bosses. Spend on tower Overcharge and Ascension.'
     this.waveEl = el('div', 'stat wave', left, `${icon('wave')} <b>0/10</b>`)
+    for (const [stat, label] of [[this.livesEl, 'Lives'], [this.goldEl, 'Gold'], [this.shardsEl, 'Shards'], [this.waveEl, 'Wave']] as const) {
+      const name = el('span', 'stat-label', stat, label)
+      stat.prepend(name)
+    }
     this.coopEl = el('div', 'stat coop hidden', left, '')
     // account experience, live: the level, a bar to the next, and the gain
     // from the last few kills. Before this the bar existed only on the menu,
@@ -1421,7 +1425,7 @@ export class HUD {
 
   private currentHero: Hero | null = null
   private heroPanelLevel = 0
-  private heroPanelEls: { hpFill: HTMLElement, hpNum: HTMLElement, xpFill: HTMLElement, xpNum: HTMLElement, cd: HTMLElement } | null = null
+  private heroPanelEls: { hpFill: HTMLElement, hpNum: HTMLElement, xpFill: HTMLElement, xpNum: HTMLElement, cd: HTMLElement, upgrade: HTMLButtonElement | null } | null = null
   private heroPanelCache = { hp: '', xp: '', hpW: -1, xpW: -1 }
 
   openHeroPanel(hero: Hero): void {
@@ -1437,7 +1441,7 @@ export class HUD {
     el('div', 'tp-icon', head, `<img class="tp-portrait" src="art/hero-${hero.heroDef.id}.webp" alt="">`)
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, hero.heroDef.name)
-    el('div', 'tp-level', title, `${hero.heroDef.title} · Level <span class="hp-lvl">${hero.level}</span>`
+    el('div', 'tp-level', title, `${hero.heroDef.title} · Level <span class="hp-lvl">${hero.level}</span>/${hero.levelMax}`
       + `<span class="tp-kills" title="Foes slain by the hero, and the health it has taken from them"> · ${icon('skull')} <span class="tp-kill-n">${hero.kills}</span> · ${icon('swords')} <span class="tp-dmg-n">${fmtDamage(hero.damage)}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
     close.setAttribute('aria-label', 'Close')
@@ -1454,20 +1458,22 @@ export class HUD {
       chip('Armor', `${icon('shield')} ${Math.round(d.armor * 100)}%`) +
       chip('Regen', `${icon('heart')} ${d.regen ?? 0}/s`) +
       (hero.ranged
-        ? chip('Range', `${icon('range')} ${hero.heroDef.attackRange}`)
+        ? chip('Range', `${icon('range')} ${hero.attackRange.toFixed(1)}`)
         : chip('Guards', `${icon('range')} r ${hero.guardRange}`)))
 
     el('div', 'tp-traits', p,
       `✦ <b>${hero.abilityName}</b>${hero.signatureRank > 0 ? ` <span class="hero-rank">rank ${hero.signatureRank}</span>` : ''}`
       + ` — ${hero.abilityBlurb} <span class="ability-cd-num"></span>`)
-    if (hero.signatureRank < HERO_RANK_MAX) {
-      const cost = heroRankCost(hero.signatureRank)
-      const up = el('button', 'btn upgrade', p,
-        `<span class="u-name">✦ Sharpen ${hero.abilityName}</span>`
-        + `<span class="u-cost">${icon('gem')}${cost}</span>`
-        + `<span class="u-desc">Rank ${hero.signatureRank + 1}: +28% effect, +18% reach, 12% faster recharge.</span>`) as HTMLButtonElement
+    if (hero.signatureRank >= 6) el('div', 'tp-traits', p, `<b>Legendary signature</b> · ${hero.legendaryBlurb}`)
+    if (hero.signatureRank < hero.rankMax) {
+      const cost = heroRankCost(hero.signatureRank), gold = heroRankGold(hero.signatureRank), level = heroRankLevel(hero.signatureRank)
+      const up = el('button', 'btn upgrade hero-rank-upgrade', p,
+        `<span class="u-name">✦ ${hero.rankTitle}</span>`
+        + `<span class="u-cost">${gold ? `${icon('coin')}${gold.toLocaleString()} · ` : ''}${icon('gem')}${cost}</span>`
+        + `<span class="u-desc">${hero.rankDescription}${hero.level < level ? ` <b>Requires hero level ${level}.</b>` : ''}</span>`) as HTMLButtonElement
       up.onclick = this.menuGuard(() => this.game.upgradeHeroSignature())
-      up.classList.toggle('poor', this.game.shards < cost)
+      up.disabled = hero.level < level || this.game.shards < cost || this.game.gold < gold
+      up.classList.toggle('poor', up.disabled)
     }
     el('div', 'tp-lineage', p, hero.ranged
       ? 'Holds her ground where she stands. Select her, then tap the ground to move.'
@@ -1478,6 +1484,7 @@ export class HUD {
       xpFill: p.querySelector('.sb-fill.xp') as HTMLElement,
       xpNum: p.querySelector('.xp-num') as HTMLElement,
       cd: p.querySelector('.ability-cd-num') as HTMLElement,
+      upgrade: p.querySelector('.hero-rank-upgrade'),
     }
     this.heroPanelCache = { hp: '', xp: '', hpW: -1, xpW: -1 }
     p.classList.remove('hidden')
@@ -1489,6 +1496,10 @@ export class HUD {
     const els = this.heroPanelEls
     if (!hero || !els || this.towerPanel.classList.contains('hidden')) return
     if (hero.level !== this.heroPanelLevel) { this.openHeroPanel(hero); return }
+    if (els.upgrade) {
+      els.upgrade.disabled = hero.level < heroRankLevel(hero.signatureRank) || this.game.shards < heroRankCost(hero.signatureRank) || this.game.gold < heroRankGold(hero.signatureRank)
+      els.upgrade.classList.toggle('poor', els.upgrade.disabled)
+    }
     const c = this.heroPanelCache
     const hpW = hero.dead ? 0 : Math.round(Math.max(0, hero.hp / hero.maxHp) * 100)
     const hpText = hero.dead ? `back in ${Math.ceil(hero.respawnCountdown)}s` : `${Math.max(0, Math.ceil(hero.hp))}/${hero.maxHp}`

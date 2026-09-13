@@ -13,7 +13,7 @@ flameGeometry.translate(0, .5, 0)
 const groundGeometry = new THREE.PlaneGeometry(2, 2)
 groundGeometry.rotateX(-Math.PI / 2)
 
-/** Camera-facing tongues of flame; two draws per patch, no per-frame geometry uploads. */
+/** Stepped, voxel-sized tongues; two draws per patch, no per-frame geometry uploads. */
 export class GroundFire {
   readonly group = new THREE.Group()
   private uniforms = { uTime: { value: 0 }, uFade: { value: 0 } }
@@ -48,20 +48,25 @@ export class GroundFire {
         varying float vSeed;
         ${noise}
         void main() {
-          float y = vUv.y, t = uTime * 1.65;
-          vec2 flow = vec2(vUv.x * 3.8 + vSeed, y * 5.2 - t * 1.6);
+          // Sample the shape on a small grid. The silhouette and the hot core
+          // share the same cells, so this reads as block fire, not a smooth
+          // flame with pixel noise painted over it. Time remains continuous.
+          vec2 cell = (floor(vUv * vec2(8.0, 14.0)) + 0.5) / vec2(8.0, 14.0);
+          float y = cell.y, t = uTime * 1.65;
+          vec2 flow = vec2(cell.x * 3.8 + vSeed, y * 5.2 - t * 1.6);
           float n = noise(flow) * 0.7 + noise(flow * 2.1 - t * 0.4) * 0.3;
           float bend = sin(y * 5.0 - t * 2.0 + vSeed) * y * 0.13;
-          float x = abs(vUv.x - 0.5 + bend + (n - 0.5) * y * 0.3);
+          float x = abs(cell.x - 0.5 + bend + (n - 0.5) * y * 0.3);
           float width = sin(3.14159 * pow(y, 0.62)) * 0.33 * (1.0 - y * 0.35);
           float shape = (width - x) * 3.5 + (n - 0.5) * (0.4 + y * 1.4);
-          float body = smoothstep(0.0, 0.16, shape);
-          float tip = 1.0 - smoothstep(0.80, 1.0, y + (n - 0.5) * 0.3);
-          float alpha = body * tip * smoothstep(0.0, 0.09, y) * uFade;
-          alpha *= 1.0 - smoothstep(0.43, 0.5, abs(vUv.x - 0.5));
-          vec3 color = mix(vec3(1.0, 0.13, 0.015), vec3(1.0, 0.38, 0.025), body * (1.0 - y));
-          color = mix(color, vec3(1.0, 0.72, 0.18), smoothstep(0.55, 0.9, shape) * (1.0 - smoothstep(0.05, 0.45, y)));
-          gl_FragColor = vec4(color, alpha * 0.92);
+          float body = smoothstep(0.015, 0.055, shape);
+          float tip = 1.0 - smoothstep(0.92, 0.98, y + (n - 0.5) * 0.3);
+          float alpha = body * tip * uFade;
+          if (abs(cell.x - 0.5) > 0.43 || alpha < 0.015) discard;
+          vec3 color = vec3(0.94, 0.24, 0.035);
+          if (shape > 0.28 && y < 0.7) color = vec3(1.0, 0.46, 0.07);
+          if (shape > 0.60 && y < 0.4) color = vec3(1.0, 0.79, 0.29);
+          gl_FragColor = vec4(color, alpha * 0.95);
           #include <colorspace_fragment>
         }`,
     })
@@ -86,7 +91,8 @@ export class GroundFire {
         varying vec2 vUv;
         ${noise}
         void main() {
-          float n = noise(vUv * 8.0);
+          vec2 cell = (floor(vUv * 20.0) + 0.5) / 20.0;
+          float n = noise(cell * 8.0);
           float edge = 1.0 - smoothstep(0.65, 1.0, length(vUv * 2.0 - 1.0) + (n - 0.5) * 0.2);
           float ember = smoothstep(0.57, 0.83, n) * (0.7 + 0.3 * sin(uTime * 3.0 + n * 20.0));
           vec3 color = mix(vec3(0.065, 0.022, 0.012), vec3(0.9, 0.18, 0.015), ember);
