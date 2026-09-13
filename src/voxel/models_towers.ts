@@ -2,7 +2,7 @@ import { crimsonSovereign } from './models_seraph_crimson.ts'
 import { berserkerModel } from './models_units.ts'
 import { fireArtillery, worldshakerModel } from './models_artillery.ts'
 import { mythicArchitecture, mythicVessel } from './models_mythic.ts'
-import { crystalWings, sacredStone } from './models_seraph_suites.ts'
+import { cathedralSentinel } from './models_seraph_cathedral.ts'
 import { tidecallerModel } from './models_tidecaller.ts'
 import { VoxModel, VoxBox, box } from './builder.ts'
 
@@ -678,7 +678,7 @@ const factories: Record<TowerModelId, () => VoxModel> = {
   barracks6b: () => mythicArchitecture('barracks', 1, oathgateCitadel(1)),
   beacon6a: () => mythicArchitecture('beacon', 0, crownfire()), beacon6b: () => mythicArchitecture('beacon', 1, exchequer()),
   ballista6a: () => mythicArchitecture('ballista', 0, heavensplitter()), ballista6b: () => mythicArchitecture('ballista', 1, godsbaneRam()),
-  barracks6a: () => mythicArchitecture('barracks', 0, lastLegion()), seraph6a: () => sacredStone(6, 0), seraph6b: () => crystalWings(6, 1),
+  barracks6a: () => mythicArchitecture('barracks', 0, lastLegion()), seraph6a: () => cathedralSentinel(6, 0), seraph6b: () => cathedralSentinel(6, 1),
   arrow1: () => arrowTower(1), arrow2: () => arrowTower(2), arrow3: () => arrowTower(3),
   arrow4a: sharpshooterTower, arrow4b: galeTower,
   arrow5a: () => crownwingAerie(0), arrow5b: () => crownwingAerie(1),
@@ -697,9 +697,9 @@ const factories: Record<TowerModelId, () => VoxModel> = {
   ballista1: () => ballistaTower(1), ballista2: () => ballistaTower(2), ballista3: () => ballistaTower(3),
   ballista4a: skyharrow, ballista4b: wallbreaker,
   ballista5a: heavensplitter, ballista5b: godsbaneRam,
-  seraph1: () => crystalWings(1, 0), seraph2: () => crystalWings(2, 0), seraph3: () => crystalWings(3, 0),
-  seraph4a: () => sacredStone(4, 0), seraph4b: () => crystalWings(4, 1),
-  seraph5a: () => sacredStone(5, 0), seraph5b: () => crystalWings(5, 1),
+  seraph1: () => cathedralSentinel(1, 0), seraph2: () => cathedralSentinel(2, 0), seraph3: () => cathedralSentinel(3, 0),
+  seraph4a: () => cathedralSentinel(4, 0), seraph4b: () => cathedralSentinel(4, 1),
+  seraph5a: () => cathedralSentinel(5, 0), seraph5b: () => cathedralSentinel(5, 1),
 }
 
 const modelCache = new Map<TowerModelId, VoxModel>()

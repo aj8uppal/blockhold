@@ -604,7 +604,7 @@ class VoidPulse implements Projectile {
     const end = impact.clone().setY(Math.max(impact.y + .2, at.y + .3))
     this.origin = from.clone(); this.end = end
     this.distance = from.distanceTo(end); this.radius = spec.splash
-    for (const [color, width] of [[crimson ? 0xb82335 : 0x8250b8, .18], [crimson ? 0xffb56d : 0x21132f, .10]]) {
+    for (const [color, width] of [[crimson ? 0x761127 : 0x8250b8, .18], [crimson ? 0xff493a : 0x21132f, .10]]) {
       const beam = new THREE.Mesh(RAY_GEO, mat(color))
       beam.position.copy(from).add(end).multiplyScalar(.5)
       beam.lookAt(end)

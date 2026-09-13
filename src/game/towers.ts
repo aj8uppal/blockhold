@@ -234,12 +234,8 @@ export class Tower {
   private seraphAt = 0
   private static readonly DAWNFALL_EVERY = 8
   private static readonly ECLIPSE_EVERY = 10
-  private seraphT = 0
-  private seraphPulse = 0
-  private crimsonShotAt = -100
+  private seraphShotAt = -100
   isFused = false
-  private seraphHeartScale = 1
-  private seraphSpeed = 1.3
   private mythicCharge = 0
   private mythicReadyAt = 0
   private mythicUntil = 0
@@ -298,45 +294,15 @@ export class Tower {
     }
   }
 
-  /**
-   * The idol is alive: the halo turns, the wings beat slowly (faster while it
-   * fires), the heart pulses with each ray. The crowns speak on a timer.
-   */
+  /** Stone stays planted; wings and forearms articulate with each volley.
+   * The Sovereign's eye and crown turn together to follow its target. */
   private animateSeraph(dt: number, world: World): void {
-    if (this.isFused) { poseStoneSeraph(this.model, world.time, world.time - this.crimsonShotAt); return }
-    const firing = this.target !== null
-    this.seraphSpeed += ((firing ? 3.2 : 1.3) - this.seraphSpeed) * (1 - Math.exp(-dt * 5))
-    this.seraphT += dt * this.seraphSpeed
-    this.seraphPulse = Math.max(0, this.seraphPulse - dt * 12)
-    const halo = getPart(this.model, 'halo')
-    if (halo) {
-      if (this.level === 6 && this.branch === 1) halo.rotation.z += dt * 0.12
-      else if (this.branch === 0 && this.level >= 4) halo.rotation.z += dt * 0.22
-      else halo.rotation.y += dt * (this.level >= 4 ? 0.22 : this.seraphSpeed * 0.65)
-      halo.position.y = (halo.userData.baseY ??= halo.position.y) + Math.sin(world.time * 1.4) * 0.03
-    }
-    const beat = Math.sin(this.seraphT) * (this.level >= 4 ? 0.45 : 1)
-    const wingL = getPart(this.model, 'wingL'), wingR = getPart(this.model, 'wingR')
-    if (wingL) { wingL.rotation.z = -beat * 0.16; wingL.rotation.y = beat * 0.08 }
-    if (wingR) { wingR.rotation.z = beat * 0.16; wingR.rotation.y = -beat * 0.08 }
-    for (const [name, sign] of [['wingLowL', 1], ['wingLowR', -1], ['wingCrownL', -1], ['wingCrownR', 1]] as const) {
-      const wing = getPart(this.model, name)
-      if (wing) wing.rotation.z = Math.sin(this.seraphT - 0.4) * 0.10 * sign
-    }
-    for (const [name, sign] of [['orbitInner', 1], ['orbitOuter', -1]] as const) {
-      const orbit = getPart(this.model, name)
-      if (orbit) { orbit.rotation.x = sign * 0.55; orbit.rotation.y += dt * sign * 0.55 }
-    }
-    const heart = getPart(this.model, 'heart')
-    this.seraphHeartScale += (1 + this.seraphPulse * .14 + Math.sin(world.time * 2) * .018 - this.seraphHeartScale) * (1 - Math.exp(-dt * 22))
-    if (heart) heart.scale.setScalar(this.seraphHeartScale)
-    if (this.level === 6 && this.branch === 1) {
-      // Small, continuous levitation; never tie the statue's pose to a hit.
-      const lift = Math.sin(world.time * 1.4) * 0.025
-      for (const part of [getPart(this.model, 'figure'), heart, wingL, wingR,
-        getPart(this.model, 'wingLowL'), getPart(this.model, 'wingLowR')]) {
-        if (part) part.position.y = (part.userData.baseY ??= part.position.y) + lift
-      }
+    const interval = (this.effectiveInterval() ?? .5) / (this.isOvercharged(world) ? 1 + OVERCHARGE_RATE_BONUS : 1)
+    poseStoneSeraph(this.model, world.time, world.time - this.seraphShotAt, Math.min(.48, interval * .88))
+    const gaze = getPart(this.model, 'gaze')
+    if (gaze) {
+      const aim = this.target ? Math.atan2(this.target.pos.x - this.pos.x, this.target.pos.z - this.pos.z) : 0
+      gaze.rotation.y = lerpAngle(gaze.rotation.y, aim, 1 - Math.exp(-dt * 7))
     }
   }
 
@@ -703,7 +669,7 @@ export class Tower {
     const geo = new THREE.OctahedronGeometry(0.09)
     const mat = new THREE.MeshBasicMaterial({ color: 0x8fdfff, toneMapped: false })
     this.crownMesh = new THREE.Mesh(geo, mat)
-    this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult
+    this.crownMesh.position.y = this.visualCrownHeight * this.sizeMult
     this.group.add(this.crownMesh)
     if (this.isBarracks) this.respawnAllSoldiers(world)
     world.particles.magicImpact(this.pos.x, this.pos.y + 0.8, this.pos.z, 0x8fdfff)
@@ -742,6 +708,7 @@ export class Tower {
    * picture waits.
    */
   private oldModel: THREE.Group | null = null
+  private visualCrownHeight = 0
   private revealT = 0
   private static readonly REVEAL_HOLD = 0.14
 
@@ -780,7 +747,10 @@ export class Tower {
     // Every tower gets its own materials. Flashes and the ghost wash are
     // per-tower effects, and writing either onto a cached shared material
     // would change every tower built from the same model.
-    this.model = buildModel(towerModel(def.model), `tower:${def.model}`, { cloneMaterials: true })
+    const shape = towerModel(def.model)
+    this.model = buildModel(shape, `tower:${def.model}`, { cloneMaterials: true })
+    // Crown placement follows the art; sight height keeps saved combat unchanged.
+    this.visualCrownHeight = this.isSeraph ? Math.max(...Object.values(shape.parts).flat().map(b => b.y + b.sy / 2)) * (shape.scale ?? .1) + .14 : towerCrownHeight(def.model)
     if (this.isGhost) applyGhostLook(this.model)
     this.group.add(this.model)
     this.sizeMult = TIER_SCALE[this.level - 1] ?? TIER_SCALE[0]
@@ -805,7 +775,8 @@ export class Tower {
     this.mythicAt = null
     this.mythicUntil = this.mythicCharge = this.mythicReadyAt = 0
     this.applyLevel(CRIMSON_SOVEREIGN, world)
-    if (this.crownMesh) this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult
+    this.model.scale.setScalar(this.sizeMult)
+    if (this.crownMesh) this.crownMesh.position.y = this.visualCrownHeight * this.sizeMult
     return true
   }
 
@@ -823,7 +794,7 @@ export class Tower {
       this.level = 5
       this.applyLevel(resolveCapstone(this.kind, this.branch), world)
       // the ascension sigil rides the new silhouette
-      if (this.crownMesh) this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult
+      if (this.crownMesh) this.crownMesh.position.y = this.visualCrownHeight * this.sizeMult
       world.particles.magicImpact(this.pos.x, this.pos.y + 1.0, this.pos.z, 0xffe89f)
     }
     else if (this.level === 5 && this.branch !== null) {
@@ -831,7 +802,7 @@ export class Tower {
       if (!mythic) return
       this.level = 6
       this.applyLevel(mythic, world)
-      if (this.crownMesh) this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult
+      if (this.crownMesh) this.crownMesh.position.y = this.visualCrownHeight * this.sizeMult
     }
     // dust and the upgrade sound belong to the reveal, not to the press;
     // update() plays them when the new silhouette rises
@@ -1150,7 +1121,7 @@ export class Tower {
     // ascension sigil + overcharge ring
     if (this.crownMesh) {
       this.crownMesh.rotation.y += dt * 2.2
-      this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult + Math.sin(world.time * 2.4) * 0.04
+      this.crownMesh.position.y = this.visualCrownHeight * this.sizeMult + Math.sin(world.time * 2.4) * 0.04
     }
     if (this.chargeRing) {
       const on = this.isOvercharged(world)
@@ -1363,7 +1334,7 @@ export class Tower {
         if (this.isFused) {
           world.fireProjectile({ kind: 'crimsonPulse', from, visualFrom, at: target.pos.clone(), target,
             damage: dmg, splash: def.splash! * world.splashMult(), credit: this, world })
-          this.crimsonShotAt = world.time
+          this.seraphShotAt = world.time
           world.sfx('ray', .5)
           break
         }
@@ -1371,7 +1342,7 @@ export class Tower {
           world.fireProjectile({ kind: 'voidPulse', from, visualFrom, at: target.pos.clone(), damage: dmg,
             splash: def.splash * world.splashMult(), armorShred: def.special?.kind === 'armorShred' ? def.special.amount : undefined,
             credit: this, world })
-          this.seraphPulse = 1
+          this.seraphShotAt = world.time
           world.sfx('ray', .45)
           break
         }
@@ -1404,7 +1375,7 @@ export class Tower {
             world.floater(this.mythicAt.x, this.mythicAt.y + 1.2, this.mythicAt.z, 'Solar Strike · 1.4s', 'gold')
           }
         }
-        this.seraphPulse = 1
+        this.seraphShotAt = world.time
         world.sfx('ray', 0.6)
         break
       }

@@ -23,7 +23,7 @@ try {
     const rim = new THREE.DirectionalLight(0xc6dfff, .7); rim.position.set(4, 3, -4); scene.add(rim)
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .01, 100)
     const result = []
-    for (const id of Object.keys(muzzleHeights).filter(id => !only || id === only)) {
+    for (const id of Object.keys(muzzleHeights).filter(id => !only || id === only || only === 'seraph' && id.startsWith('seraph'))) {
       const model = buildModel(towerModel(id), `preview:${id}`, { castShadow: false })
       scene.add(model)
       const bounds = new THREE.Box3().setFromObject(model), center = bounds.getCenter(new THREE.Vector3())

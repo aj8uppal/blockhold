@@ -1,0 +1,141 @@
+{
+  "ruleset": 18,
+  "balanceRuleset": 18,
+  "levelId": "greenhollow",
+  "difficulty": "normal",
+  "heroId": "aldric",
+  "mode": "sandbox",
+  "seed": 1354124992,
+  "tick": 1200,
+  "commands": [
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "build",
+        "plot": 0,
+        "tower": "seraph"
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 0,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 0,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 0,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 0,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 0,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "build",
+        "plot": 1,
+        "tower": "seraph"
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 1,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 1,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 1,
+        "opt": 1
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 1,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 1,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "sandboxSpawn",
+        "enemy": "juggernaut",
+        "count": 20,
+        "lane": 0,
+        "hp": 100
+      }
+    }
+  ],
+  "initialSave": {
+    "unlocked": 1,
+    "stars": {},
+    "armory": {},
+    "bestEndless": {},
+    "bestFreeplay": {},
+    "bestScore": {},
+    "medals": {},
+    "trials": {},
+    "capstones": [],
+    "honors": [],
+    "xpClaims": {},
+    "heroPaths": {},
+    "lastHero": "aldric",
+    "xp": 0,
+    "taughtBasics": true,
+    "seenEnemies": [],
+    "sfxMuted": false,
+    "musicMuted": false
+  },
+  "savedAt": 1789328697393,
+  "wave": 0,
+  "stateHash": 28817763
+}

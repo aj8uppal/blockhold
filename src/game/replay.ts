@@ -45,6 +45,7 @@ export class ReplayLog {
     for (const e of this.events) {
       if (e.kind === 'build') byPlot.set(e.plot, { plot: e.plot, tower: e.tower, t: e.t })
       else if (e.kind === 'sell') byPlot.delete(e.plot)
+      else if (e.kind === 'fuseSeraph') byPlot.delete(e.donor)
     }
     return [...byPlot.values()].sort((a, b) => a.t - b.t)
   }

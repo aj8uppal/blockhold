@@ -36,6 +36,16 @@ describe('the build history', () => {
     expect(log.length).toBeLessThanOrEqual(2000)
   })
 
+  it('removes a sacrificed Seraph and records a new tower on its freed plot', () => {
+    const log = new ReplayLog()
+    log.record({ t: 1, kind: 'build', tower: 'seraph', plot: 2 })
+    log.record({ t: 2, kind: 'build', tower: 'seraph', plot: 3 })
+    log.record({ t: 3, kind: 'fuseSeraph', plot: 2, donor: 3 })
+    expect(log.finalBuilds().map(b => b.plot)).toEqual([2])
+    log.record({ t: 4, kind: 'build', tower: 'arrow', plot: 3 })
+    expect(log.finalBuilds().map(b => [b.plot, b.tower])).toEqual([[2, 'seraph'], [3, 'arrow']])
+  })
+
   it('clears between battles', () => {
     const log = new ReplayLog()
     log.record({ t: 1, kind: 'build', tower: 'arrow', plot: 0 })

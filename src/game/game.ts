@@ -1,3 +1,4 @@
+import { seraphAwakening } from './effects/seraphAwakening.ts'
 import { canFuseSeraphs } from './seraphFusion.ts'
 import { gameSpeed, nextGameSpeed, type GameSpeed } from '../core/gameSpeed.ts'
 import { availableExpansionPlots, placeExpansionPlot, EXPANSION_EVERY } from './expansion.ts'
@@ -3433,7 +3434,15 @@ export class Game implements World {
     if (this.route({ kind: 'fuseSeraph', plot: tower.plot.index, donor: donor.plot.index })) return true
     clearOwnedEffects(this, tower)
     clearOwnedEffects(this, donor)
+    const from = donor.model.getObjectByName('muzzle')?.getWorldPosition(new THREE.Vector3()) ?? donor.pos.clone()
     if (!tower.fuse(this)) return false
+    if (!this.recovering) {
+      const to = tower.model.getObjectByName('muzzle')?.getWorldPosition(new THREE.Vector3()) ?? tower.pos.clone()
+      const effect = seraphAwakening(from, to, tower.pos.y, donor.branch === 0)
+      effect.updateVisual?.(0)
+      this.dynamic.add(effect.mesh)
+      this.lingeringProjectiles.push(effect)
+    }
     if (donor.kills > 0) this.retiredKillers.push({ name: donor.def.name, kills: donor.kills, damage: donor.damage })
     donor.plot.occupied = false
     donor.dismantle(this)

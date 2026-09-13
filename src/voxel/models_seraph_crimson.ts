@@ -1,34 +1,40 @@
 import { box, type VoxModel } from './builder.ts'
 import type { Group } from 'three'
 
-/** A single, readable eye in a crown of heavy masonry. The silhouette carries
- * the rank; no floating fragments or fine crystal lattice are needed. */
+/** The fusion outranks both cathedrals: a recessed, predatory eye inside an
+ * inward-hooked black crown. Broad masonry carries the scale and silhouette. */
 export function crimsonSovereign(): VoxModel {
-  const stone = 0x292b34, shade = 0x151720, edge = 0x56515a, red = 0x9f2935, hot = 0xff493a
-  const parts: VoxModel['parts'] = { base: [], figure: [], wingL: [], wingR: [], heart: [], lidL: [], lidR: [] }
-  const { base, figure, heart } = parts
-  base.push(box(0,.5,0,8.6,1,8.6,edge),box(0,1.4,0,7.5,.8,7.5,shade),box(0,2.2,0,6.8,.8,6.8,red),box(0,3,0,6.1,.8,6.1,stone))
-  figure.push(box(0,7,0,4.3,7.3,3.7,stone),box(0,4,0,5.4,1.1,5.4,edge),box(0,10.2,0,5.6,1.1,4.2,edge))
-  figure.push(box(0,7,2,1.1,4.7,.8,red),box(0,11,0,3.6,1.4,3.6,shade))
-  // Two substantial prongs frame an open eye; a broken crown, not a closed box.
+  const stone = 0x23232c, shade = 0x101119, edge = 0x45404a, red = 0x811f30, hot = 0xff493a
+  const parts: VoxModel['parts'] = { base: [], figure: [], wingL: [], wingR: [], gaze: [], crown: [], heart: [], lidL: [], lidR: [] }
+  const { base, figure, crown, heart } = parts
+  base.push(box(0,.5,0,9.2,1,9.2,edge),box(0,1.4,0,8.2,.8,8.2,shade),box(0,2.2,0,7.5,.8,7.5,red),box(0,3,0,6.7,.8,6.7,stone))
+  figure.push(box(0,7.5,0,4.6,8.4,4,stone),box(0,4,0,5.8,1.1,5.8,edge),box(0,11.3,0,6.1,1.2,4.8,edge))
+  figure.push(box(0,7.5,2.1,1.25,5.4,.75,red),box(0,12.4,0,4.4,1.2,3.8,shade))
   for (const s of [-1,1]) {
-    figure.push(box(s*2.45,14.5,0,1.6,7,2.4,stone),box(s*3.05,18.3,0,1.3,2.5,2,edge),box(s*3.45,20.1,0,1,1.4,1.6,stone))
-    figure.push(box(s*1.65,12,1,1.8,1,1.7,red))
+    // Clawed buttresses anchor the tower; the wings rake up behind the eye.
+    figure.push(box(s*2.25,6.3,1.1,1.3,5.5,2.4,shade),box(s*2.45,3.8,1.65,1.7,1.25,3,stone))
     const wing = parts[s < 0 ? 'wingL' : 'wingR']
-    for (let i=0;i<3;i++) wing.push(box(s*(3.8+i*1.25),10.7+i*1.4,-1.2-i*.14,1.8,4.5-i*.5,2,i===1?edge:stone))
-    wing.push(box(s*4.2,7.9,-1.2,3.3,1.1,2,red))
-    // Stepped eyelids recoil outwards a few degrees with each shot.
-    parts[s < 0 ? 'lidL' : 'lidR'].push(box(s*2,16.2,.85,1.3,2.4,1.1,red),box(s*1.15,17.5,.85,1.7,.8,1.1,edge),box(s*1.15,14.9,.85,1.7,.8,1.1,edge))
+    wing.push(box(s*3.5,12.6,-1.6,2.6,5.2,2.7,stone),box(s*5.05,15.1,-1.85,2.1,5.6,2.3,edge),box(s*6.4,17.4,-2.1,1.6,5.5,1.9,stone))
+    wing.push(box(s*4.45,10,-1.4,3.6,1.15,2.4,red),box(s*3.5,8.3,-1.35,2.35,2.1,2.1,shade))
+    // The crown and eye turn together, without twisting the stone foundation.
+    crown.push(box(s*2.95,17,0,1.9,8.2,2.8,stone),box(s*3.65,21.65,0,1.65,3.4,2.4,edge),box(s*3.25,24,0,1.55,1.5,2,stone),box(s*2.45,25,0,1.55,1.05,1.7,shade))
+    crown.push(box(s*1.95,13.6,.1,2.35,1.15,2.9,red))
+    // Heavy brows narrow towards the central slit; no rounded or petal shapes.
+    parts[s < 0 ? 'lidL' : 'lidR'].push(box(s*2.05,20.05,1.35,1.9,1.15,1.35,shade),box(s*1,19.65,1.5,1.2,.85,1.05,edge),box(s*2.6,18.6,1.25,.9,2.0,1.4,red),box(s*1.6,17.1,1.35,2.3,.85,1.2,shade))
   }
-  heart.push(box(0,16.2,.35,3,2.8,1.1,red),box(-1.85,16.2,.35,1.2,1.65,1.1,red),box(1.85,16.2,.35,1.2,1.65,1.1,red),box(0,16.2,1.05,2.2,2.1,.7,hot,true),box(-1.5,16.2,1.05,.8,1.35,.7,hot,true),box(1.5,16.2,1.05,.8,1.35,.7,hot,true),box(0,16.2,1.48,.85,2.35,.6,shade),box(0,16.2,1.85,.4,1.5,.3,0xffad64,true))
-  return { parts, scale:.11, pivots:{heart:[0,16.2,.35],wingL:[-2.6,10,-1.2],wingR:[2.6,10,-1.2],lidL:[-2.6,16.2,.85],lidR:[2.6,16.2,.85]},
-    sockets:{muzzle:{part:'heart',at:[0,16.2,2.05]}} }
+  heart.push(box(0,18.5,.35,3.6,3.45,1.5,red),box(-2.2,18.5,.35,1.25,1.9,1.4,red),box(2.2,18.5,.35,1.25,1.9,1.4,red))
+  heart.push(box(0,18.5,1.35,2.5,2.45,.75,hot,true),box(-1.65,18.5,1.4,1,1.6,.7,hot,true),box(1.65,18.5,1.4,1,1.6,.7,hot,true),box(0,18.5,1.85,.75,2.8,.5,shade))
+  return { parts, scale:.11,
+    pivots:{gaze:[0,12.4,0],crown:[0,12.4,0],heart:[0,18.5,.35],wingL:[-2.6,10,-1.2],wingR:[2.6,10,-1.2],lidL:[-2.9,18.5,1.25],lidR:[2.9,18.5,1.25]},
+    parents:{crown:'gaze',heart:'gaze',lidL:'gaze',lidR:'gaze'},
+    sockets:{muzzle:{part:'heart',at:[0,18.5,2.18]}} }
 }
 
-/** Pure presentation: shot age is seconds since the last volley. Cuboid stone
- * stays rigid; only the hinged wings/lids/arms move, with a smooth return. */
-export function poseStoneSeraph(model: Group, time: number, shotAge: number): void {
-  const recoil = shotAge >= 0 && shotAge < .48 ? Math.sin(Math.PI * Math.min(1, shotAge / .48)) ** 2 : 0
+/** Articulation follows each actual volley, including rapid Solar shots.
+ * The envelope starts and ends at rest with zero velocity. */
+export function poseStoneSeraph(model: Group, time: number, shotAge: number, cycle = .48): void {
+  const duration = Math.max(.045, cycle)
+  const recoil = shotAge >= 0 && shotAge < duration ? Math.sin(Math.PI * shotAge / duration) ** 2 : 0
   for (const [name, sign] of [['wingL',-1],['wingR',1],['lidL',-1],['lidR',1],['armL',-1],['armR',1]] as const) {
     const part = model.getObjectByName(name)
     if (!part) continue

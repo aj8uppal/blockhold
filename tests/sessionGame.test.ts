@@ -1,3 +1,5 @@
+import oldSeraphArt from './fixtures/seraph-v18-art.json'
+import oldCrimsonArt from './fixtures/crimson-v18-art.json'
 import historicalBattle from './fixtures/seraph-v9-battle.json'
 import previousBattle from './fixtures/seraph-v11-battle.json'
 import previousVoidBattle from './fixtures/void-v12-battle.json'
@@ -1459,6 +1461,15 @@ it('keeps account mastery out of co-op replay until ordered, then adds it on sol
 })
 
 describe('Crimson Sovereign sacrifice', () => {
+  it('restores frozen pre-Cathedral battles before and after fusion without changing their combat hashes', async () => {
+    for (const fixture of [oldSeraphArt, oldCrimsonArt]) {
+      const game = makeGame(), journal = fixture as BattleSession
+      expect(await game.resumeSession(journal)).toBe(true)
+      expect((game as unknown as Internals).sessionStateHash(18)).toBe(journal.stateHash)
+      game.disposeLevel()
+    }
+  })
+
   function pair(game: Game, start = 0) {
     return [0, 1].map((branch, i) => {
       game.buildTower('seraph', game.terrain!.plots[start + i])

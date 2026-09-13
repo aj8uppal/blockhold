@@ -13,6 +13,7 @@ import {
   OVERCHARGE_SHARD_COST, OVERCHARGE_DURATION, ASCEND_SHARD_COST, ASCEND_GOLD_COST,
 } from '../game/types.ts'
 import { towerTrees } from '../game/towerDefs.ts'
+import { mythicFor } from '../game/mythics.ts'
 import { TARGET_POLICY_LABEL, REACTIONS } from '../game/towers.ts'
 import { isCoarsePointer } from '../core/utils.ts'
 import { isPortalMode } from '../core/platform.ts'
@@ -1174,7 +1175,7 @@ export class HUD {
       chip('Range', `${icon('range')} ${fmtNum(tower.range)}`, tower.range > def.range ? 'lit' : '') +
       chip(tower.isFused ? 'Primary DPS' : def.beamTargets ? 'DPS / target' : 'DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : '') +
       (def.beamTargets ? chip('Targets', `${def.beamTargets}`) : '') +
-      (tower.isSeraph && def.splash ? chip('Splash radius', `${Math.round(def.splash * m.splash * 100) / 100} tiles`) + chip(tower.isFused ? 'Splash damage' : 'Targets', tower.isFused ? '40% · nearby enemies' : 'All in area') : ''))
+      (tower.isSeraph && def.splash ? chip('Splash radius', `${Math.round(def.splash * m.splash * 100) / 100} tiles`) + chip(tower.isFused ? 'Splash damage' : 'Targets', tower.isFused ? '40%' : 'All in area') : ''))
   }
 
   private refreshMasteryProgress(): void {
@@ -1289,6 +1290,7 @@ export class HUD {
       if (tower.level >= 4 && tower.branch !== null) steps.push(`★ ${tree.branches[tower.branch].name}`)
       if (tower.level >= 5 && tower.branch !== null) steps.push(`✦ ${tree.capstones[tower.branch].name}`)
       if (tower.level === 6) steps.push(tower.def.name)
+      if (tower.isFused) steps.splice(0, steps.length, `${mythicFor('seraph', 0)!.name} + ${mythicFor('seraph', 1)!.name}`, tower.def.name)
       if (tower.perk) steps.push(`${icon(tower.perk.icon)} ${tower.perk.name}`)
       const lineage = el('div', 'tp-lineage', p, steps.join(' <span class="dim">→</span> '))
       const details = p.querySelector('.tp-details')
