@@ -26,7 +26,7 @@ export class CoopClock {
     this.rate += (target - this.rate) * (1 - Math.exp(-elapsed / 0.25))
     this.fraction += elapsed * 60 * speed * this.rate
     const whole = Math.floor(this.fraction + 1e-9)
-    const ticks = Math.min(available, 12, whole)
+    const ticks = Math.min(available, Math.max(12, 6 * speed), whole)
     // Keep sub-tick precision, never a backlog of expensive frames.
     this.fraction = Math.max(0, this.fraction - whole)
     return ticks

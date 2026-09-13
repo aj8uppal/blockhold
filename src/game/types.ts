@@ -66,6 +66,8 @@ export type CapstoneSignature =
   | 'eclipse'          // on a timer, a nova stuns everything in reach and strips its defenses
 
 export interface TowerLevelDef {
+  /** Fraction of physical armor ignored by this weapon. */
+  armorPierce?: number
   name: string
   cost: number
   model: TowerModelId
@@ -124,6 +126,7 @@ export type TowerSpecial =
   | { kind: 'knockback', dist: number, armorPierce: number }
 
 export interface SoldierDef {
+  armorPierce?: number
   name: string
   hp: number
   damage: [number, number]
@@ -257,7 +260,7 @@ export const PERKS: Record<TowerKind, [PerkDef, PerkDef]> = {
   ],
   ballista: [
     { id: 'heavybolts', name: 'Heavy Bolts', icon: 'blast', description: '+20% damage.' },
-    { id: 'windlass', name: 'Windlass', icon: 'hourglass', description: 'Reloads 15% faster.' },
+    { id: 'windlass', name: 'Farshot', icon: 'range', description: '+20% range.' },
   ],
   seraph: [
     { id: 'radiance', name: 'Radiance', icon: 'sparkle', description: '+20% damage.' },

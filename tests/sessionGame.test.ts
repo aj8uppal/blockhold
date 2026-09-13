@@ -3,6 +3,7 @@ import previousBattle from './fixtures/seraph-v11-battle.json'
 import previousVoidBattle from './fixtures/void-v12-battle.json'
 import previousWaterBattle from './fixtures/water-v13-battle.json'
 import openWaterBattle from './fixtures/water-v14-battle.json'
+import previousArsenalBattle from './fixtures/arsenal-v15-battle.json'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { Game } from '../src/game/game.ts'
@@ -21,6 +22,7 @@ import { xpForLevel } from '../src/game/progress.ts'
 import { RULESET_VERSION } from '../src/game/ruleset.ts'
 import { createProjectile } from '../src/game/projectiles.ts'
 import type { Tower } from '../src/game/towers.ts'
+import { writeFileSync } from 'node:fs'
 
 vi.mock('../src/core/audio.ts', async importOriginal => ({
   ...await importOriginal<typeof import('../src/core/audio.ts')>(),
@@ -104,6 +106,75 @@ function setupFor(battle: BattleSession): CoopSetup {
 }
 
 describe('actual Game session recovery', () => {
+  it('replays a ruleset-fifteen arsenal with its original damage and Windlass perk', async () => {
+    const game = makeGame()
+    expect(await game.resumeSession(previousArsenalBattle as BattleSession)).toBe(true)
+    expect(game.balanceRuleset).toBe(15)
+    expect((game as unknown as Internals).sessionStateHash(15)).toBe(previousArsenalBattle.stateHash)
+    expect(game.towers[0].def.damage).toEqual([440, 680])
+    expect(game.towers[1].def.soldier!.hp).toBe(440)
+    expect(game.towers[2].def.damage).toEqual([260, 400])
+    expect(game.towers[3].perk!.name).toBe('Windlass')
+    ticks(game, 300)
+    const before = snapshot(game)
+    expect(await game.resumeSession(game.exportBattleSession()!)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    game.disposeLevel()
+  })
+  it('preserves old ascensions while Farshot buys reach without accelerating the ballista', () => {
+    const game = makeGame()
+    for (const balanceRuleset of [15, 16]) {
+      game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 60, balanceRuleset })
+      game.buildTower('ballista', game.terrain!.plots[0])
+      const tower = game.towers[0]
+      for (let i = 1; i < 4; i++) game.upgradeTower(tower, 0)
+      const range = tower.range, interval = tower.effectiveInterval()!
+      game.ascendTower(tower, 1)
+      expect(tower.range).toBeCloseTo(range * (balanceRuleset === 16 ? 1.2 : 1))
+      expect(tower.effectiveInterval()).toBeCloseTo(interval * (balanceRuleset === 16 ? 1 : .85))
+      expect(tower.perk!.name).toBe(balanceRuleset === 16 ? 'Farshot' : 'Windlass')
+      game.disposeLevel()
+    }
+  })
+
+  it('gives late archers, mages and infantry a measurable role against resistant targets', () => {
+    // Fixed targets isolate sustained output from map coverage. Real projectiles,
+    // resistance, signatures, blocking and soldier attacks still run at 60 Hz.
+    const rows: { family: string, tier: number, branch: number, scenario: string, ruleset: number, dps: number }[] = []
+    for (const kind of ['arrow', 'mage', 'barracks', 'seraph', 'cannon', 'ballista'] as const)
+      for (const tier of [5, 6]) for (const branch of [0, 1] as const)
+        for (const scenario of ['armored', 'resistant', 'crowd'] as const)
+          for (const ruleset of [15, 16]) {
+            const game = makeGame()
+            game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 61, balanceRuleset: ruleset })
+            game.soldiers = []; game.hero = null
+            const at = game.lanes[0].sample(6)
+            const plot = [...game.terrain!.plots].sort((a, b) => Math.hypot(a.pos.x - at.x, a.pos.z - at.z) - Math.hypot(b.pos.x - at.x, b.pos.z - at.z))[0]
+            game.buildTower(kind, plot)
+            const tower = game.towers[0]
+            for (let i = 1; i < tier; i++) game.upgradeTower(tower, i === 3 ? branch : 0)
+            if (kind === 'barracks') tower.setRally(at.x, at.z, game)
+            for (let i = 0; i < (scenario === 'crowd' ? 10 : 1); i++) {
+              game.spawnEnemyAt(scenario === 'resistant' ? 'gargoyle' : 'husk', 0, 6 + i * .05, { hpMult: 100000, noReward: true })
+              const enemy = game.enemies.at(-1)!
+              enemy.def = { ...enemy.def, speed: 0, damage: [0, 0] }
+              enemy.armor = scenario === 'armored' ? .75 : 0
+              enemy.magicResistNow = scenario === 'resistant' ? .7 : 0
+            }
+            ticks(game, 1800)
+            rows.push({ family: kind, tier, branch, scenario, ruleset, dps: Math.round(tower.damage / 30) })
+            game.disposeLevel()
+          }
+    for (const row of rows.filter(r => r.ruleset === 16 && ['arrow', 'mage', 'barracks'].includes(r.family))) {
+      const before = rows.find(r => r.ruleset === 15 && r.family === row.family && r.tier === row.tier && r.branch === row.branch && r.scenario === row.scenario)!
+      if (before.dps > 0) expect(row.dps, JSON.stringify(row)).toBeGreaterThanOrEqual(before.dps)
+    }
+    const dps = (family: string, tier: number, branch: number, scenario = 'armored') => rows.find(r => r.ruleset === 16 && r.family === family && r.tier === tier && r.branch === branch && r.scenario === scenario)!.dps
+    expect(dps('mage', 6, 0)).toBeGreaterThan(dps('seraph', 6, 0) * .8)
+    expect(dps('arrow', 6, 0)).toBeGreaterThan(dps('ballista', 6, 1) * .8)
+    expect(dps('barracks', 6, 1)).toBeGreaterThan(dps('barracks', 5, 1) * 2)
+    if (process.env.BLOCKHOLD_BALANCE_REPORT) writeFileSync(process.env.BLOCKHOLD_BALANCE_REPORT, JSON.stringify(rows, null, 2))
+  }, 60000)
   it('restores unrestricted-water saves without shifting their tower indices', async () => {
     const game = makeGame()
     expect(await game.resumeSession(openWaterBattle as BattleSession)).toBe(true)

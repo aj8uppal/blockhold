@@ -32,8 +32,9 @@
  *  13  Void Seraph area pulses replace capped beam volleys.
  *  14  Tactical shorelines give water towers useful road coverage.
  *  15  Boats use authored moorings instead of unrestricted water cells.
+ *  16  Late-tier roster balance, Ballista range ascension and expanded room speeds.
  */
-export const RULESET_VERSION = 15
+export const RULESET_VERSION = 16
 
 /** identifies a reproducible run */
 export interface RunStamp {

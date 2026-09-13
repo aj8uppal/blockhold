@@ -58,7 +58,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
   const session = coopSession
 
   if (!session) {
-    el('div', 'coop-sub', card, 'One battle, one board, two or more wardens. Shared gold, shared lives, and everything either of you builds counts.')
+    el('div', 'coop-sub', card, 'Build and defend together. You share gold, lives, and one battlefield.')
     const open = el('button', 'btn primary big', card, `${icon('castle')} Open a room`) as HTMLButtonElement
     const err = el('div', 'coop-error', card, '')
     if (CoopSession.savedRoom()) {
@@ -86,7 +86,8 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
     el('div', 'diff-sub', card, 'or join a friend')
     const row = el('div', 'coop-join', card)
     const input = el('input', 'coop-input', row) as HTMLInputElement
-    input.placeholder = 'ROOM CODE'
+    input.placeholder = 'ABCDE'
+    input.setAttribute('aria-label', 'Room code')
     input.maxLength = 5
     input.autocapitalize = 'characters'
     input.spellcheck = false

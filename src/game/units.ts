@@ -331,6 +331,7 @@ export class Enemy {
         const m = o.material as THREE.Material
         m.transparent = opacity < 1
         m.opacity = opacity
+        m.depthWrite = opacity === 1
       }
     })
   }
@@ -613,7 +614,7 @@ export class Enemy {
       const inPhase = (this.phaseTimer % cycle) > this.def.phasing.interval
       if (inPhase !== this.phased) {
         this.phased = inPhase
-        this.setPhaseOpacity(inPhase ? 0.25 : 1)
+        this.setPhaseOpacity(inPhase ? 0.10 : 1)
         if (inPhase) {
           this.releaseBlockers()
           world.particles.magicImpact(this.pos.x, this.pos.y + 0.4, this.pos.z, 0xbfffe8)
@@ -1225,7 +1226,7 @@ export class Soldier {
         if (this.attackTimer <= 0) {
           this.attackTimer = this.def.attackInterval / this.supportRate
           const dmg = randRange(...this.def.damage) * this.supportDamage
-          const dealt = this.target.takeDamage(dmg, 'physical', world, { credit: this.credit ?? undefined })
+          const dealt = this.target.takeDamage(dmg, 'physical', world, { credit: this.credit ?? undefined, armorPierce: this.def.armorPierce })
           if (this.def.lifesteal) this.hp = Math.min(this.maxHp, this.hp + dealt * this.def.lifesteal)
           this.strikeT = 1
           this.hitCount++

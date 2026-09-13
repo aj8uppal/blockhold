@@ -1,3 +1,4 @@
+import { originalTowerDef } from './lateBalance.ts'
 import * as THREE from 'three'
 import {
   TowerKind, TowerLevelDef, PerkDef, PERKS,
@@ -587,9 +588,17 @@ export class Tower {
       * (this.isGhost ? GHOST_POWER : 1)
   }
 
+  get worldBalance(): number { return this.world.balanceRuleset ?? RULESET_VERSION }
+
+  get ascensionOptions(): PerkDef[] {
+    if (this.kind === 'ballista' && this.worldBalance <= 15) return [PERKS.ballista[0],
+      { id: 'windlass', name: 'Windlass', icon: 'hourglass', description: 'Reloads 15% faster.' }]
+    return PERKS[this.kind]
+  }
+
   /** shots per second, relative to the definition's own rate */
   get rateMult(): number {
-    return (1 + this.auraRate) * (this.perk?.id === 'windlass' ? 1 / 0.85 : 1)
+    return (1 + this.auraRate) * (this.perk?.id === 'windlass' && (this.world.balanceRuleset ?? RULESET_VERSION) <= 15 ? 1 / 0.85 : 1)
   }
 
   /** what a given tier would deal from this plot, with everything that applies */
@@ -613,6 +622,7 @@ export class Tower {
       * (this.onHighGround ? 1 + RAMPART_RANGE_BONUS : 1)
       + (this.perk?.id === 'zenith' ? 0.8 : 0))
       * (1 + this.auraRange)
+      * (this.perk?.id === 'windlass' && (this.world.balanceRuleset ?? RULESET_VERSION) >= 16 ? 1.2 : 1)
   }
 
   /** where the bonuses come from, in the player's words; empty when there are none */
@@ -668,7 +678,7 @@ export class Tower {
   }
 
   ascend(perkIndex: 0 | 1, world: World): void {
-    this.perk = PERKS[this.kind][perkIndex]
+    this.perk = this.ascensionOptions[perkIndex]
     this.refreshSoldierStats(world)
     // floating sigil crown marks an ascended tower
     const geo = new THREE.OctahedronGeometry(0.09)
@@ -717,6 +727,7 @@ export class Tower {
   private static readonly REVEAL_HOLD = 0.14
 
   private combatDefinition(def: TowerLevelDef, level: number = this.level, branch = this.branch): TowerLevelDef {
+    if ((this.world.balanceRuleset ?? RULESET_VERSION) <= 15) def = originalTowerDef(def)
     if (this.isSeraph && branch === 1 && level >= 4 && (this.world.balanceRuleset ?? RULESET_VERSION) <= 12) {
       const crowned = level >= 5
       def = { ...def, damage: crowned ? [125, 165] : [65, 85], attackInterval: crowned ? .15 : .17,
@@ -1195,7 +1206,7 @@ export class Tower {
           world.time < this.riftUntil ? 0.4 : 0))
           * (this.suppressed ? SUPPRESSED_RATE : 1)
         this.cooldown = this.def.attackInterval! / (rate * (1 + this.auraRate))
-          * (this.perk?.id === 'windlass' ? 0.85 : 1)
+          * (this.perk?.id === 'windlass' && (this.world.balanceRuleset ?? RULESET_VERSION) <= 15 ? 0.85 : 1)
         this.fire(t, world)
         this.recoil = 1
       }
@@ -1242,7 +1253,7 @@ export class Tower {
       ? { dps: def.special.dps, duration: def.special.duration }
       : undefined
     world.fireProjectile({ kind: 'arrow', from, target, damage, crit, poison, credit: this, world,
-      armorPierce: this.has('enchanted') ? 0.3 : undefined })
+      armorPierce: Math.max(def.armorPierce ?? 0, this.has('enchanted') ? 0.3 : 0) })
   }
 
   private fire(target: Enemy, world: World, isEcho = false): void {
@@ -1358,7 +1369,7 @@ export class Tower {
         thrower?.throwAxe(target.pos)
         world.fireProjectile({
           kind: 'axe', from: origin, target, damage: dmg, credit: this, world,
-          armorPierce: this.has('enchanted') ? 0.3 : undefined,
+          armorPierce: Math.max(def.armorPierce ?? 0, this.has('enchanted') ? 0.3 : 0),
         })
         // the release is marked where it happens, so the eye is drawn to the
         // thrower's hand and not to the roof of the building

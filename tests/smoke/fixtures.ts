@@ -100,6 +100,15 @@ export async function startBattle(page: Page, tap = false): Promise<void> {
  * not what receives the tap.
  */
 export async function freePlotPoint(page: Page): Promise<{ x: number, y: number }> {
+  // Software rendering can leave the camera moving after a fixed timeout.
+  await page.waitForFunction(() => {
+    const engine = (window.vg.game as unknown as { engine: {
+      dist: number, distGoal: number, yaw: number, yawGoal: number, pitch: number, pitchGoal: number,
+    } }).engine
+    return Math.abs(engine.dist - engine.distGoal) < .01
+      && Math.abs(Math.sin(engine.yaw - engine.yawGoal)) < .001
+      && Math.abs(engine.pitch - engine.pitchGoal) < .001
+  })
   const point = await page.evaluate(() => {
     const g = window.vg.game
     const plots = g.terrain?.plots ?? []
@@ -108,6 +117,10 @@ export async function freePlotPoint(page: Page): Promise<{ x: number, y: number 
       const s = g.projectToScreen(p.pos.x, p.pos.y, p.pos.z)
       if (!s) continue
       if (s.x > 40 && s.y > 80 && s.x < window.innerWidth - 40 && s.y < window.innerHeight - 90) {
+        // HUD controls can move as rows wrap. Only tap an exposed foundation,
+        // including the small thumb drift used by touch selection tests.
+        if (![s.x - 10, s.x, s.x + 10].every(x => document.elementFromPoint(x, s.y) instanceof HTMLCanvasElement)) continue
+        if ((g as unknown as { pickPlot(x: number, y: number): { index: number } | null }).pickPlot(s.x, s.y)?.index !== p.index) continue
         return { x: Math.round(s.x), y: Math.round(s.y) }
       }
     }

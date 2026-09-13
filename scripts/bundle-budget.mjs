@@ -46,11 +46,13 @@ const assets = join(root, 'dist', 'assets')
 // Historical battle compatibility, full battle backups and XP receipts add ~1.4 KiB.
 // Mode-aware retries and confirmed victory transitions add ~0.3 KiB gzip.
 // Tidecaller's nine models, wave controls and backwards-compatible balance add ~2.6 KiB.
-const APP_CHUNK_LIMIT = 164 * 1024
+// Late-tier combat compatibility, animated mortar fire, 1–4x controls and
+// recoverable co-op sync diagnostics add about 2 KiB of app code in ruleset 16.
+const APP_CHUNK_LIMIT = 166 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 // Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.
 // The how-to sheet now loads on demand; the initial app budget stays unchanged.
-const TOTAL_JS_LIMIT = 303 * 1024
+const TOTAL_JS_LIMIT = 305 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

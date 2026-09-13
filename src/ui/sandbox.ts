@@ -40,7 +40,6 @@ export function mountSandbox(root: HTMLElement, game: Game): void {
   }
   action('Send enemies', () => {
     game.sandboxOrder({ kind: 'sandboxSpawn', enemy: enemy.value, count: Number(count.value), hp: Number(hp.value), lane: Number(lane.value) })
-    if (!game.paused) drawer.open = false
   }, true)
   action('Clear enemies', () => game.sandboxOrder({ kind: 'sandboxClear' }))
   action('Reset abilities', () => game.sandboxOrder({ kind: 'sandboxReset' }))

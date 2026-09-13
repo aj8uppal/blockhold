@@ -51,7 +51,8 @@ test('tower taps toggle off and switching from hero fully releases hero selectio
     const g = window.vg.game as unknown as Game
     const plot = g.terrain!.plots.find(p => {
       const s = g.projectToScreen(p.pos.x, p.pos.y, p.pos.z)
-      return s && s.x > 65 && s.x < innerWidth * .48 && s.y > 110 && s.y < innerHeight - 100
+      return s && s.x > 65 && s.x < innerWidth * .48 && s.y > 150 && s.y < innerHeight - 100
+        && document.elementFromPoint(s.x, s.y) instanceof HTMLCanvasElement
     })!
     g.buildTower('arrow', plot); g.clearSelection()
     return g.projectToScreen(plot.pos.x, plot.pos.y + .4, plot.pos.z)!

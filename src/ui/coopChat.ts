@@ -4,25 +4,22 @@ import type { CoopSession } from '../core/coop.ts'
 export function mountCoopChat(parent: HTMLElement, session: CoopSession): () => void {
   const wrap = document.createElement('details')
   wrap.className = 'coop-chat'
-  Object.assign(wrap.style, { position: 'fixed', right: '12px', bottom: '12px', zIndex: '45', width: 'auto', maxWidth: 'calc(100vw - 24px)', background: 'rgba(24,20,16,.96)', color: '#f3e5ca', border: '1px solid #967238', borderRadius: '10px', font: '14px sans-serif', pointerEvents: 'auto', boxShadow: '0 3px 18px #0008' })
+  document.body.classList.add('has-room-chat')
   const summary = document.createElement('summary')
   summary.textContent = 'Room chat'
-  Object.assign(summary.style, { cursor: 'pointer', padding: '10px 12px', userSelect: 'none' })
   wrap.append(summary)
   const log = document.createElement('div')
+  log.className = 'chat-log'
   log.setAttribute('role', 'log')
   log.setAttribute('aria-label', 'Room messages')
   log.setAttribute('aria-live', 'polite')
-  Object.assign(log.style, { maxHeight: 'min(190px, 30vh)', overflowY: 'auto', padding: '0 12px', overflowWrap: 'anywhere' })
   wrap.append(log)
   const form = document.createElement('form')
-  Object.assign(form.style, { display: 'flex', gap: '6px', padding: '10px' })
   const input = document.createElement('input')
   input.type = 'text'
   input.maxLength = 240
   input.placeholder = 'Message your allies'
   input.setAttribute('aria-label', 'Chat message')
-  Object.assign(input.style, { minWidth: '0', flex: '1', padding: '7px', color: '#f3e5ca', background: '#ffffff0b', border: '1px solid #967238', borderRadius: '5px' })
   const send = document.createElement('button')
   send.type = 'submit'
   send.textContent = 'Send'
@@ -30,8 +27,8 @@ export function mountCoopChat(parent: HTMLElement, session: CoopSession): () => 
   form.append(input, send)
   wrap.append(form)
   const status = document.createElement('div')
+  status.className = 'chat-status'
   status.setAttribute('role', 'status')
-  Object.assign(status.style, { padding: '0 12px 8px', fontSize: '12px' })
   wrap.append(status)
   let unread = 0
   const add = (seat: number, text: string, historical = false) => {
@@ -48,12 +45,15 @@ export function mountCoopChat(parent: HTMLElement, session: CoopSession): () => 
     if (event.type === 'chat') add(event.seat, event.payload, true)
   }
   wrap.ontoggle = () => {
-    wrap.style.width = wrap.open ? 'min(280px, calc(100vw - 24px))' : 'auto'
+    summary.setAttribute('aria-label', wrap.open ? 'Close room chat' : 'Open room chat')
     if (wrap.open) { unread = 0; summary.textContent = 'Room chat'; log.scrollTop = log.scrollHeight }
   }
   // Typing, sending and scrolling chat must not command the hero or zoom the battlefield.
   for (const name of ['keydown', 'keyup', 'pointerdown', 'pointerup', 'click', 'wheel']) {
-    wrap.addEventListener(name, event => event.stopPropagation())
+    wrap.addEventListener(name, event => {
+      if (name === 'keydown' && (event as KeyboardEvent).key === 'Escape') { wrap.open = false; input.blur(); summary.focus() }
+      event.stopPropagation()
+    })
   }
   form.onsubmit = async event => {
     event.preventDefault()
@@ -72,5 +72,7 @@ export function mountCoopChat(parent: HTMLElement, session: CoopSession): () => 
     if (event.type === 'connection') status.textContent = event.connected ? '' : session.lost ? 'This room is no longer available.' : 'Reconnecting…'
   })
   parent.append(wrap)
-  return () => { unsubscribe(); wrap.remove() }
+  const resize = new ResizeObserver(() => document.documentElement.style.setProperty('--room-chat-height', `${wrap.getBoundingClientRect().height}px`))
+  resize.observe(wrap)
+  return () => { unsubscribe(); resize.disconnect(); wrap.remove(); document.body.classList.remove('has-room-chat'); document.documentElement.style.removeProperty('--room-chat-height') }
 }

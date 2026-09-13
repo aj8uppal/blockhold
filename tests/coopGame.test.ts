@@ -20,6 +20,24 @@ function client(speed = 1) {
 }
 
 describe('co-op turn dispatch', () => {
+  it('detects divergence whichever seat finishes the turn first, and clears after recovery', () => {
+    const toast = vi.fn()
+    const game = Object.assign(Object.create(Game.prototype), {
+      coop: { seat: 0, send: vi.fn() }, coopHashes: new Map(), coopDesync: null,
+      sessionStateHash: () => 123, hud: { showToast: toast },
+    })
+    game.onCoopEvent({ type: 'hash', seat: 1, payload: { turn: 25, h: 456 } })
+    expect(game.coopDesync).toBeNull()
+    game.sendCoopHash(25)
+    expect(game.coopDesync).toEqual({ turn: 25, local: 123, remote: 456 })
+    expect(toast).toHaveBeenCalledTimes(1)
+    game.sendCoopHash(50)
+    game.onCoopEvent({ type: 'hash', seat: 1, payload: { turn: 50, h: 123 } })
+    expect(game.coopDesync).toBeNull()
+    game.onCoopEvent({ type: 'hash', seat: 1, payload: { turn: 75, h: 789 } })
+    game.sendCoopHash(75)
+    expect(game.coopDesync?.turn).toBe(75)
+  })
   it('applies commands at identical ticks despite bursty delivery and different frame rates', () => {
     const a = client(), b = client()
     for (let n = 1; n <= 30; n++) {

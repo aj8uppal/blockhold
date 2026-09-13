@@ -4,7 +4,7 @@ import { CoopClock } from '../src/core/coopClock.ts'
 describe('co-op render pacing', () => {
   it('buffers startup and runs smoothly at either negotiated cadence and speed', () => {
     for (const ticksPerTurn of [6, 12]) {
-    for (const speed of [1, 2]) {
+    for (const speed of [1, 2, 3, 4]) {
       const clock = new CoopClock()
       let available = 0
       const frames: number[] = []
@@ -34,7 +34,7 @@ describe('co-op render pacing', () => {
   })
 
   it('recovers ordered delivery jitter and a half-second outage at both speeds', () => {
-    for (const speed of [1, 2]) {
+    for (const speed of [1, 2, 3, 4]) {
       const clock = new CoopClock()
       let available = 0, delivered = 0, consumed = 0, next = 0
       let previousArrival = 0
@@ -81,7 +81,7 @@ describe('co-op render pacing', () => {
   })
 
   it('drains a paused room below the startup reserve without inventing simulation ticks', () => {
-    for (const speed of [1, 2]) {
+    for (const speed of [1, 2, 3, 4]) {
       const clock = new CoopClock()
       let available = 7
       expect(clock.take(1 / 60, speed, available, 12)).toBe(0)

@@ -1,3 +1,4 @@
+import { gameSpeed } from '../../src/core/gameSpeed.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { RULESET_VERSION } from '../../src/game/ruleset.ts'
@@ -357,7 +358,7 @@ export async function handleCoop(
         break
       }
       case 'speed': {
-        const s = payload === 2 ? 2 : 1
+        const s = gameSpeed(payload)
         room.speed = s
         broadcast(room, { type: 'speed', speed: s, seat: n })
         break

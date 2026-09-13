@@ -2098,3 +2098,44 @@ input, select, textarea { font-family: inherit; }
 .build-option .b-name, .hero-option .hero-name, .diff-option .diff-name { font-weight: 550; }
 .main-menu .btn .ico { color: #c9cdd2; margin-right: 5px; }
 .main-menu .btn.primary .ico { color: inherit; }
+
+/* Co-op controls share the game's typography and reserve their own space. */
+.wave-flow-btn { color: #a0dcff; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+.wave-flow-btn .ico { font-size: 16px; margin: 0; }
+.flow-label { font-size: 9px; line-height: 1; font-weight: 550; }
+.wave-flow-btn.manual { color: #bab4aa; }
+.coop-chat { position: fixed; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 45; pointer-events: auto;
+  width: 130px; max-width: calc(100vw - 24px); background: var(--panel-surface); color: var(--parchment);
+  border: 1px solid var(--panel-edge); border-radius: 12px; box-shadow: 0 6px 24px #0004; font-size: 12px; }
+.coop-chat[open] { width: 300px; }
+.coop-chat > summary { min-height: 44px; padding: 13px 12px; cursor: pointer; user-select: none; }
+.chat-log { max-height: min(150px, 20dvh); overflow-y: auto; padding: 0 12px; overflow-wrap: anywhere; }
+.coop-chat form { display: flex; gap: 6px; padding: 8px; }
+.coop-chat input { flex: 1; min-width: 0; min-height: 44px; padding: 8px; font-size: 16px; border: 1px solid var(--panel-edge); border-radius: 8px; color: inherit; background: #ffffff08; }
+.coop-chat .btn.small { flex: 0 0 auto; min-height: 44px; }
+.chat-status { padding: 0 10px 8px; color: #b9b3aa; font-size: 11px; }
+.chat-status:empty { display: none; }
+body.has-room-chat #hud .tower-panel { top: auto; bottom: calc(var(--room-chat-height, 44px) + 24px + env(safe-area-inset-bottom));
+  max-height: calc(100dvh - var(--hud-top-bottom, 80px) - var(--room-chat-height, 44px) - 36px - env(safe-area-inset-bottom)); overflow-y: auto; }
+.menu-screen .coop-card { width: min(460px, calc(100vw - 24px)); padding: 24px; gap: 14px; align-items: stretch;
+  background: var(--panel-surface); border: 1px solid var(--panel-edge); border-radius: 20px; }
+.coop-card .coop-title { font-size: 28px; letter-spacing: -.04em; color: var(--parchment); }
+.coop-card .coop-sub { font-size: 13px; line-height: 1.6; color: #b5bbc1; }
+.coop-card > .coop-code { font: 500 36px ui-monospace, monospace; letter-spacing: .18em; text-align: center; text-shadow: none; color: #e8c88d; padding: 12px; background: #ffffff08; border-radius: 12px; }
+.coop-card .btn { min-height: 46px; }
+.coop-card .coop-input { min-width: 0; font-size: 16px; letter-spacing: .12em; }
+.coop-card .coop-select { width: 100%; min-height: 44px; background: #ffffff08; border-color: var(--panel-edge); }
+.stat.coop { font-size: 12px; min-width: 0; }
+.stat.coop .coop-code { font: 500 11px ui-monospace, monospace; letter-spacing: .04em; text-shadow: none; }
+@media (max-height: 500px) { .chat-log { max-height: 44px; } .coop-chat form { padding: 6px; } }
+.stat.coop.out-of-sync { border-color: #ec9478; color: #ffb29b; }
+@media (max-height: 500px) {
+  .coop-chat[open] { display: grid; grid-template-columns: 40px 1fr; grid-template-areas: 'toggle compose' 'messages messages' 'status status'; }
+  .coop-chat[open] > summary { grid-area: toggle; font-size: 0; padding: 9px 0; text-align: center; list-style: none; }
+  .coop-chat[open] > summary::-webkit-details-marker { display: none; }
+  .coop-chat[open] > summary::after { content: '×'; font-size: 24px; line-height: 32px; }
+  .coop-chat form { grid-area: compose; padding-left: 0; }
+  .chat-log { grid-area: messages; max-height: 28px; padding-bottom: 4px; }
+  .chat-log p { margin: 3px 0 !important; }
+  .chat-status { grid-area: status; }
+}

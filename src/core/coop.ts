@@ -1,3 +1,4 @@
+import { gameSpeed, type GameSpeed } from './gameSpeed.ts'
 import { RULESET_VERSION } from '../game/ruleset.ts'
 import type { BattleSession } from '../game/session.ts'
 import type { Difficulty, HeroId } from '../game/types.ts'
@@ -58,7 +59,7 @@ export class CoopSession {
   replayEvents: CoopEvent[] = []
   replaySeq = 0
   paused = false
-  speed: 1 | 2 = 1
+  speed: GameSpeed = 1
   private listeners = new Set<(e: CoopEvent) => void>()
   seats = 1
   connected: number[] = []
@@ -136,7 +137,7 @@ export class CoopSession {
   private adopt(data: { seats: number, connected: number[], setup: CoopSetup | null, started?: boolean, history?: CoopEvent[], seq?: number, paused?: boolean, speed?: number }): void {
     this.seats = data.seats; this.connected = data.connected; this.setup = data.setup
     this.started = !!data.started; this.replayEvents = data.history ?? []; this.replaySeq = data.seq ?? 0
-    this.paused = !!data.paused; this.speed = data.speed === 2 ? 2 : 1
+    this.paused = !!data.paused; this.speed = gameSpeed(data.speed)
   }
 
   /** Explicitly leaving forgets the private seat; closing a stream alone preserves reload recovery. */
@@ -190,7 +191,7 @@ export class CoopSession {
             const msg = JSON.parse(line.slice(6)) as CoopEvent & { seq?: number }
             if (msg.type === 'hello') {
               this.seats = msg.seats; this.connected = msg.connected; this.setup = msg.setup; this.started = msg.started
-              this.paused = msg.paused; this.speed = msg.speed === 2 ? 2 : 1
+              this.paused = msg.paused; this.speed = gameSpeed(msg.speed)
               // Keep the replay cursor unchanged: ordered historical events still follow hello.
             } else if (msg.type === 'caughtup') {
               this.replaySeq = Math.max(this.replaySeq, msg.seq)
@@ -203,7 +204,7 @@ export class CoopSession {
               if (msg.type === 'setup') this.setup = msg.setup
               if (msg.type === 'start') { this.setup = msg.setup; this.started = true; this.paused = !!(msg.preparing || msg.setup?.startPaused || msg.setup?.battle) }
               if (msg.type === 'pause') this.paused = msg.on
-              if (msg.type === 'speed') this.speed = msg.speed === 2 ? 2 : 1
+              if (msg.type === 'speed') this.speed = gameSpeed(msg.speed)
               if (msg.type === 'end') this.forget()
             }
             if (Date.now() - this.lastRememberedAt > 60_000) this.remember()

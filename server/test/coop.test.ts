@@ -109,17 +109,19 @@ test('a room is created, joined, set up, started, and keeps time', async () => {
   }
 })
 
-test('pause stops the clock and speed doubles it', async () => {
+test('pause stops the clock and all four speeds authorize the correct ticks', async () => {
   resetRooms()
   const h = await harness()
   try {
     const { json: { code, key } } = await h.call('POST', '/v1/coop/rooms', { body: {} })
     await h.call('POST', `/v1/coop/rooms/${code}/send`, { body: { seat: 0, key, type: 'start' } })
-    await h.call('POST', `/v1/coop/rooms/${code}/send`, { body: { seat: 0, key, type: 'speed', payload: 2 } })
-    let seen = await readUntil(h.base, `/v1/coop/rooms/${code}/events?seat=0&key=${key}`, m => m.type === 'turn', 2000)
-    assert.equal(seen.find(m => m.type === 'turn').ticks, 24)
+    for (const speed of [1, 2, 3, 4]) {
+      await h.call('POST', `/v1/coop/rooms/${code}/send`, { body: { seat: 0, key, type: 'speed', payload: speed } })
+      const seen = await readUntil(h.base, `/v1/coop/rooms/${code}/events?seat=0&key=${key}`, m => m.type === 'turn', 2000)
+      assert.equal(seen.find(m => m.type === 'turn').ticks, 12 * speed)
+    }
     await h.call('POST', `/v1/coop/rooms/${code}/send`, { body: { seat: 0, key, type: 'pause', payload: true } })
-    seen = await readUntil(h.base, `/v1/coop/rooms/${code}/events?seat=0&key=${key}`, m => m.type === 'turn', 2000)
+    const seen = await readUntil(h.base, `/v1/coop/rooms/${code}/events?seat=0&key=${key}`, m => m.type === 'turn', 2000)
     assert.equal(seen.find(m => m.type === 'turn').ticks, 0)
     await h.call('POST', `/v1/coop/rooms/${code}/send`, { body: { seat: 0, key, type: 'end' } })
   } finally {

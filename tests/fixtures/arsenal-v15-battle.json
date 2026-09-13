@@ -1,0 +1,269 @@
+{
+  "ruleset": 15,
+  "balanceRuleset": 15,
+  "levelId": "greenhollow",
+  "difficulty": "normal",
+  "heroId": "aldric",
+  "mode": "sandbox",
+  "seed": 160160,
+  "tick": 900,
+  "commands": [
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "build",
+        "plot": 0,
+        "tower": "mage"
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 0,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 0,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 0,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 0,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 0,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "ascend",
+        "plot": 0,
+        "perk": 1
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "build",
+        "plot": 1,
+        "tower": "barracks"
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 1,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 1,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 1,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 1,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 1,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "ascend",
+        "plot": 1,
+        "perk": 1
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "build",
+        "plot": 2,
+        "tower": "arrow"
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 2,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 2,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 2,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 2,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 2,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "ascend",
+        "plot": 2,
+        "perk": 1
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "build",
+        "plot": 3,
+        "tower": "ballista"
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 3,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 3,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 3,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 3,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "upgrade",
+        "plot": 3,
+        "opt": 0
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "ascend",
+        "plot": 3,
+        "perk": 1
+      }
+    },
+    {
+      "tick": 0,
+      "cmd": {
+        "kind": "sandboxSpawn",
+        "enemy": "brute",
+        "count": 20,
+        "lane": 0,
+        "hp": 100
+      }
+    }
+  ],
+  "initialSave": {
+    "unlocked": 1,
+    "stars": {},
+    "armory": {},
+    "bestEndless": {},
+    "bestFreeplay": {},
+    "bestScore": {},
+    "medals": {},
+    "trials": {},
+    "capstones": [],
+    "honors": [],
+    "xpClaims": {},
+    "heroPaths": {},
+    "lastHero": "aldric",
+    "xp": 30000,
+    "taughtBasics": true,
+    "seenEnemies": [],
+    "sfxMuted": true,
+    "musicMuted": true
+  },
+  "savedAt": 1789279913283,
+  "wave": 0,
+  "stateHash": 1495710547
+}

@@ -1,3 +1,4 @@
+import { retuneTower } from './lateBalance.ts'
 import { tidecallerTree } from './tidecaller.ts'
 import { mythicFor } from './mythics.ts'
 import { TowerTree, TowerKind, TowerLevelDef, SoldierDef } from './types.ts'
@@ -434,3 +435,10 @@ export const RETAINER: SoldierDef = {
 }
 export const MUSTER_COOLDOWN = 14
 export const MUSTER_LIFETIME = 8
+
+// Apply the current late-tier balance once, keeping early campaign costs intact.
+for (const tree of Object.values(towerTrees)) {
+  tree.levels = tree.levels.map(retuneTower) as typeof tree.levels
+  tree.branches = tree.branches.map(retuneTower) as typeof tree.branches
+  tree.capstones = tree.capstones.map(retuneTower) as typeof tree.capstones
+}

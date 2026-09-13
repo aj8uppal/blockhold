@@ -9,7 +9,7 @@ import type { PlotInfo } from '../game/terrain.ts'
 import type { Enemy } from '../game/units.ts'
 import type { Trap, TrapSpotInfo } from '../game/traps.ts'
 import {
-  TowerKind, TowerLevelDef, TrapKind, TRAP_DEFS, PERKS,
+  TowerKind, TowerLevelDef, TrapKind, TRAP_DEFS,
   OVERCHARGE_SHARD_COST, OVERCHARGE_DURATION, ASCEND_SHARD_COST, ASCEND_GOLD_COST,
 } from '../game/types.ts'
 import { towerTrees } from '../game/towerDefs.ts'
@@ -47,7 +47,11 @@ export class HUD {
   onHome: () => void = () => {}
   onFullscreen: () => void = () => {}
   onCoopSwitch: () => void = () => {}
+  onCoopResync: () => Promise<void> = async () => {}
   private coopSwitchBtn!: HTMLButtonElement
+  private resyncBtn!: HTMLButtonElement
+  private resyncBusy = false
+  private syncNote!: HTMLElement
   private inviteBtn!: HTMLButtonElement
   private overchargeAllBtn!: HTMLButtonElement
 
@@ -56,6 +60,7 @@ export class HUD {
   private livesEl!: HTMLElement
   private waveEl!: HTMLElement
   private speedBtn!: HTMLButtonElement
+  private flowBtn!: HTMLButtonElement
   private pauseBtn!: HTMLButtonElement
   private sfxBtn!: HTMLButtonElement
   private musicBtn!: HTMLButtonElement
@@ -152,6 +157,10 @@ export class HUD {
 
   private buildTopBar(): void {
     const bar = el('div', 'topbar', this.root)
+    new ResizeObserver(() => {
+      const bottom = Math.max(...[...bar.querySelectorAll(':scope > .topbar-group')].map(group => group.getBoundingClientRect().bottom))
+      document.documentElement.style.setProperty('--hud-top-bottom', `${bottom}px`)
+    }).observe(bar)
     const left = el('div', 'topbar-group', bar)
     this.livesEl = el('div', 'stat lives', left, `${icon('heart')} <b>20</b><span class="star-target" title="Keep this many lives for three stars"></span>`)
     this.goldEl = el('div', 'stat gold', left, `${icon('coin')} <b>0</b>`)
@@ -170,6 +179,9 @@ export class HUD {
     this.speedBtn.title = 'Game speed (F)'
     this.speedBtn.setAttribute('aria-label', 'Game speed')
     this.speedBtn.onclick = () => this.game.toggleSpeed()
+    this.flowBtn = el('button', 'icon-btn wave-flow-btn', right, `${icon('respawn')}<small class="flow-label">Auto</small>`)
+    this.flowBtn.setAttribute('aria-label', 'Keep waves coming')
+    this.flowBtn.onclick = () => this.game.setAutoWaves(!this.game.autoWaves)
     const doc = document as Document & { webkitFullscreenEnabled?: boolean }
     if ((doc.fullscreenEnabled || doc.webkitFullscreenEnabled) && !isPortalMode()) {
       const fs = el('button', 'icon-btn', right, icon('fullscreen', 'plain')) as HTMLButtonElement
@@ -404,6 +416,15 @@ export class HUD {
     el('small', 'quality-note', card, 'Wait between rounds clears the field, then lets you start the next wave. Manual waves give no early-call bonus.')
     this.coopSwitchBtn = el('button', 'btn ghost pause-coop', card, 'Invite a friend to this battle') as HTMLButtonElement
     this.coopSwitchBtn.onclick = () => this.onCoopSwitch()
+    this.resyncBtn = el('button', 'btn ghost pause-resync hidden', card, 'Resync battle')
+    this.resyncBtn.onclick = async () => {
+      if (this.resyncBusy) return
+      this.resyncBusy = true
+      this.resyncBtn.textContent = 'Rejoining…'
+      try { await this.onCoopResync() }
+      finally { this.resyncBusy = false; this.resyncBtn.textContent = 'Resync battle' }
+    }
+    this.syncNote = el('small', 'quality-note hidden', card)
     this.inviteBtn = el('button', 'btn ghost pause-invite hidden', card, 'Copy invite link') as HTMLButtonElement
     this.inviteBtn.onclick = async () => {
       const session = this.game.coop
@@ -472,6 +493,14 @@ export class HUD {
       }
     }
     this.coopSwitchBtn.disabled = !game.canSwitchCoop
+    this.resyncBtn.classList.toggle('hidden', !game.coop)
+    this.resyncBtn.disabled = this.resyncBusy || game.isRecovering || !game.coop || game.coop.lost
+    this.syncNote.classList.toggle('hidden', !game.coop)
+    const syncNote = game.coopDesync
+      ? `Boards diverged at turn ${game.coopDesync.turn}. Resync rebuilds your board from the room’s orders.`
+      : 'Resync rebuilds this board from the shared orders and leaves the battle paused.'
+    if (this.syncNote.textContent !== syncNote) this.syncNote.textContent = syncNote
+    this.coopEl.classList.toggle('out-of-sync', !!game.coopDesync)
     this.coopSwitchBtn.title = game.coop && !game.canSwitchCoop ? 'Waiting for the shared board to finish pending orders.' : ''
     this.refreshHunt(game)
     const now = performance.now()
@@ -530,6 +559,13 @@ export class HUD {
     }
     const w = game.waves
     this.waveMode.value = game.autoWaves ? 'auto' : 'manual'
+    this.flowBtn.disabled = game.isSandbox
+    const flowLabel = game.isSandbox ? 'Waves' : game.autoWaves ? 'Auto' : 'Wait'
+    const flowText = this.flowBtn.querySelector('.flow-label')!
+    if (flowText.textContent !== flowLabel) flowText.textContent = flowLabel
+    this.flowBtn.setAttribute('aria-pressed', String(game.autoWaves))
+    this.flowBtn.title = game.isSandbox ? 'Use Sandbox tools to send enemies' : game.autoWaves ? 'Wave flow: automatic · tap to wait between rounds' : 'Wave flow: manual · tap to keep waves coming'
+    this.flowBtn.classList.toggle('manual', !game.autoWaves)
     this.waveMode.disabled = game.isSandbox
     if (w) {
       const waveText = game.isSandbox ? 'Sandbox' : game.isEndless
@@ -1303,14 +1339,14 @@ export class HUD {
     })
     // ascension: tier-4+ towers pick one of two shard-bought perks
     if (tower.level >= 4 && !tower.perk) {
-      PERKS[tower.kind].forEach((perk, i) => {
+      tower.ascensionOptions.forEach((perk, i) => {
         const btn = el('button', 'btn upgrade ascend', actions) as HTMLButtonElement
         btn.innerHTML = `<span class="u-name">${icon(perk.icon)} Ascend: ${perk.name}</span><span class="u-cost">${icon('gem')}${ASCEND_SHARD_COST} ${icon('coin')}${ASCEND_GOLD_COST}</span><span class="u-desc">${perk.description}</span>` +
           `<span class="u-delta">${perkDeltaLines(tower, perk.id, m)}</span><span class="u-need"></span>`
         // a perk that reaches further draws the reach it would buy, the same
         // way a tier upgrade does; the others have nothing spatial to show
-        if (perk.id === 'hawkeye') {
-          btn.onmouseenter = () => this.game.previewUpgradeRange(tower, { range: tower.def.range + 0.8 })
+        if (perk.id === 'hawkeye' || perk.id === 'windlass' && tower.worldBalance >= 16) {
+          btn.onmouseenter = () => this.game.previewUpgradeRange(tower, { range: perk.id === 'hawkeye' ? tower.def.range + 0.8 : tower.def.range * 1.2 })
           btn.onmouseleave = () => this.game.previewUpgradeRange(tower, null)
         }
         this.confirmOnTouch(btn, `Ascend to ${perk.name}? Tap again`, () => this.game.ascendTower(tower, i as 0 | 1))
@@ -1680,7 +1716,8 @@ export class HUD {
 
   setSpeed(speed: number): void {
     this.speedBtn.textContent = `${speed}×`
-    this.speedBtn.classList.toggle('fast', speed === 2)
+    this.speedBtn.classList.toggle('fast', speed > 1)
+    this.speedBtn.title = `Game speed: ${speed}× · tap to cycle 1–4× (F)`
   }
 
   pulseLives(): void {
@@ -1891,8 +1928,8 @@ function perkDeltaLines(tower: Tower, perkId: string, m: StatMults): string {
   if (def.damage && def.attackInterval) {
     const [lo, hi] = tower.effectiveDamage()!.map(v => Math.round(v * m.dmg)) as [number, number]
     const dmgMult = perkId === 'serrated' || perkId === 'heavybolts' ? 1.2 : 1
-    const intMult = perkId === 'windlass' ? 0.85 : 1
-    const rangeAdd = perkId === 'hawkeye' ? 0.8 : 0
+    const intMult = perkId === 'windlass' && tower.worldBalance <= 15 ? 0.85 : 1
+    const rangeAdd = perkId === 'hawkeye' ? 0.8 : perkId === 'windlass' && tower.worldBalance >= 16 ? tower.range * .2 : 0
     const echo = perkId === 'echo' ? 1.18 : 1
     const blo = Math.round(lo * dmgMult), bhi = Math.round(hi * dmgMult)
     const ai = tower.effectiveInterval()!, bi = ai * intMult

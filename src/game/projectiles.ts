@@ -703,6 +703,8 @@ export function createProjectile(spec: ProjectileSpec): Projectile {
 
 export interface BurnZone {
   mesh: THREE.Mesh
+  flames: THREE.InstancedMesh[]
+  started: number
   pos: THREE.Vector3
   radius: number
   dps: number
@@ -712,9 +714,31 @@ export interface BurnZone {
 }
 
 const burnZones: BurnZone[] = []
+const flameGeometry = new THREE.ConeGeometry(1, 1, 4)
+const flamePose = new THREE.Object3D()
+
+function animateFire(zone: BurnZone, time: number): void {
+  const fade = Math.min(1, (zone.until - time) / .45, (time - zone.started) / .12 + .1)
+  zone.flames.forEach((mesh, layer) => {
+    for (let i = 0; i < 9; i++) {
+      const angle = i * 2.39996, spread = i === 0 ? 0 : zone.radius * .68 * Math.sqrt(i / 8)
+      const phase = time * 10 + i * 1.9 + zone.pos.x
+      const height = (.42 + .17 * Math.sin(phase) + .10 * Math.sin(phase * 1.7)) * (layer ? .65 : 1) * fade
+      const width = zone.radius * (layer ? .105 : .17) * fade
+      flamePose.position.set(Math.cos(angle) * spread + Math.sin(phase * .6) * .025,
+        .05 + height / 2, Math.sin(angle) * spread)
+      flamePose.rotation.set(Math.sin(phase) * .12, angle, Math.cos(phase * .7) * .12)
+      flamePose.scale.set(width, height, width)
+      flamePose.updateMatrix(); mesh.setMatrixAt(i, flamePose.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    ;(mesh.material as THREE.MeshBasicMaterial).opacity = (layer ? .92 : .72) * fade
+  })
+}
 
 function removeBurnZone(world: World, z: BurnZone): void {
   z.done = true
+  for (const flame of z.flames) { world.dynamic.remove(flame); flame.dispose(); (flame.material as THREE.Material).dispose() }
   world.dynamic.remove(z.mesh)
   z.mesh.geometry.dispose()
   ;(z.mesh.material as THREE.Material).dispose()
@@ -733,7 +757,15 @@ export function addBurnZone(world: World, at: THREE.Vector3, radius: number, dps
   mesh.position.set(at.x, 0.04, at.z)
   mesh.renderOrder = 2
   world.dynamic.add(mesh)
-  burnZones.push({ mesh, pos: at.clone(), radius, dps, until: world.time + duration, done: false, credit })
+  const flames = [0xff681c, 0xffed9f].map((color, layer) => {
+    const flame = new THREE.InstancedMesh(flameGeometry, new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: .8, toneMapped: false, depthWrite: false,
+    }), 9)
+    flame.position.copy(mesh.position); flame.frustumCulled = false; flame.renderOrder = 3 + layer
+    world.dynamic.add(flame); return flame
+  })
+  const zone = { mesh, flames, started: world.time, pos: at.clone(), radius, dps, until: world.time + duration, done: false, credit }
+  animateFire(zone, world.time); burnZones.push(zone)
 }
 
 export function updateBurnZones(dt: number, world: World): void {
@@ -743,8 +775,6 @@ export function updateBurnZones(dt: number, world: World): void {
       removeBurnZone(world, z)
       continue
     }
-    const mat = z.mesh.material as THREE.MeshBasicMaterial
-    mat.opacity = 0.25 + Math.sin(world.time * 6) * 0.1
     if (Math.random() < dt * 20) {
       world.particles.burnEmber(
         z.pos.x + (Math.random() - 0.5) * z.radius * 1.6,
@@ -764,6 +794,14 @@ export function updateBurnZones(dt: number, world: World): void {
     for (let i = burnZones.length - 1; i >= 0; i--) {
       if (burnZones[i].done) burnZones.splice(i, 1)
     }
+  }
+}
+
+/** One visual update per rendered frame, even when combat runs at 4×. */
+export function updateBurnVisuals(world: World): void {
+  for (const zone of burnZones) if (!zone.done) {
+    ;(zone.mesh.material as THREE.MeshBasicMaterial).opacity = .13 + Math.sin(world.time * 6) * .025
+    animateFire(zone, world.time)
   }
 }
 

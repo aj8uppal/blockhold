@@ -1,3 +1,4 @@
+import { gameSpeed, nextGameSpeed, type GameSpeed } from '../core/gameSpeed.ts'
 import { availableExpansionPlots, placeExpansionPlot, EXPANSION_EVERY } from './expansion.ts'
 import { huntById, huntLevel, huntClearGold, awardHunt, heroHunts, masteryReady, masteryHint, type HuntDef, type HuntId } from './hunts.ts'
 import { HERO_PATHS } from './heroPaths.ts'
@@ -41,7 +42,7 @@ import { Hero, HERO_DEFS } from './hero.ts'
 import { Tower, beaconReach } from './towers.ts'
 import { WaveManager } from './waves.ts'
 import { World, ProjectileSpec } from './world.ts'
-import { Projectile, createProjectile, updateBurnZones, clearBurnZones, updateMines, clearMines, updateRunes, clearRunes, clearOwnedEffects } from './projectiles.ts'
+import { Projectile, createProjectile, updateBurnZones, updateBurnVisuals, clearBurnZones, updateMines, clearMines, updateRunes, clearRunes, clearOwnedEffects } from './projectiles.ts'
 import { armoryTier, hasArmory } from './armory.ts'
 import type { HUD } from '../ui/hud.ts'
 import { icon } from '../ui/icons.ts'
@@ -277,7 +278,7 @@ export class Game implements World {
   isFreeplay = false
   watchIndex = 0
   private ghostLayers: { plot: number, kind: TowerKind, level: number, branch: 0 | 1 | null }[][] = []
-  speed: 1 | 2 = 1
+  speed: GameSpeed = 1
   paused = false
   isEndless = false
   goldEarned = 0
@@ -1081,7 +1082,7 @@ export class Game implements World {
   private applying = false
   private applyingSeat = -1
   private coopHashes = new Map<number, Map<number, number>>()
-  private lastDesyncToastAt = -100
+  coopDesync: { turn: number, local: number, remote: number } | null = null
   private coopWaitingT = 0
 
   /** the save unlocks and the Armory are read from: the host's in co-op */
@@ -1142,7 +1143,7 @@ export class Game implements World {
   private onCoopEvent(e: CoopEvent): void {
     switch (e.type) {
       case 'hello':
-        this.paused = e.paused; this.speed = e.speed === 2 ? 2 : 1
+        this.paused = e.paused; this.speed = gameSpeed(e.speed)
         this.hud.setPaused(this.paused); this.hud.setSpeed(this.speed)
         break
       case 'turn':
@@ -1157,7 +1158,7 @@ export class Game implements World {
         break
       }
       case 'speed':
-        this.speed = e.speed === 2 ? 2 : 1
+        this.speed = gameSpeed(e.speed)
         this.hud.setSpeed(this.speed)
         if (e.seat !== this.coop?.seat) this.hud.showToast(`Ally set the speed to ${e.speed}x`, 1.6)
         break
@@ -1175,11 +1176,7 @@ export class Game implements World {
         const seen = this.coopHashes.get(turn) ?? new Map<number, number>()
         seen.set(e.seat, e.payload.h)
         this.coopHashes.set(turn, seen)
-        const mine = seen.get(this.coop?.seat ?? -1)
-        if (mine !== undefined && [...seen.values()].some(h => h !== mine) && this.time - this.lastDesyncToastAt > 30) {
-          this.lastDesyncToastAt = this.time
-          this.hud.showToast('Out of sync with your ally: the boards have diverged', 5)
-        }
+        this.checkCoopHash(turn, seen)
         for (const k of this.coopHashes.keys()) if (k < turn - 200) this.coopHashes.delete(k)
         break
       }
@@ -1315,13 +1312,21 @@ export class Game implements World {
 
   private sendCoopHash(turn: number): void {
     if (!this.coop) return
-    let hp = 0, alive = 0
-    for (const e of this.enemies) if (e.alive) { alive++; hp += e.hp }
-    const h = stateHash([this.gold, this.lives, this.shards, alive, hp, this.towers.length, this.waves?.waveIndex ?? -1, this.time])
+    const h = this.sessionStateHash()
     const seen = this.coopHashes.get(turn) ?? new Map<number, number>()
     seen.set(this.coop.seat, h)
     this.coopHashes.set(turn, seen)
+    this.checkCoopHash(turn, seen)
     void this.coop.send('hash', { turn, h })
+  }
+
+  private checkCoopHash(turn: number, seen: Map<number, number>): void {
+    const local = seen.get(this.coop?.seat ?? -1)
+    const remote = [...seen.entries()].find(([seat, hash]) => seat !== this.coop?.seat && hash !== local)?.[1]
+    if (local !== undefined && seen.size > 1 && remote === undefined && turn >= (this.coopDesync?.turn ?? 0)) this.coopDesync = null
+    if (local === undefined || remote === undefined || this.coopDesync) return
+    this.coopDesync = { turn, local, remote }
+    this.hud.showToast('The boards are out of sync. Pause and choose Resync battle to recover.', 8)
   }
 
   /** A local copy of every applied command also makes a shared board portable. */
@@ -1366,7 +1371,7 @@ export class Game implements World {
       this.coop = session
       this.coopLoadout = JSON.parse(JSON.stringify(this.roster)) as SaveData
       this.coopMarkers = []; this.coopCmds.clear(); this.coopBudget = 0; this.coopTurn = 0
-      this.coopClock.reset(); this.coopHashes.clear()
+      this.coopClock.reset(); this.coopHashes.clear(); this.coopDesync = null
     } else {
       this.startLevel(level, setup.difficulty, setup.hero, setup.mode ?? 'campaign',
         { seed: setup.seed, hunt: hunt?.id, coop: { session, loadout: setup.loadout } })
@@ -1415,7 +1420,7 @@ export class Game implements World {
     }
     if (!ok) { this.hud.showToast('Could not restore the shared battle. Try rejoining from Co-op.', 5); return false }
     this.coopUnsub = session.on(event => this.onCoopEvent(event))
-    this.paused = session.paused; this.speed = session.speed === 2 ? 2 : 1
+    this.paused = session.paused; this.speed = gameSpeed(session.speed)
     this.hud.setCoop({ code: session.code, seats: session.seats, connected: session.connected.length })
     this.hud.setPaused(this.paused); this.hud.setSpeed(this.speed); this.hud.refresh(this)
     this.hud.showToast(session.paced && this.paused && !setup.battle && !setup.startPaused
@@ -1466,6 +1471,7 @@ export class Game implements World {
     this.coopUnsub = null
     this.coop.close()
     this.coop = null
+    this.coopDesync = null
     this.coopLoadout = null
     this.coopMarkers = []
     this.coopCmds.clear()
@@ -1591,6 +1597,7 @@ export class Game implements World {
       this.coopClock.reset()
       this.coopTurn = 0
       this.coopHashes.clear()
+      this.coopDesync = null
       this.hud.setCoop({ code: this.coop.code, seats: this.coop.seats, connected: this.coop.connected.length })
     } else if (this.coop) {
       this.leaveCoop()
@@ -3474,8 +3481,8 @@ export class Game implements World {
   toggleSpeed(): void {
     if (this.recovering) return
     if (this.paused) return
-    if (this.coop) { void this.coop.send('speed', this.speed === 1 ? 2 : 1); return }
-    this.speed = this.speed === 1 ? 2 : 1
+    if (this.coop) { void this.coop.send('speed', nextGameSpeed(this.speed)); return }
+    this.speed = nextGameSpeed(this.speed)
     this.hud.setSpeed(this.speed)
   }
 
@@ -3579,7 +3586,7 @@ export class Game implements World {
 
     if (this.phase === 'playing' && !this.paused) {
       // fixed-timestep simulation so game speed is frame-rate independent;
-      // budget covers a 0.1s frame at 2x speed (12 steps) before slowing down
+      // budget covers a 0.1s frame at 4x speed (24 steps) before slowing down
       const H = 1 / 60
       if (this.coop) {
         this.coopAdvance(dtRaw, H)
@@ -3589,7 +3596,7 @@ export class Game implements World {
           this.hitstopT = Math.max(0, this.hitstopT - dtRaw)
           dtSim *= this.hitstopScale
         }
-        this.simAccumulator = Math.min(this.simAccumulator + dtSim * this.speed, H * 14)
+        this.simAccumulator = Math.min(this.simAccumulator + dtSim * this.speed, H * 26)
         while (this.simAccumulator >= H && this.phase === 'playing') {
           this.simAccumulator -= H
           this.simStep(H)
@@ -3629,6 +3636,7 @@ export class Game implements World {
     }
 
     this.hud?.refresh(this)
+    updateBurnVisuals(this)
     this.engine.render(false)
   }
 

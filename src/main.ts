@@ -131,6 +131,21 @@ async function connectBattle(session: CoopSession, setup: import('./core/coop.ts
   if (game.coop === session) closeChat = mountCoopChat(document.body, session)
 }
 screens.onCoopStart = (session, setup) => { void connectBattle(session, setup) }
+hud.onCoopResync = async () => {
+  const previous = game.coop
+  if (!previous || game.isRecovering) return
+  try {
+    if (!await previous.send('pause', true)) throw new Error('Could not pause the room. Check your connection and try again.')
+    const { CoopSession } = await import('./core/coop.ts')
+    const session = await CoopSession.resume(previous.code)
+    if (!session.setup) throw new Error('The room has no battle to restore.')
+    if (game.coop !== previous) { session.close(); return }
+    await connectBattle(session, session.setup)
+    if (game.coop === session) hud.showToast('Battle restored. Resume when you and your ally are ready.', 5)
+  } catch (error) {
+    hud.showToast(error instanceof Error ? error.message : 'Could not resync. Try again when connected.', 6)
+  }
+}
 hud.onCoopSwitch = () => {
   if (game.coop) {
     if (game.continueSolo()) { closeChat?.(); closeChat = null }
@@ -392,6 +407,16 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 // ---------------- input ----------------
 
 const pointers = new Map<number, { x: number, y: number }>()
+let canvasTouchClickUntil = 0
+// A touch can reveal or move HUD controls before its compatibility click.
+// Consume that click; any fresh press on a control is immediately allowed.
+document.addEventListener('pointerdown', () => { canvasTouchClickUntil = 0 }, true)
+document.addEventListener('click', event => {
+  if ((event.detail > 0 || event.clientX !== 0 || event.clientY !== 0) && event.target !== canvas && performance.now() < canvasTouchClickUntil) {
+    canvasTouchClickUntil = 0
+    event.preventDefault(); event.stopImmediatePropagation()
+  }
+}, true)
 let dragButton = -1
 let dragOrbit = false   // latched at pointerdown so Shift changes mid-drag don't flip modes
 let dragStart = { x: 0, y: 0 }
@@ -506,6 +531,7 @@ const endPointer = (e: PointerEvent, isClick: boolean) => {
   pinchAngle = null
   lastCentroid = null
   if (!isClick || wasDrag) return
+  if (e.pointerType === 'touch') canvasTouchClickUntil = performance.now() + 500
   if (btn === 0) game.handleClick(e.clientX, e.clientY, e.pointerType === 'touch')
   else if (btn === 2 && game.targetMode) game.setTargetMode(null)
 }

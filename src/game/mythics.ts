@@ -1,3 +1,4 @@
+import { originalTowerDef, retuneTower } from './lateBalance.ts'
 import { tidecallerMythics } from './tidecaller.ts'
 import type { TowerKind, TowerLevelDef } from './types.ts'
 import { resolveCapstone } from './towerDefs.ts'
@@ -83,5 +84,5 @@ const transformations: Partial<Record<TowerKind, Partial<Record<0 | 1, Partial<T
 export function mythicFor(kind: TowerKind, branch: 0 | 1): TowerLevelDef | null {
   const change = transformations[kind]?.[branch]
   if (!change) return null
-  return { ...resolveCapstone(kind, branch), ...change }
+  return retuneTower({ ...originalTowerDef(resolveCapstone(kind, branch)), ...change })
 }
