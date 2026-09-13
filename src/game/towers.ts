@@ -1275,7 +1275,10 @@ export class Tower {
     const poison = def.special?.kind === 'poison' && simChance(def.special.chance)
       ? { dps: def.special.dps, duration: def.special.duration }
       : undefined
-    world.fireProjectile({ kind: 'arrow', from, target, damage, crit, poison, credit: this, world,
+    // Saved battles retain their original flight timing, but every visible
+    // arrow must leave the current archer's bow, including volleys and echoes.
+    const visualFrom = this.model.getObjectByName('muzzle')?.getWorldPosition(new THREE.Vector3())
+    world.fireProjectile({ kind: 'arrow', from, visualFrom, target, damage, crit, poison, credit: this, world,
       armorPierce: Math.max(def.armorPierce ?? 0, this.has('enchanted') ? 0.3 : 0) })
   }
 

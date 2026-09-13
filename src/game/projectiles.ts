@@ -103,11 +103,14 @@ class ArrowProjectile extends Ballistic {
   constructor(private spec: Extract<ProjectileSpec, { kind: 'arrow' }>) {
     super(
       buildModel(env.arrowProjectile(), 'proj:arrow', { castShadow: false }),
-      spec.from,
+      spec.visualFrom ?? spec.from,
+      // Historical journals use the original origin to determine impact time.
+      // Changing the drawing origin must never change when damage is dealt.
       spec.from.distanceTo(spec.target.pos),
       9,
       spec.crit ? 0.35 : 0.25,
     )
+    this.mesh.lookAt(this.targetPos())
   }
   protected targetPos(): THREE.Vector3 {
     const t = this.spec.target

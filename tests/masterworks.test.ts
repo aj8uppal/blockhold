@@ -70,6 +70,38 @@ describe('mythic masterworks', () => {
     expect((legacy as unknown as { muzzle(): THREE.Vector3 }).muzzle().y).toBeCloseTo(2.3 * 1.38)
   })
 
+  it('draws every archer tier from the bow in old saves without changing arrow impact timing', () => {
+    for (const balanceRuleset of [16, 17]) for (const branch of [0, 1]) {
+      const w = world(); w.balanceRuleset = balanceRuleset
+      const t = new Tower('arrow', { index: 0, cell: [0, 0], pos: new THREE.Vector3(0, 2, 0), occupied: true, mesh: new THREE.Group(), raised: true }, w)
+      w.towers.push(t); w.dynamic.add(t.group)
+      for (let tier = 1; tier <= 6; tier++) {
+        if (tier > 1) t.upgrade(tier === 4 ? branch : 0, w)
+        t.update(2, w)
+        t.model.getObjectByName('turret')!.rotation.y = .8
+        const bow = t.model.getObjectByName('muzzle')!.getWorldPosition(new THREE.Vector3())
+        const legacyFrom = (t as unknown as { muzzle(): THREE.Vector3 }).muzzle()
+        const target = foe(3), baselineTarget = foe(3)
+        ;(t as unknown as { fireArrowAt(e: Enemy, d: number, at: THREE.Vector3, w: World): void }).fireArrowAt(target, 10, legacyFrom, w)
+        const shot = w.shots.at(-1)!
+        expect(shot.kind).toBe('arrow')
+        if (shot.kind !== 'arrow') throw new Error('Expected an arrow')
+        const visual = createProjectile(shot), baseline = createProjectile({ ...shot, visualFrom: undefined, target: baselineTarget })
+        expect(visual.mesh.position.distanceTo(bow)).toBeLessThan(1e-8)
+        if (tier === 6 && balanceRuleset === 16) expect(legacyFrom.y - bow.y).toBeGreaterThan(1)
+        visual.update(.001); baseline.update(.001)
+        expect(visual.mesh.position.distanceTo(bow)).toBeLessThan(.02)
+        for (let tick = 0; tick < 300 && !baseline.done; tick++) {
+          visual.update(1 / 60); baseline.update(1 / 60)
+          expect(visual.done).toBe(baseline.done)
+          expect(target.hp).toBe(baselineTarget.hp)
+        }
+        expect(visual.done).toBe(true)
+      }
+      t.dismantle(w, true)
+    }
+  })
+
   it('Deathmark follows only its strongest prey and vulnerability never multiplies with Event Horizon', () => {
     const w = world(), t = tower(w, 'arrow', 0), e = foe(), other = foe(2.1)
     other.hp = 4000; w.enemies.push(other, e)
