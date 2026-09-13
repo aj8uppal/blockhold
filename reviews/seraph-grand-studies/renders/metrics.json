@@ -1,0 +1,452 @@
+[
+  {
+    "mode": "seraph",
+    "direction": "crowned",
+    "form": {
+      "tier": 1,
+      "branch": 0,
+      "name": "Seraph Idol",
+      "label": "T1"
+    },
+    "view": "studio",
+    "boxes": 22,
+    "smallestBlock": 0.6,
+    "drawCalls": 11,
+    "triangles": 2700
+  },
+  {
+    "mode": "seraph",
+    "direction": "crowned",
+    "form": {
+      "tier": 2,
+      "branch": 0,
+      "name": "Seraph Ascendant",
+      "label": "T2"
+    },
+    "view": "studio",
+    "boxes": 25,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 2736
+  },
+  {
+    "mode": "seraph",
+    "direction": "crowned",
+    "form": {
+      "tier": 3,
+      "branch": 0,
+      "name": "Seraph Sovereign",
+      "label": "T3"
+    },
+    "view": "studio",
+    "boxes": 33,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 2832
+  },
+  {
+    "mode": "seraph",
+    "direction": "crowned",
+    "form": {
+      "tier": 4,
+      "branch": 0,
+      "name": "Solar Seraph",
+      "label": "Solar · T4"
+    },
+    "view": "studio",
+    "boxes": 33,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 2832
+  },
+  {
+    "mode": "seraph",
+    "direction": "crowned",
+    "form": {
+      "tier": 5,
+      "branch": 0,
+      "name": "The Dawnbringer",
+      "label": "Solar · T5"
+    },
+    "view": "studio",
+    "boxes": 40,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 2916
+  },
+  {
+    "mode": "seraph",
+    "direction": "crowned",
+    "form": {
+      "tier": 6,
+      "branch": 0,
+      "name": "Helios Engine",
+      "label": "Solar · T6"
+    },
+    "view": "studio",
+    "boxes": 47,
+    "smallestBlock": 0.6,
+    "drawCalls": 13,
+    "triangles": 3000
+  },
+  {
+    "mode": "seraph",
+    "direction": "crowned",
+    "form": {
+      "tier": 4,
+      "branch": 1,
+      "name": "Void Seraph",
+      "label": "Void · T4"
+    },
+    "view": "studio",
+    "boxes": 32,
+    "smallestBlock": 0.55,
+    "drawCalls": 13,
+    "triangles": 2820
+  },
+  {
+    "mode": "seraph",
+    "direction": "crowned",
+    "form": {
+      "tier": 5,
+      "branch": 1,
+      "name": "The Eventide",
+      "label": "Void · T5"
+    },
+    "view": "studio",
+    "boxes": 38,
+    "smallestBlock": 0.55,
+    "drawCalls": 13,
+    "triangles": 2892
+  },
+  {
+    "mode": "seraph",
+    "direction": "crowned",
+    "form": {
+      "tier": 6,
+      "branch": 1,
+      "name": "Event Horizon",
+      "label": "Void · T6"
+    },
+    "view": "studio",
+    "boxes": 45,
+    "smallestBlock": 0.55,
+    "drawCalls": 14,
+    "triangles": 2976
+  },
+  {
+    "mode": "seraph",
+    "direction": "crowned",
+    "form": {
+      "tier": 6,
+      "branch": 1,
+      "name": "Crimson Sovereign",
+      "label": "Fusion"
+    },
+    "view": "studio",
+    "boxes": 39,
+    "smallestBlock": 0.3,
+    "drawCalls": 11,
+    "triangles": 2904
+  },
+  {
+    "mode": "seraph",
+    "direction": "throne",
+    "form": {
+      "tier": 1,
+      "branch": 0,
+      "name": "Seraph Idol",
+      "label": "T1"
+    },
+    "view": "studio",
+    "boxes": 29,
+    "smallestBlock": 0.6,
+    "drawCalls": 11,
+    "triangles": 2784
+  },
+  {
+    "mode": "seraph",
+    "direction": "throne",
+    "form": {
+      "tier": 2,
+      "branch": 0,
+      "name": "Seraph Ascendant",
+      "label": "T2"
+    },
+    "view": "studio",
+    "boxes": 32,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 2820
+  },
+  {
+    "mode": "seraph",
+    "direction": "throne",
+    "form": {
+      "tier": 3,
+      "branch": 0,
+      "name": "Seraph Sovereign",
+      "label": "T3"
+    },
+    "view": "studio",
+    "boxes": 40,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 2916
+  },
+  {
+    "mode": "seraph",
+    "direction": "throne",
+    "form": {
+      "tier": 4,
+      "branch": 0,
+      "name": "Solar Seraph",
+      "label": "Solar · T4"
+    },
+    "view": "studio",
+    "boxes": 42,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 2940
+  },
+  {
+    "mode": "seraph",
+    "direction": "throne",
+    "form": {
+      "tier": 5,
+      "branch": 0,
+      "name": "The Dawnbringer",
+      "label": "Solar · T5"
+    },
+    "view": "studio",
+    "boxes": 47,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 3000
+  },
+  {
+    "mode": "seraph",
+    "direction": "throne",
+    "form": {
+      "tier": 6,
+      "branch": 0,
+      "name": "Helios Engine",
+      "label": "Solar · T6"
+    },
+    "view": "studio",
+    "boxes": 54,
+    "smallestBlock": 0.6,
+    "drawCalls": 13,
+    "triangles": 3084
+  },
+  {
+    "mode": "seraph",
+    "direction": "throne",
+    "form": {
+      "tier": 4,
+      "branch": 1,
+      "name": "Void Seraph",
+      "label": "Void · T4"
+    },
+    "view": "studio",
+    "boxes": 41,
+    "smallestBlock": 0.55,
+    "drawCalls": 13,
+    "triangles": 2928
+  },
+  {
+    "mode": "seraph",
+    "direction": "throne",
+    "form": {
+      "tier": 5,
+      "branch": 1,
+      "name": "The Eventide",
+      "label": "Void · T5"
+    },
+    "view": "studio",
+    "boxes": 45,
+    "smallestBlock": 0.55,
+    "drawCalls": 13,
+    "triangles": 2976
+  },
+  {
+    "mode": "seraph",
+    "direction": "throne",
+    "form": {
+      "tier": 6,
+      "branch": 1,
+      "name": "Event Horizon",
+      "label": "Void · T6"
+    },
+    "view": "studio",
+    "boxes": 52,
+    "smallestBlock": 0.55,
+    "drawCalls": 14,
+    "triangles": 3060
+  },
+  {
+    "mode": "seraph",
+    "direction": "throne",
+    "form": {
+      "tier": 6,
+      "branch": 1,
+      "name": "Crimson Sovereign",
+      "label": "Fusion"
+    },
+    "view": "studio",
+    "boxes": 39,
+    "smallestBlock": 0.3,
+    "drawCalls": 11,
+    "triangles": 2904
+  },
+  {
+    "mode": "seraph",
+    "direction": "cathedral",
+    "form": {
+      "tier": 1,
+      "branch": 0,
+      "name": "Seraph Idol",
+      "label": "T1"
+    },
+    "view": "studio",
+    "boxes": 22,
+    "smallestBlock": 0.6,
+    "drawCalls": 11,
+    "triangles": 2700
+  },
+  {
+    "mode": "seraph",
+    "direction": "cathedral",
+    "form": {
+      "tier": 2,
+      "branch": 0,
+      "name": "Seraph Ascendant",
+      "label": "T2"
+    },
+    "view": "studio",
+    "boxes": 25,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 2736
+  },
+  {
+    "mode": "seraph",
+    "direction": "cathedral",
+    "form": {
+      "tier": 3,
+      "branch": 0,
+      "name": "Seraph Sovereign",
+      "label": "T3"
+    },
+    "view": "studio",
+    "boxes": 33,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 2832
+  },
+  {
+    "mode": "seraph",
+    "direction": "cathedral",
+    "form": {
+      "tier": 4,
+      "branch": 0,
+      "name": "Solar Seraph",
+      "label": "Solar · T4"
+    },
+    "view": "studio",
+    "boxes": 37,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 2880
+  },
+  {
+    "mode": "seraph",
+    "direction": "cathedral",
+    "form": {
+      "tier": 5,
+      "branch": 0,
+      "name": "The Dawnbringer",
+      "label": "Solar · T5"
+    },
+    "view": "studio",
+    "boxes": 42,
+    "smallestBlock": 0.6,
+    "drawCalls": 12,
+    "triangles": 2940
+  },
+  {
+    "mode": "seraph",
+    "direction": "cathedral",
+    "form": {
+      "tier": 6,
+      "branch": 0,
+      "name": "Helios Engine",
+      "label": "Solar · T6"
+    },
+    "view": "studio",
+    "boxes": 49,
+    "smallestBlock": 0.6,
+    "drawCalls": 13,
+    "triangles": 3024
+  },
+  {
+    "mode": "seraph",
+    "direction": "cathedral",
+    "form": {
+      "tier": 4,
+      "branch": 1,
+      "name": "Void Seraph",
+      "label": "Void · T4"
+    },
+    "view": "studio",
+    "boxes": 36,
+    "smallestBlock": 0.55,
+    "drawCalls": 13,
+    "triangles": 2868
+  },
+  {
+    "mode": "seraph",
+    "direction": "cathedral",
+    "form": {
+      "tier": 5,
+      "branch": 1,
+      "name": "The Eventide",
+      "label": "Void · T5"
+    },
+    "view": "studio",
+    "boxes": 40,
+    "smallestBlock": 0.55,
+    "drawCalls": 13,
+    "triangles": 2916
+  },
+  {
+    "mode": "seraph",
+    "direction": "cathedral",
+    "form": {
+      "tier": 6,
+      "branch": 1,
+      "name": "Event Horizon",
+      "label": "Void · T6"
+    },
+    "view": "studio",
+    "boxes": 47,
+    "smallestBlock": 0.55,
+    "drawCalls": 14,
+    "triangles": 3000
+  },
+  {
+    "mode": "seraph",
+    "direction": "cathedral",
+    "form": {
+      "tier": 6,
+      "branch": 1,
+      "name": "Crimson Sovereign",
+      "label": "Fusion"
+    },
+    "view": "studio",
+    "boxes": 39,
+    "smallestBlock": 0.3,
+    "drawCalls": 11,
+    "triangles": 2904
+  }
+]
