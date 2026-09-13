@@ -230,16 +230,18 @@ describe('actual Game session recovery', () => {
       expect(pulse.mesh.name).toBe('void-pulse')
       expect(pulse.mesh.children).toHaveLength(3)
       const beam = pulse.mesh.children[1] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>
-      pulse.update(.05)
+      pulse.updateVisual!(.15)
       const first = beam.position.clone()
       expect(beam.material.opacity).toBeGreaterThan(.8)
-      pulse.update(.05)
+      pulse.updateVisual!(.15)
       expect(beam.position.distanceTo(first)).toBeGreaterThan(0)
-      pulse.update(.04)
+      expect(beam.material.opacity).toBeGreaterThan(0)
+      pulse.update(.29)
+      expect(pulse.done).toBe(true) // old saves retain the same simulation lifetime
+      expect(pulse.updateVisual!(.12)).toBe(true)
       expect(beam.material.opacity).toBeCloseTo(0)
       expect((pulse.mesh.children[2] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>).material.opacity).toBeGreaterThan(0)
-      pulse.update(.15)
-      expect(pulse.done).toBe(true)
+      expect(pulse.updateVisual!(.21)).toBe(false)
       game.disposeLevel()
     }
   })

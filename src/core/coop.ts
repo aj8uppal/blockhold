@@ -19,7 +19,7 @@ interface SavedSeat { code: string, seat: number, key: string, expiresAt: number
 
 const API = (import.meta.env?.VITE_SYNC_URL ?? '').replace(/\/$/, '')
 
-const apiUrl = (path: string) => `${API}${path}${path.includes('?') ? '&' : '?'}ruleset=${RULESET_VERSION}&paced=1`
+const apiUrl = (path: string) => `${API}${path}${path.includes('?') ? '&' : '?'}ruleset=${RULESET_VERSION}&paced=1&restart=1`
 const REFRESH_MESSAGE = 'This game version cannot join the room. Refresh Blockhold and try again.'
 
 export { coopEnabled, inviteCodeFromUrl } from './coopLink.ts'
@@ -38,10 +38,10 @@ export interface CoopSetup {
 }
 
 export type CoopEvent =
-  | { type: 'hello', seat: number, setup: CoopSetup | null, started: boolean, turn: number, speed: number, paused: boolean, seats: number, connected: number[] }
+  | { type: 'hello', generation?: number, seat: number, setup: CoopSetup | null, started: boolean, turn: number, speed: number, paused: boolean, seats: number, connected: number[] }
   | { type: 'presence', seats: number, connected: number[] }
   | { type: 'setup', setup: CoopSetup }
-  | { type: 'start', setup: CoopSetup, preparing?: boolean }
+  | { type: 'start', setup: CoopSetup, preparing?: boolean, restart?: boolean, generation?: number }
   | { type: 'turn', n: number, ticks: number }
   | { type: 'cmd', seat: number, turn: number, cmd: unknown }
   | { type: 'speed', speed: number, seat: number }
@@ -59,6 +59,7 @@ export class CoopSession {
   replayEvents: CoopEvent[] = []
   replaySeq = 0
   paused = false
+  generation = 0
   speed: GameSpeed = 1
   private listeners = new Set<(e: CoopEvent) => void>()
   seats = 1
@@ -134,7 +135,8 @@ export class CoopSession {
     return session
   }
 
-  private adopt(data: { seats: number, connected: number[], setup: CoopSetup | null, started?: boolean, history?: CoopEvent[], seq?: number, paused?: boolean, speed?: number }): void {
+  private adopt(data: { generation?: number, seats: number, connected: number[], setup: CoopSetup | null, started?: boolean, history?: CoopEvent[], seq?: number, paused?: boolean, speed?: number }): void {
+    this.generation = data.generation ?? 0
     this.seats = data.seats; this.connected = data.connected; this.setup = data.setup
     this.started = !!data.started; this.replayEvents = data.history ?? []; this.replaySeq = data.seq ?? 0
     this.paused = !!data.paused; this.speed = gameSpeed(data.speed)
@@ -164,7 +166,7 @@ export class CoopSession {
     if (this.stream) return
     const controller = new AbortController()
     this.stream = controller
-    const emit = (event: CoopEvent) => { for (const listener of this.listeners) listener(event) }
+    const emit = (event: CoopEvent) => { for (const listener of [...this.listeners]) listener(event) }
     const read = async () => {
       try {
         // Credentials stay in headers; invitations and request URLs contain only the room code and seat index.
@@ -190,8 +192,14 @@ export class CoopSession {
             if (!line) continue
             const msg = JSON.parse(line.slice(6)) as CoopEvent & { seq?: number }
             if (msg.type === 'hello') {
+              const restarted = this.started && (msg.generation ?? 0) !== this.generation
+              this.generation = msg.generation ?? 0
               this.seats = msg.seats; this.connected = msg.connected; this.setup = msg.setup; this.started = msg.started
               this.paused = msg.paused; this.speed = gameSpeed(msg.speed)
+              if (restarted && msg.setup) {
+                this.replayEvents = []
+                emit({ type: 'start', setup: msg.setup, restart: true, preparing: true, generation: this.generation })
+              }
               // Keep the replay cursor unchanged: ordered historical events still follow hello.
             } else if (msg.type === 'caughtup') {
               this.replaySeq = Math.max(this.replaySeq, msg.seq)
@@ -202,7 +210,12 @@ export class CoopSession {
               if (msg.seq !== undefined) this.replaySeq = msg.seq
               if (msg.type === 'presence') { this.seats = msg.seats; this.connected = msg.connected }
               if (msg.type === 'setup') this.setup = msg.setup
-              if (msg.type === 'start') { this.setup = msg.setup; this.started = true; this.paused = !!(msg.preparing || msg.setup?.startPaused || msg.setup?.battle) }
+              if (msg.type === 'start') {
+                this.generation = msg.generation ?? 0
+                if (msg.restart) { this.replayEvents = []; this.speed = 1 }
+                this.setup = msg.setup; this.started = true
+                this.paused = !!(msg.preparing || msg.setup?.startPaused || msg.setup?.battle)
+              }
               if (msg.type === 'pause') this.paused = msg.on
               if (msg.type === 'speed') this.speed = gameSpeed(msg.speed)
               if (msg.type === 'end') this.forget()
@@ -224,13 +237,24 @@ export class CoopSession {
     try {
       const r = await fetch(apiUrl(`/v1/coop/rooms/${this.code}/send`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seat: this.seat, key: this.key, type, payload }),
+        body: JSON.stringify({ seat: this.seat, key: this.key, type, payload, generation: this.generation }),
         // Large adopted journals exceed the browser's keepalive upload quota.
         keepalive: type !== 'start' && type !== 'setup',
       })
       return r.ok
     } catch {
       return false
+    }
+  }
+
+  async restart(): Promise<void> {
+    const response = await fetch(apiUrl(`/v1/coop/rooms/${this.code}/send`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seat: this.seat, key: this.key, type: 'restart', payload: this.generation }),
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => null)
+      throw new Error(error?.error ?? 'Could not restart the room. Reconnect and try again.')
     }
   }
 

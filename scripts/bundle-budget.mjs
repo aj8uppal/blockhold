@@ -48,11 +48,12 @@ const assets = join(root, 'dist', 'assets')
 // Tidecaller's nine models, wave controls and backwards-compatible balance add ~2.6 KiB.
 // Late-tier combat compatibility, animated mortar fire, 1–4x controls and
 // recoverable co-op sync diagnostics add about 2 KiB of app code in ruleset 16.
-const APP_CHUNK_LIMIT = 166 * 1024
+// Procedural fire and seamless tidal shores replace tile/cone effects: ~2 KiB gzip, no downloaded textures.
+const APP_CHUNK_LIMIT = 168 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 // Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.
 // The how-to sheet now loads on demand; the initial app budget stays unchanged.
-const TOTAL_JS_LIMIT = 305 * 1024
+const TOTAL_JS_LIMIT = 307 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

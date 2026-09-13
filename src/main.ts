@@ -131,6 +131,25 @@ async function connectBattle(session: CoopSession, setup: import('./core/coop.ts
   if (game.coop === session) closeChat = mountCoopChat(document.body, session)
 }
 screens.onCoopStart = (session, setup) => { void connectBattle(session, setup) }
+let restartingRoom: CoopSession | null = null
+game.onCoopRestart = previous => {
+  if (restartingRoom === previous) return
+  restartingRoom = previous
+  void (async () => {
+    const { CoopSession } = await import('./core/coop.ts')
+    try {
+      const session = await CoopSession.resume(previous.code)
+      if (game.coop !== previous || !session.setup) { session.close(); return }
+      await connectBattle(session, session.setup)
+    } catch (error) {
+      hud.showToast(error instanceof Error ? error.message : 'Reconnecting to the rematch…', 7)
+      if (CoopSession.savedRoom() === previous.code) setTimeout(() => {
+        if (game.coop === previous && !previous.lost) game.onCoopRestart(previous)
+      }, 1500)
+    } finally { if (restartingRoom === previous) restartingRoom = null }
+  })()
+}
+
 hud.onCoopResync = async () => {
   const previous = game.coop
   if (!previous || game.isRecovering) return
@@ -292,7 +311,7 @@ screens.onHoldTheLine = () => {
   game.holdTheLine()
 }
 screens.onRetry = () => {
-  enterBattle()
+  if (!game.coop) enterBattle()
   game.retryBattle()
 }
 screens.onResume = () => {

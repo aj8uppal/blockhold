@@ -281,10 +281,10 @@ export class AudioSystem {
         this.tone(2100, 0.045, { type: 'sine', vol: 0.035 * v, slide: 900 })
         break
       case 'dawnfall':
-        // Soft rising light: no bass drop, noise transient, or stacked signature cue.
-        this.tone(440, 0.65, { type: 'sine', vol: 0.085 * v, attack: 0.09, slide: 220 })
-        this.tone(880, 0.75, { type: 'sine', vol: 0.05 * v, attack: 0.14, delay: 0.07 })
-        this.tone(1320, 0.8, { type: 'sine', vol: 0.025 * v, attack: 0.18, delay: 0.12 })
+        // A brief crystalline shimmer, with space between its harmonics.
+        this.tone(1046.5, 0.34, { type: 'sine', vol: 0.045 * v, attack: 0.025 })
+        this.tone(1568, 0.42, { type: 'sine', vol: 0.025 * v, attack: 0.045, delay: 0.055 })
+        this.tone(2093, 0.48, { type: 'sine', vol: 0.012 * v, attack: 0.065, delay: 0.11 })
         break
       case 'eclipse':
         // A suspended, darker interval that dissolves without a percussive hit.

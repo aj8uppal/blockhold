@@ -243,6 +243,7 @@ export class Game implements World {
   soldiers: Soldier[] = []
   towers: Tower[] = []
   projectiles: Projectile[] = []
+  private lingeringProjectiles: Projectile[] = []
   cameraQuat = new THREE.Quaternion()
   time = 0
 
@@ -856,6 +857,11 @@ export class Game implements World {
     this.dynamic.add(p.mesh)
   }
 
+  private clearProjectiles(): void {
+    for (const p of [...this.projectiles, ...this.lingeringProjectiles]) { this.dynamic.remove(p.mesh); p.dispose?.() }
+    this.projectiles = []; this.lingeringProjectiles = []
+  }
+
   shake(strength: number): void { this.engine.addShake(strength) }
 
   /**
@@ -1067,6 +1073,9 @@ export class Game implements World {
    * at that turn's first tick - so the same command lands on the same tick on
    * every board. See server/src/coop.ts and src/core/coop.ts.
    */
+  onCoopRestart: (session: CoopSession) => void = () => {}
+  private retryPending = false
+  private coopBattleGeneration = 0
   coop: CoopSession | null = null
   private coopLoadout: SaveData | null = null
   private coopUnsub: (() => void) | null = null
@@ -1142,6 +1151,13 @@ export class Game implements World {
 
   private onCoopEvent(e: CoopEvent): void {
     switch (e.type) {
+      case 'start':
+        if (e.restart && this.coop) {
+          this.coopMarkers = []; this.coopCmds.clear(); this.coopBudget = 0
+          this.paused = true
+          this.onCoopRestart(this.coop)
+        }
+        break
       case 'hello':
         this.paused = e.paused; this.speed = gameSpeed(e.speed)
         this.hud.setPaused(this.paused); this.hud.setSpeed(this.speed)
@@ -1181,6 +1197,7 @@ export class Game implements World {
         break
       }
       case 'connection':
+        if (e.connected && this.coop && this.coop.generation !== this.coopBattleGeneration) this.onCoopRestart(this.coop)
         if (!e.connected && this.coop?.lost) this.hud.showToast('This room has ended. Pause and continue solo to keep this board.', 8)
         break
       case 'end':
@@ -1369,6 +1386,7 @@ export class Game implements World {
     if (setup.battle) {
       if (setup.battle.levelId !== setup.levelId || !(await this.resumeSession(setup.battle, { forCoop: true }))) { unbuffer(); return false }
       this.coop = session
+      this.coopBattleGeneration = session.generation ?? 0
       this.coopLoadout = JSON.parse(JSON.stringify(this.roster)) as SaveData
       this.coopMarkers = []; this.coopCmds.clear(); this.coopBudget = 0; this.coopTurn = 0
       this.coopClock.reset(); this.coopHashes.clear(); this.coopDesync = null
@@ -1455,8 +1473,7 @@ export class Game implements World {
         for (const s of e.blockers) s.target = null
         e.blockers = []
       }
-      for (const p of this.projectiles) { this.dynamic.remove(p.mesh); p.dispose?.() }
-      this.projectiles = []
+      this.clearProjectiles()
       clearBurnZones(this); clearMines(this); clearRunes(this)
     } else if (cmd.kind === 'sandboxReset') {
       this.abilities.meteor.cooldown = this.abilities.reinforce.cooldown = 0
@@ -1588,6 +1605,7 @@ export class Game implements World {
     if (opts.coop) {
       if (this.coop && this.coop !== opts.coop.session) this.leaveCoop()
       this.coop = opts.coop.session
+      this.coopBattleGeneration = this.coop.generation ?? 0
       this.coopLoadout = { ...this.save, armory: { ...opts.coop.loadout.armory }, xp: opts.coop.loadout.xp, stars: { ...opts.coop.loadout.stars }, honors: [...(opts.coop.loadout.honors ?? [])], heroPaths: { ...opts.coop.loadout.heroPaths } }
       this.coopUnsub?.()
       this.coopUnsub = this.coop.on(e => this.onCoopEvent(e))
@@ -1767,6 +1785,16 @@ export class Game implements World {
   /** Restart the actual battle, including generated boards and special-mode rules. */
   retryBattle(): void {
     if (!this.level) return
+    if (this.coop) {
+      if (this.retryPending || this.coopBattleGeneration !== this.coop.generation || this.phase !== 'defeat' && this.phase !== 'victory') return
+      const session = this.coop
+      this.retryPending = true
+      this.hud.showToast('Restarting together…', 4)
+      void session.restart().catch(error => {
+        if (this.coop === session) this.hud.showToast(error instanceof Error ? error.message : 'Could not restart the room. Try again.', 7)
+      }).finally(() => { this.retryPending = false })
+      return
+    }
     const level = levels.find(l => l.id === this.level!.id) ?? this.level
     this.startLevel(level, this.difficulty, this.hero?.heroDef.id ?? 'aldric',
       this.isSandbox ? 'sandbox' : this.isEndless ? 'endless' : 'campaign', {
@@ -2034,7 +2062,7 @@ export class Game implements World {
     for (const e of this.enemies) { this.dynamic.remove(e.group); disposeClonedMaterials(e.group) }
     this.hero?.setSpecialization(null)
     for (const s of this.soldiers) { this.dynamic.remove(s.group); disposeClonedMaterials(s.group) }
-    for (const p of this.projectiles) { this.dynamic.remove(p.mesh); p.dispose?.() }
+    this.clearProjectiles()
     for (const t of this.towers) { t.dismantle(this, true); this.dynamic.remove(t.group) }
     for (const tr of this.traps) { this.dynamic.remove(tr.group); tr.dispose() }
     this.traps = []
@@ -2068,7 +2096,7 @@ export class Game implements World {
     this.hud.closeBuildMenu()
     this.hud.closeTowerPanel()
     // clear in-flight combat transients so nothing hangs frozen behind the end screen
-    for (const p of this.projectiles) { this.dynamic.remove(p.mesh); p.dispose?.() }
+    this.clearProjectiles()
     this.projectiles = []
     this.pendingCasts = []
     clearBurnZones(this)
@@ -3636,7 +3664,14 @@ export class Game implements World {
     }
 
     this.hud?.refresh(this)
+    const visualDt = this.paused ? 0 : Math.min(dtRaw, .1)
+    for (const p of this.projectiles) p.updateVisual?.(visualDt)
+    for (let i = this.lingeringProjectiles.length - 1; i >= 0; i--) {
+      const p = this.lingeringProjectiles[i]
+      if (!p.updateVisual?.(visualDt)) { this.dynamic.remove(p.mesh); p.dispose?.(); this.lingeringProjectiles.splice(i, 1) }
+    }
     updateBurnVisuals(this)
+    this.hazard?.updateVisuals?.(this)
     this.engine.render(false)
   }
 
@@ -3685,8 +3720,8 @@ export class Game implements World {
       const p = this.projectiles[i]
       p.update(dt)
       if (p.done) {
-        this.dynamic.remove(p.mesh)
-        p.dispose?.()
+        if (p.updateVisual && !this.recovering) this.lingeringProjectiles.push(p)
+        else { this.dynamic.remove(p.mesh); p.dispose?.() }
         this.projectiles.splice(i, 1)
       }
     }

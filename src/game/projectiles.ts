@@ -4,11 +4,14 @@ import { Enemy, Soldier } from './units.ts'
 import { buildModel } from '../voxel/builder.ts'
 import * as env from '../voxel/models_env.ts'
 import { randRange, simChance, simRandom } from '../core/utils.ts'
+import { GroundFire } from './effects/groundFire.ts'
 
 export interface Projectile {
   mesh: THREE.Object3D
   done: boolean
   update(dt: number): void
+  /** Presentation clock, independent of combat speed and replay bookkeeping. */
+  updateVisual?(dt: number): boolean
   /** release instance-owned GPU resources (cached/shared ones stay) */
   dispose?(): void
 }
@@ -558,6 +561,7 @@ class VoidPulse implements Projectile {
   mesh = new THREE.Group()
   done = false
   private age = 0
+  private visualAge = 0
   private materials: THREE.MeshBasicMaterial[] = []
   private beams: THREE.Mesh[] = []
   private origin: THREE.Vector3
@@ -591,7 +595,7 @@ class VoidPulse implements Projectile {
     ring.scale.setScalar(spec.splash)
     this.mesh.add(ring)
     this.ring = ring
-    this.update(0)
+    this.updateVisual(0)
     // Snapshot eligibility before deaths can summon enemies or change the list.
     // This is an area in the map plane; both ground and air units can be hit.
     const hits = world.enemies.filter(e => e.targetable
@@ -603,9 +607,14 @@ class VoidPulse implements Projectile {
   }
   update(dt: number): void {
     this.age += dt
+    // Preserve the historical projectile count in replay hashes.
+    if (this.age >= .28) this.done = true
+  }
+  updateVisual(dt: number): boolean {
+    this.visualAge += dt
     // A compact packet travels down the firing line, leaving visible darkness
     // behind it. The next shot has a clear gap, even at the fastest fire rate.
-    const travel = Math.min(1, this.age / .14)
+    const travel = Math.min(1, this.visualAge / .42)
     const head = Math.min(1, travel * 1.25), tail = Math.max(0, travel * 1.25 - .25)
     const envelope = Math.sin(Math.PI * travel)
     for (const [i, beam] of this.beams.entries()) {
@@ -615,10 +624,10 @@ class VoidPulse implements Projectile {
     }
     this.materials[0].opacity = envelope * .85
     this.materials[1].opacity = envelope
-    const impact = Math.max(0, Math.min(1, (this.age - .10) / .18))
+    const impact = Math.max(0, Math.min(1, (this.visualAge - .34) / .28))
     this.ring.scale.setScalar(this.radius * (.35 + .65 * (1 - (1 - impact) ** 2)))
     this.materials[2].opacity = Math.sin(Math.PI * impact) * .6
-    if (this.age >= .28) this.done = true
+    return this.visualAge < .62
   }
   dispose(): void { this.materials.forEach(material => material.dispose()) }
 }
@@ -702,9 +711,7 @@ export function createProjectile(spec: ProjectileSpec): Projectile {
 // ---------------- burn zones ----------------
 
 export interface BurnZone {
-  mesh: THREE.Mesh
-  flames: THREE.InstancedMesh[]
-  started: number
+  visual: GroundFire
   pos: THREE.Vector3
   radius: number
   dps: number
@@ -714,34 +721,9 @@ export interface BurnZone {
 }
 
 const burnZones: BurnZone[] = []
-const flameGeometry = new THREE.ConeGeometry(1, 1, 4)
-const flamePose = new THREE.Object3D()
-
-function animateFire(zone: BurnZone, time: number): void {
-  const fade = Math.min(1, (zone.until - time) / .45, (time - zone.started) / .12 + .1)
-  zone.flames.forEach((mesh, layer) => {
-    for (let i = 0; i < 9; i++) {
-      const angle = i * 2.39996, spread = i === 0 ? 0 : zone.radius * .68 * Math.sqrt(i / 8)
-      const phase = time * 10 + i * 1.9 + zone.pos.x
-      const height = (.42 + .17 * Math.sin(phase) + .10 * Math.sin(phase * 1.7)) * (layer ? .65 : 1) * fade
-      const width = zone.radius * (layer ? .105 : .17) * fade
-      flamePose.position.set(Math.cos(angle) * spread + Math.sin(phase * .6) * .025,
-        .05 + height / 2, Math.sin(angle) * spread)
-      flamePose.rotation.set(Math.sin(phase) * .12, angle, Math.cos(phase * .7) * .12)
-      flamePose.scale.set(width, height, width)
-      flamePose.updateMatrix(); mesh.setMatrixAt(i, flamePose.matrix)
-    }
-    mesh.instanceMatrix.needsUpdate = true
-    ;(mesh.material as THREE.MeshBasicMaterial).opacity = (layer ? .92 : .72) * fade
-  })
-}
-
-function removeBurnZone(world: World, z: BurnZone): void {
+function removeBurnZone(_world: World, z: BurnZone): void {
   z.done = true
-  for (const flame of z.flames) { world.dynamic.remove(flame); flame.dispose(); (flame.material as THREE.Material).dispose() }
-  world.dynamic.remove(z.mesh)
-  z.mesh.geometry.dispose()
-  ;(z.mesh.material as THREE.Material).dispose()
+  z.visual.dispose()
 }
 
 export function addBurnZone(world: World, at: THREE.Vector3, radius: number, dps: number, duration: number, credit?: KillCredit): void {
@@ -750,22 +732,10 @@ export function addBurnZone(world: World, at: THREE.Vector3, radius: number, dps
     const own = burnZones.filter(z => !z.done && z.credit === credit)
     if (own.length >= 3) removeBurnZone(world, own[0])
   }
-  const geo = new THREE.CircleGeometry(radius, 24)
-  geo.rotateX(-Math.PI / 2)
-  const mat = new THREE.MeshBasicMaterial({ color: 0xff6a2f, transparent: true, opacity: 0.4, toneMapped: false, depthWrite: false })
-  const mesh = new THREE.Mesh(geo, mat)
-  mesh.position.set(at.x, 0.04, at.z)
-  mesh.renderOrder = 2
-  world.dynamic.add(mesh)
-  const flames = [0xff681c, 0xffed9f].map((color, layer) => {
-    const flame = new THREE.InstancedMesh(flameGeometry, new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: .8, toneMapped: false, depthWrite: false,
-    }), 9)
-    flame.position.copy(mesh.position); flame.frustumCulled = false; flame.renderOrder = 3 + layer
-    world.dynamic.add(flame); return flame
-  })
-  const zone = { mesh, flames, started: world.time, pos: at.clone(), radius, dps, until: world.time + duration, done: false, credit }
-  animateFire(zone, world.time); burnZones.push(zone)
+  const until = world.time + duration
+  const visual = new GroundFire(at, radius, world.time, until)
+  world.dynamic.add(visual.group)
+  burnZones.push({ visual, pos: at.clone(), radius, dps, until, done: false, credit })
 }
 
 export function updateBurnZones(dt: number, world: World): void {
@@ -799,10 +769,7 @@ export function updateBurnZones(dt: number, world: World): void {
 
 /** One visual update per rendered frame, even when combat runs at 4×. */
 export function updateBurnVisuals(world: World): void {
-  for (const zone of burnZones) if (!zone.done) {
-    ;(zone.mesh.material as THREE.MeshBasicMaterial).opacity = .13 + Math.sin(world.time * 6) * .025
-    animateFire(zone, world.time)
-  }
+  for (const zone of burnZones) if (!zone.done) zone.visual.update(world.time)
 }
 
 export function clearBurnZones(world: World): void {

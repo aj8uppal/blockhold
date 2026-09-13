@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import { HazardId } from './types.ts'
 import { randRange, pick, simRandom, simChance } from '../core/utils.ts'
-import { closedRoadsFor, floodedRoadPoints } from './roads.ts'
+import { closedRoadsFor } from './roads.ts'
+import { FloodWater } from './effects/floodWater.ts'
 import type { Game } from './game.ts'
 
 /**
@@ -12,6 +13,7 @@ import type { Game } from './game.ts'
 export interface Hazard {
   /** runs inside the fixed sim step, so it pauses with the game */
   update(dt: number, game: Game): void
+  updateVisuals?(game: Game): void
   dispose(game: Game): void
 }
 
@@ -390,7 +392,8 @@ class Emberwind implements Hazard {
 class ShiftingRoads implements Hazard {
   private lastWave = -99
   private closed = new Set<number>()
-  private flood: THREE.Mesh[] = []
+  private flood: FloodWater[] = []
+  private redrawAt: number | null = null
   private announced = false
   private warned = -1
 
@@ -411,7 +414,7 @@ class ShiftingRoads implements Hazard {
     if (sameSet(next, this.closed)) return
     this.closed = next
     game.closedLanes = new Set(next)
-    this.redraw(game)
+    this.redrawAt = game.time
 
     if (!this.announced) {
       this.announced = true
@@ -421,36 +424,25 @@ class ShiftingRoads implements Hazard {
     }
   }
 
-  /** a flooded causeway is drawn over, so "shut" is visible and not a surprise */
-  private redraw(game: Game): void {
-    for (const m of this.flood) {
-      game.dynamic.remove(m)
-      m.geometry.dispose()
-      ;(m.material as THREE.Material).dispose()
+  /** Build only the visible tide, so save replay never allocates intermediate water. */
+  updateVisuals(game: Game): void {
+    const time = game.time
+    if (this.redrawAt !== null) {
+      for (const water of this.flood) water.retire(this.redrawAt)
+      if (this.closed.size) {
+        const water = new FloodWater(game.lanes, this.closed, this.redrawAt)
+        game.dynamic.add(water.mesh)
+        this.flood.push(water)
+      }
+      this.redrawAt = null
     }
-    this.flood = []
-    const geo = new THREE.PlaneGeometry(1.05, 1.05)
-    geo.rotateX(-Math.PI / 2)
-    const material = new THREE.MeshBasicMaterial({
-      color: 0x2f8fa8, transparent: true, opacity: 0.62, toneMapped: false, depthWrite: false,
-    })
-    const points = floodedRoadPoints(game.lanes, this.closed)
-    for (const s of points) {
-      const mesh = new THREE.Mesh(geo, material)
-      mesh.position.set(s.x, 0.09, s.z)
-      mesh.renderOrder = 2
-      game.dynamic.add(mesh)
-      this.flood.push(mesh)
+    for (let i = this.flood.length - 1; i >= 0; i--) {
+      if (!this.flood[i].update(time)) { this.flood[i].dispose(); this.flood.splice(i, 1) }
     }
-    if (!points.length) { geo.dispose(); material.dispose() }
   }
 
   dispose(game: Game): void {
-    for (const m of this.flood) {
-      game.dynamic.remove(m)
-      m.geometry.dispose()
-      ;(m.material as THREE.Material).dispose()
-    }
+    for (const water of this.flood) water.dispose()
     this.flood = []
     game.closedLanes = new Set()
   }

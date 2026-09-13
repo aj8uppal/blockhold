@@ -314,3 +314,62 @@ test('readiness preserves manual pauses and an adopted solo battle stays paused'
     }
   } finally { resetRooms(); await h.close() }
 })
+
+
+test('either ally restarts once in the same room, clears adopted history, and waits for both scenes', async () => {
+  resetRooms()
+  const h = await harness(), streams = [new AbortController(), new AbortController()]
+  try {
+    const { json: host } = await h.call('POST', '/v1/coop/rooms?paced=1&restart=1', { body: {} })
+    const { json: guest } = await h.call('POST', `/v1/coop/rooms/${host.code}/join?paced=1&restart=1`, { body: {} })
+    const send = (seat: typeof host, type: string, payload?: unknown, generation = 0) => h.call('POST', `/v1/coop/rooms/${host.code}/send`, {
+      body: { seat: seat.seat, key: seat.key, type, payload, generation },
+    })
+    const state = async () => (await h.call('POST', `/v1/coop/rooms/${host.code}/resume`, { body: { seat: 1, key: guest.key } })).json
+    for (const [i, seat] of [host, guest].entries()) {
+      const response = await fetch(`${h.base}/v1/coop/rooms/${host.code}/events?seat=${seat.seat}&ruleset=${RULESET_VERSION}&restart=1`, {
+        headers: { Authorization: `Bearer ${seat.key}` }, signal: streams[i].signal,
+      })
+      assert.equal(response.status, 200)
+    }
+    const setup = { levelId: 'greenhollow', difficulty: 'normal', hero: 'aldric', seed: 991, loadout: { xp: 10000, armory: {} },
+      battle: { ruleset: RULESET_VERSION, tick: 30, commands: [], initialSave: { xp: 10000 } } }
+    await send(host, 'start', setup)
+    await send(host, 'cmd', { kind: 'build', tower: 'arrow', plot: 0 })
+    const replies = await Promise.all([send(guest, 'restart', 0), send(host, 'restart', 0)])
+    assert.ok(replies.every(reply => reply.status === 202))
+    const restarted = await state()
+    assert.equal(restarted.code, host.code); assert.equal(restarted.seat, 1)
+    assert.equal(restarted.seats, 2); assert.equal(restarted.generation, 1)
+    assert.equal(restarted.setup.battle, undefined)
+    assert.equal(restarted.setup.seed, 991); assert.equal(restarted.setup.loadout.xp, 10000)
+    assert.ok(!restarted.history.some((e: any) => e.type === 'cmd'))
+    assert.equal(restarted.paused, true)
+    assert.equal((await send(host, 'cmd', { kind: 'wave' }, 0)).status, 409, 'stale attempt orders are rejected')
+    await send(host, 'ready', undefined, 1)
+    await send(guest, 'pause', false, 1)
+    assert.equal((await state()).paused, true, 'resume cannot bypass the other loading scene')
+    await send(guest, 'ready', undefined, 1)
+    assert.equal((await state()).paused, false)
+    await send(host, 'cmd', { kind: 'wave' }, 1)
+    assert.equal((await state()).history.filter((e: any) => e.type === 'cmd').length, 1)
+  } finally { streams.forEach(s => s.abort()); resetRooms(); await h.close() }
+})
+
+test('a mixed-version room asks for a refresh instead of restarting only the updated player', async () => {
+  resetRooms()
+  const h = await harness(), stream = new AbortController()
+  try {
+    const { json: host } = await h.call('POST', '/v1/coop/rooms?restart=1', { body: {} })
+    const { json: guest } = await h.call('POST', `/v1/coop/rooms/${host.code}/join`, { body: {} })
+    await fetch(`${h.base}/v1/coop/rooms/${host.code}/events?seat=1&ruleset=${RULESET_VERSION}`, {
+      headers: { Authorization: `Bearer ${guest.key}` }, signal: stream.signal,
+    })
+    const send = (type: string, payload: unknown) => h.call('POST', `/v1/coop/rooms/${host.code}/send`, { body: { seat: 0, key: host.key, type, payload } })
+    await send('start', { levelId: 'greenhollow', seed: 12 })
+    const retry = await send('restart', 0)
+    assert.equal(retry.status, 409); assert.match(retry.json.error, /Everyone.*refresh/)
+    const state = await h.call('POST', `/v1/coop/rooms/${host.code}/resume`, { body: { seat: 0, key: host.key } })
+    assert.equal(state.json.generation, 0); assert.equal(state.json.seats, 2)
+  } finally { stream.abort(); resetRooms(); await h.close() }
+})

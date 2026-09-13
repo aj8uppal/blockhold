@@ -43,6 +43,7 @@ const MAX_CHAT_LENGTH = 240
 let historyBytes = 0
 
 interface Seat {
+  restart: boolean
   paced: boolean
   key: string
   res: ServerResponse | null
@@ -52,9 +53,11 @@ interface Seat {
 }
 
 interface Room {
+  generation: number
   turnMs: number
   ticksPerTurn: number
   preparing: Set<number> | null
+  preparingDeadline: number
   resumeWhenReady: boolean
   code: string
   createdAt: number
@@ -148,6 +151,10 @@ function startMetronome(room: Room): void {
   room.timer = setInterval(() => {
     if (room.ended) { stopRoom(room); return }
     if (![...room.seats.values()].some(seat => seat.res)) return
+    if (room.preparing && room.generation > 0 && Date.now() > room.preparingDeadline) {
+      for (const id of room.preparing) if (!room.seats.get(id)?.res) room.preparing.delete(id)
+      finishPreparing(room)
+    }
     room.turn++
     broadcast(room, { type: 'turn', n: room.turn, ticks: room.paused ? 0 : room.ticksPerTurn * room.speed })
   }, room.turnMs)
@@ -160,8 +167,8 @@ function finishPreparing(room: Room): void {
   broadcast(room, { type: 'pause', on: room.paused, seat: 0 })
 }
 
-function pacing(room: Room): { turnMs: number, ticksPerTurn: number, paced: boolean } {
-  return { turnMs: room.turnMs, ticksPerTurn: room.ticksPerTurn, paced: room.turnMs === 100 }
+function pacing(room: Room): { turnMs: number, ticksPerTurn: number, paced: boolean, generation: number } {
+  return { turnMs: room.turnMs, ticksPerTurn: room.ticksPerTurn, paced: room.turnMs === 100, generation: room.generation }
 }
 
 function stopRoom(room: Room): void {
@@ -230,14 +237,15 @@ export async function handleCoop(
     sweepRooms()
     if (rooms.size >= MAX_ROOMS) { send(res, 503, { error: 'too many rooms' }); return true }
     const room: Room = {
+      generation: 0,
       turnMs: url.searchParams.get('paced') === '1' ? 100 : TURN_MS,
       ticksPerTurn: url.searchParams.get('paced') === '1' ? 6 : TICKS_PER_TURN,
-      preparing: null, resumeWhenReady: true,
+      preparing: null, preparingDeadline: 0, resumeWhenReady: true,
       code: newCode(), createdAt: Date.now(), touchedAt: Date.now(), seats: new Map(),
       setup: null, started: false, ended: false, seq: 0, turn: 0, speed: 1, paused: false, timer: null, history: [], historySize: 0, replayAvailable: true, setupBytes: 0,
     }
     const key = randomBytes(12).toString('base64url')
-    room.seats.set(0, { paced: url.searchParams.get('paced') === '1', key, res: null, lastSeen: Date.now(), sent: { n: 0, until: 0 }, chat: { n: 0, until: 0 } })
+    room.seats.set(0, { restart: url.searchParams.get('restart') === '1', paced: url.searchParams.get('paced') === '1', key, res: null, lastSeen: Date.now(), sent: { n: 0, until: 0 }, chat: { n: 0, until: 0 } })
     rooms.set(room.code, room)
     send(res, 201, { code: room.code, seat: 0, key, ...pacing(room) })
     return true
@@ -266,7 +274,7 @@ export async function handleCoop(
     if (room.seats.size >= MAX_SEATS) { send(res, 409, { error: 'room is full' }); return true }
     const seat = room.seats.size
     const key = randomBytes(12).toString('base64url')
-    room.seats.set(seat, { paced: url.searchParams.get('paced') === '1', key, res: null, lastSeen: Date.now(), sent: { n: 0, until: 0 }, chat: { n: 0, until: 0 } })
+    room.seats.set(seat, { restart: url.searchParams.get('restart') === '1', paced: url.searchParams.get('paced') === '1', key, res: null, lastSeen: Date.now(), sent: { n: 0, until: 0 }, chat: { n: 0, until: 0 } })
     broadcast(room, { type: 'presence', ...presence(room) })
     send(res, 200, { code: room.code, seat, key, setup: room.setup, started: room.started, history: replayEvents(room), seq: room.seq, paused: room.paused, speed: room.speed, ...pacing(room), ...presence(room) })
     return true
@@ -293,9 +301,10 @@ export async function handleCoop(
     res.write(': hello\n\n')
     if (seat.res && seat.res !== res) { try { seat.res.end() } catch { /* replaced */ } }
     seat.res = res
+    seat.restart = url.searchParams.get('restart') === '1'
     seat.lastSeen = Date.now()
     // the newcomer's own picture of the room, then everyone learns they are here
-    res.write(`data: ${JSON.stringify({ seq: room.seq, type: 'hello', seat: n, setup: room.setup, started: room.started, turn: room.turn, speed: room.speed, paused: room.paused, ...presence(room) })}\n\n`)
+    res.write(`data: ${JSON.stringify({ seq: room.seq, type: 'hello', generation: room.generation, seat: n, setup: room.setup, started: room.started, turn: room.turn, speed: room.speed, paused: room.paused, ...presence(room) })}\n\n`)
     if (after !== null) for (const event of room.history) if (event.seq > after) res.write(event.line)
     res.write(`data: ${JSON.stringify({ type: 'caughtup', seq: room.seq })}\n\n`)
     broadcast(room, { type: 'presence', ...presence(room) })
@@ -304,7 +313,7 @@ export async function handleCoop(
       clearInterval(keepalive)
       if (seat.res === res) {
         seat.res = null
-        room.preparing?.delete(n)
+        if (room.generation === 0) room.preparing?.delete(n)
         finishPreparing(room)
       }
       room.touchedAt = Date.now()
@@ -323,6 +332,10 @@ export async function handleCoop(
     if (++seat.sent.n > SEND_LIMIT) { send(res, 429, { error: 'slow down' }); return true }
     const type = body.type
     const payload = body.payload
+    // An in-flight order from a finished attempt must never enter its rematch.
+    if (type !== 'restart' && (body.generation ?? 0) !== room.generation) {
+      send(res, 409, { error: 'This battle has restarted. Rejoin your room.' }); return true
+    }
     if (Buffer.byteLength(JSON.stringify(payload ?? null)) > (type === 'setup' || type === 'start' ? 4_000_000 : MAX_PAYLOAD)) { send(res, 413, { error: 'payload too large' }); return true }
     switch (type) {
       case 'cmd': {
@@ -355,6 +368,27 @@ export async function handleCoop(
           finishPreparing(room)
           startMetronome(room)
         }
+        break
+      }
+      case 'restart': {
+        if (!room.started || !room.setup || typeof room.setup !== 'object') { send(res, 409, { error: 'No battle to restart.' }); return true }
+        if (!Number.isSafeInteger(payload) || Number(payload) < 0 || Number(payload) > room.generation) {
+          send(res, 400, { error: 'Invalid battle attempt.' }); return true
+        }
+        // Both allies may click the same result card. Only the first request resets it.
+        if (payload !== room.generation) break
+        if ([...room.seats.values()].some(s => s.res && !s.restart)) {
+          send(res, 409, { error: 'Everyone in the room needs to refresh before restarting together.' }); return true
+        }
+        const setup = { ...room.setup, battle: undefined, startPaused: false }
+        if (!setSetup(room, setup, res)) return true
+        historyBytes -= room.historySize
+        room.history = []; room.historySize = 0; room.replayAvailable = true
+        room.generation++; room.turn = 0; room.speed = 1; room.paused = true
+        room.resumeWhenReady = true
+        room.preparingDeadline = Date.now() + 10_000
+        room.preparing = new Set([...room.seats].filter(([id, s]) => s.res || id === n).map(([id]) => id))
+        broadcast(room, { type: 'start', setup: room.setup, preparing: true, restart: true, generation: room.generation })
         break
       }
       case 'speed': {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { closedRoadsFor, floodedRoadPoints, openRoadFor } from '../src/game/roads.ts'
+import { closedRoadsFor, openRoadFor } from '../src/game/roads.ts'
+import { floodSurface } from '../src/game/effects/floodWater.ts'
 import { WaveManager } from '../src/game/waves.ts'
 import { levels, levelById, routeWaves } from '../src/game/levels.ts'
 import type { WaveDef } from '../src/game/types.ts'
@@ -126,15 +127,35 @@ describe('tidal route clarity', () => {
   const level = levelById('tidereach')
   const lanes = buildPaths(level).lanes
 
-  it('keeps open shared stretches out of the flood overlay', () => {
+  it('covers flooded corners once, faces upward, and keeps shared open roads dry', () => {
+    const paths = buildPaths(level)
     for (const wave of [3, 4, 8, 20]) {
       const closed = closedRoadsFor(wave, lanes.length)
-      const points = floodedRoadPoints(lanes, closed)
-      expect(points.length).toBeGreaterThan(8)
-      for (const point of points) for (const [i, lane] of lanes.entries()) {
-        if (closed.has(i)) continue
-        expect(lane.distanceToPath(point.x, point.z)).toBeGreaterThanOrEqual(0.8)
+      const { geometry, shore } = floodSurface(lanes, closed)
+      const position = geometry.getAttribute('position'), index = geometry.getIndex()!
+      const triangles: number[][] = []
+      for (let i = 0; i < index.count; i += 3) {
+        const a = index.getX(i), b = index.getX(i + 1), c = index.getX(i + 2)
+        const t = [position.getX(a), position.getZ(a), position.getX(b), position.getZ(b), position.getX(c), position.getZ(c)]
+        expect((t[3] - t[1]) * (t[4] - t[0]) - (t[2] - t[0]) * (t[5] - t[1])).toBeGreaterThan(0)
+        triangles.push(t)
       }
+      let covered = 0
+      for (const cell of paths.roadCells) {
+        const [c, r] = cell.split(',').map(Number), [cx, cz] = gridToWorld(c, r, level.width, level.height)
+        // Offset avoids the diagonal shared by a cell's two triangles.
+        const x = cx + .13, z = cz + .27
+        const hits = triangles.filter(([ax, az, bx, bz, cx, cz]) => {
+          const cross = (px: number, pz: number, qx: number, qz: number) => (qx - px) * (z - pz) - (qz - pz) * (x - px)
+          return cross(ax, az, bx, bz) < 0 && cross(bx, bz, cx, cz) < 0 && cross(cx, cz, ax, az) < 0
+        }).length
+        const shouldFlood = [...closed].some(i => lanes[i].distanceToPath(cx, cz) < .4)
+          && lanes.every((lane, i) => closed.has(i) || lane.distanceToPath(cx, cz) >= .85)
+        expect(hits, `wave ${wave}, road ${cell}`).toBe(shouldFlood ? 1 : 0)
+        covered += hits
+      }
+      expect(covered).toBeGreaterThan(8)
+      geometry.dispose(); shore.dispose()
     }
   })
 

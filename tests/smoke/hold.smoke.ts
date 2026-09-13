@@ -132,3 +132,17 @@ test('Three Watches retries the current watch and only advances after a win', as
   await expect(page.getByRole('button', { name: /Stand the next watch/ })).toHaveCount(0)
   expect(consoleErrors).toEqual([])
 })
+
+test('a failed co-op replay keeps the result and shared room available', async ({ page, consoleErrors }) => {
+  await victory(page, true)
+  await page.evaluate(() => {
+    const g = window.vg.game as unknown as Game
+    g.coop!.generation = 0
+    g.coop!.restart = async () => { throw new Error('Could not restart the room. Reconnect and try again.') }
+  })
+  await page.getByRole('button', { name: 'Replay', exact: true }).click()
+  await expect(page.locator('.end-screen')).toBeVisible()
+  await expect(page.getByText(/Could not restart the room/)).toBeVisible()
+  expect(await page.evaluate(() => !!(window.vg.game as unknown as Game).coop)).toBe(true)
+  expect(consoleErrors).toEqual([])
+})

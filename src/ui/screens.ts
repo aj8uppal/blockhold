@@ -740,7 +740,7 @@ export class Screens {
       }
       const row = el('div', 'end-actions', card)
       const retry = el('button', 'btn', row, 'Hunt again') as HTMLButtonElement
-      retry.onclick = () => this.onPlayHunt(hunt.id, stats.difficulty, this.save().lastHero as HeroId)
+      retry.onclick = () => this.onRetry()
       const next = el('button', 'btn primary', row, 'Hunts & hero paths') as HTMLButtonElement
       next.onclick = () => { this.onMenu(); this.show('hunts') }
       return

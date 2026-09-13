@@ -31,7 +31,7 @@ it('rejoining our saved invitation recovers the original seat and exposes ordere
   const { CoopSession } = await import('../src/core/coop.ts')
   const history = [{ type: 'cmd', seat: 0, turn: 1, cmd: { kind: 'wave' }, seq: 3 }, { type: 'turn', n: 1, ticks: 12, seq: 4 }]
   const request = vi.fn(async (url: string, init: RequestInit) => {
-    expect(url).toBe(`https://sync.test/v1/coop/rooms/ABCDE/resume?ruleset=${RULESET_VERSION}&paced=1`)
+    expect(url).toBe(`https://sync.test/v1/coop/rooms/ABCDE/resume?ruleset=${RULESET_VERSION}&paced=1&restart=1`)
     expect(JSON.parse(init.body as string)).toEqual({ seat: 2, key: seatKey })
     return Response.json({ setup, seats: 3, connected: [0], started: true, history, seq: 4, paused: true, speed: 2, turnMs: 200, ticksPerTurn: 12 })
   })
@@ -52,7 +52,7 @@ it('reconnect stream authenticates in headers and delivers missing events before
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
     if (!url.includes('/events')) return Response.json({ code: 'ABCDE', seat: 0, key: seatKey, turnMs: 200, ticksPerTurn: 12 })
     requests++
-    expect(url).toBe(`https://sync.test/v1/coop/rooms/ABCDE/events?seat=0&after=0&ruleset=${RULESET_VERSION}&paced=1`)
+    expect(url).toBe(`https://sync.test/v1/coop/rooms/ABCDE/events?seat=0&after=0&ruleset=${RULESET_VERSION}&paced=1&restart=1`)
     expect(url).not.toContain(seatKey)
     expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${seatKey}`)
     return new Response(new ReadableStream({ start(controller) {
@@ -112,4 +112,28 @@ it('large adopted journals bypass the browser keepalive upload quota while small
   }
   expect(await session.send('cmd', { kind: 'wave' })).toBe(true)
   expect(requests.at(-1)?.keepalive).toBe(true)
+})
+
+it('a reconnect notices a missed rematch and sends later orders with the new attempt number', async () => {
+  const { CoopSession } = await import('../src/core/coop.ts')
+  const encode = new TextEncoder(), sent: Record<string, unknown>[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+    if (url.includes('/send')) { sent.push(JSON.parse(init.body as string)); return Response.json({ ok: true }, { status: 202 }) }
+    if (!url.includes('/events')) return Response.json({ code: 'ABCDE', seat: 0, key: seatKey, turnMs: 100, ticksPerTurn: 6 })
+    return new Response(new ReadableStream({ start(controller) {
+      controller.enqueue(encode.encode(`data: ${JSON.stringify({ type: 'hello', seq: 20, generation: 2, setup, started: true, seats: 2, connected: [0, 1], paused: true, speed: 1 })}\n\ndata: ${JSON.stringify({ type: 'caughtup', seq: 20 })}\n\n`))
+    } }))
+  }))
+  const session = await CoopSession.create()
+  session.started = true
+  session.replayEvents = [{ type: 'turn', n: 10, ticks: 6 }]
+  const restarts: unknown[] = []
+  session.on(e => { if (e.type === 'start' && e.restart) restarts.push(e) })
+  session.connect()
+  await vi.waitFor(() => expect(restarts).toHaveLength(1))
+  expect(session.generation).toBe(2)
+  expect(session.replayEvents).toEqual([])
+  await session.send('cmd', { kind: 'wave' })
+  expect(sent[0].generation).toBe(2)
+  session.close(true)
 })
