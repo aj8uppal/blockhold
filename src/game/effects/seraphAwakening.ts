@@ -7,6 +7,11 @@ import { setFlash } from '../../voxel/builder.ts'
 export function seraphAwakening(from: THREE.Vector3, to: THREE.Vector3, ground: number, solar: boolean, model?: THREE.Group): Projectile {
   const mesh = new THREE.Group(), geometry = new THREE.BoxGeometry(1,1,1)
   mesh.name = 'seraph-awakening'
+  // A separate presentation transform survives the tower's normal upgrade
+  // updates. Recovery skips this effect, so restored towers stay full size.
+  const parent=model?.parent,reveal=new THREE.Group()
+  reveal.name='seraph-emergence';reveal.scale.setScalar(0)
+  if(parent&&model){parent.add(reveal);reveal.add(model)}
   const material = new THREE.MeshBasicMaterial({color:solar?0xf5d486:0xa98bd2,transparent:true,depthWrite:false,toneMapped:false})
   const cubes = new THREE.InstancedMesh(geometry,material,24)
   cubes.frustumCulled=false;mesh.add(cubes)
@@ -25,6 +30,7 @@ export function seraphAwakening(from: THREE.Vector3, to: THREE.Vector3, ground: 
   let age=0
   return {mesh,done:true,update(){},updateVisual(dt){
     age+=dt
+    reveal.scale.setScalar(smooth((age-.12)/1.2))
     // The original trail remains, with a longer arc and a second stream.
     for(let i=0;i<24;i++){
       if(i<12){
@@ -63,6 +69,8 @@ export function seraphAwakening(from: THREE.Vector3, to: THREE.Vector3, ground: 
     return age<2.8
   },dispose(){
     if(model)setFlash(model,0)
+    if(parent&&model)parent.add(model)
+    reveal.removeFromParent()
     cubes.dispose();geometry.dispose();material.dispose();ringGeometry.dispose()
     for(const r of rings)r.material.dispose()
     for(const m of[column,eye,shadow]){m.geometry.dispose();m.material.dispose()}

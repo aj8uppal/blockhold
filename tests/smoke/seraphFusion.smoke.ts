@@ -44,6 +44,11 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
     await page.reload()
     await page.getByRole('button', { name: /Continue Greenhollow/ }).click()
     await page.waitForFunction(() => window.vg.game.phase === 'playing' && (window.vg.game as unknown as Game).towers[0]?.isFused)
+    await page.getByRole('button', { name: 'Resume', exact: true }).click()
+    await page.waitForFunction(() => {
+      const tower = (window.vg.game as unknown as Game).towers[0]
+      return tower.model.visible && tower.model.parent === tower.group && tower.model.scale.x > 1.37
+    })
     expect(await page.evaluate(() => (window.vg.game as unknown as Game).towers[0].def.model)).toBe('seraphCrimson')
     expect(consoleErrors).toEqual([])
   })

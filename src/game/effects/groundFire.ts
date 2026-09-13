@@ -1,13 +1,16 @@
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
-const flameGeometry = new THREE.SphereGeometry(1, 8, 7)
-// A rounded foot and a drawn-out tip. These are real volumes, not pixel masks.
-const vertices = flameGeometry.attributes.position
-for (let i = 0; i < vertices.count; i++) {
-  const y = (vertices.getY(i) + 1) / 2, taper = 1 - y * .88
-  vertices.setXYZ(i, vertices.getX(i) * taper, y, vertices.getZ(i) * taper)
-}
-flameGeometry.computeVertexNormals()
+// Connected, offset chunks form each tongue; their silhouettes stay crisp
+// from every angle without screen-space pixelation or a smooth droplet shape.
+const chunks=[
+  [0,.10,0,.72,.20,.62],[-.06,.28,.01,.60,.20,.54],
+  [.04,.46,-.01,.46,.20,.43],[-.04,.63,.02,.33,.18,.31],
+  [.02,.78,0,.22,.15,.21],[.07,.91,.02,.13,.14,.13],
+  [.32,.24,-.04,.24,.26,.27],[.38,.43,-.02,.14,.17,.17],
+].map(([x,y,z,w,h,d])=>new THREE.BoxGeometry(w,h,d).translate(x,y,z))
+const flameGeometry=mergeGeometries(chunks)!
+chunks.forEach(g=>g.dispose())
 const smokeGeometry = new THREE.SphereGeometry(1, 8, 6)
 const groundGeometry = new THREE.PlaneGeometry(2, 2)
 groundGeometry.rotateX(-Math.PI / 2)
@@ -56,19 +59,19 @@ export class GroundFire {
           float heat=(1.-vHeight)*.60+vFacing*.30+sin(vHeight*12.-uTime*7.+vSeed)*.06;
           vec3 color=mix(vec3(.82,.075,.008),vec3(1.,.36,.025),smoothstep(.1,.55,heat));
           color=mix(color,vec3(1.,.84,.34),smoothstep(.57,.97,heat));
-          color=mix(color,mix(vec3(1.,.87,.43),vec3(1.,.53,.09),vHeight),vCore);
+          color=mix(color,mix(vec3(1.,.97,.66),vec3(1.,.65,.12),vHeight),vCore);
           gl_FragColor=vec4(color,uHeat*mix(.84,.94,vCore));
           #include <colorspace_fragment>
         }`,
     })
-    this.flames = new THREE.InstancedMesh(flameGeometry, material, 26)
+    this.flames = new THREE.InstancedMesh(flameGeometry, material, 18)
     this.flames.frustumCulled = false
     const pose = new THREE.Object3D()
     for (let i = 0; i < this.flames.count; i++) {
-      const n=i%13,core=i>=13,angle=n*2.39996,spread=radius*.68*Math.sqrt(n/12)
+      const n=i%9,core=i>=9,angle=n*2.39996,spread=radius*.68*Math.sqrt(n/8)
       pose.position.set(Math.cos(angle)*spread,core?.04:.01,Math.sin(angle)*spread)
-      const width=(.18+.035*(n%3))*(core?.58:1)
-      pose.scale.set(width,(.50+.42*(Math.sin(n*7.3)*.5+.5))*(core?.53:1),width)
+      const width=(.42+.045*(n%3))*(core?.60:1)
+      pose.scale.set(width,(.38+.32*(Math.sin(n*7.3)*.5+.5))*(core?.60:1),width)
       pose.updateMatrix(); this.flames.setMatrixAt(i, pose.matrix)
     }
     this.flames.instanceMatrix.needsUpdate = true
