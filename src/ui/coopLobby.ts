@@ -9,7 +9,7 @@ import { HERO_DEFS } from '../game/hero.ts'
 import { isUnlocked } from '../game/progress.ts'
 import { difficultyMods } from '../game/difficulty.ts'
 import { newRunSeed } from '../game/ruleset.ts'
-import { CoopSession, type CoopSetup } from '../core/coop.ts'
+import { CoopSession, type CoopSetup, type CoopEvent } from '../core/coop.ts'
 import { icon } from './icons.ts'
 import type { ScreenName } from './screens.ts'
 
@@ -56,13 +56,14 @@ export function leaveCoopLobby(): void {
  */
 export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
   const save = api.save()
+  let onlineCleanup = () => {}
   let disposed = false, sceneCleanup: (() => void) | null = null, sceneVersion = 0
   const preview = (snapshot: HoldSnapshot) => {
     const version = ++sceneVersion
     sceneCleanup?.(); sceneCleanup = null
     void api.preview(snapshot).then(cleanup => { if (disposed || version !== sceneVersion) cleanup(); else sceneCleanup = cleanup })
   }
-  const cleanup = () => { disposed = true; sceneVersion++; sceneCleanup?.() }
+  const cleanup = () => { disposed = true; sceneVersion++; sceneCleanup?.(); onlineCleanup() }
   const wrap = el('div', 'screen menu-screen gathering-screen', api.root)
   const card = el('div', 'menu-hero coop-card', wrap)
   el('h2', 'coop-title', card, `${icon('helmPlume')} Co-op`)
@@ -142,6 +143,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
     try { await navigator.clipboard.writeText(url); share.textContent = 'Link copied' } catch { share.textContent = url }
     setTimeout(() => { share.innerHTML = `${icon('share')} Copy invite link` }, 2200)
   }
+  let streamOnline = session.connected.includes(session.seat)
   const who = el('div', 'gathering-seats', card)
   const error = el('p', 'coop-error', card); error.setAttribute('role', 'status')
   let pending = false
@@ -149,7 +151,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
   const paintWho = () => {
     who.replaceChildren()
     for (let id = 0; id < 4; id++) {
-      const member = session.members.includes(id), connected = session.connected.includes(id), ready = session.readySeats.includes(id)
+      const member = session.members.includes(id), connected = session.connected.includes(id) && (id !== session.seat || streamOnline && navigator.onLine), ready = session.readySeats.includes(id)
       const cell = el('div', `gathering-seat${connected ? ' connected' : ''}`, who)
       el('strong', '', cell, id === 0 ? 'Host' : `Warden ${id + 1}`)
       el('span', '', cell, !member ? 'Open seat' : !connected ? 'Reconnecting…' : ready ? 'Ready ✓' : 'Choosing')
@@ -213,20 +215,25 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
   if (start) start.onclick = () => { void send('start') }
   const help = el('p', 'coop-sub dim', card)
   let lastHold = JSON.stringify(session.setup?.hold)
-  function paint(): void {
+  function paint(event?: CoopEvent): void {
     if (!session) return
+    if (event?.type === 'connection') streamOnline = event.connected
+    if (event?.type === 'hello' || event?.type === 'presence') streamOnline = true
     paintWho()
-    const connected = session.connected.includes(session.seat)
+    const connected = navigator.onLine && streamOnline && session.connected.includes(session.seat)
     ready.textContent = session.readySeats.includes(session.seat) ? 'Ready ✓ · tap to undo' : 'Ready'
     ready.disabled = pending || !connected || !session.setup
     ready.setAttribute('aria-pressed', String(session.readySeats.includes(session.seat)))
-    if (start) start.disabled = pending || !session.setup || !session.members.every(id => session.readySeats.includes(id) && session.connected.includes(id))
+    if (start) start.disabled = pending || !connected || !session.setup || !session.members.every(id => session.readySeats.includes(id) && session.connected.includes(id))
     card.querySelectorAll('select').forEach(select => { select.disabled = pending || !connected })
     help.textContent = !connected ? 'Reconnecting to the room…' : session.setup?.gathering ? 'Everyone readies up. The host starts when the party is ready. Tap a trophy to inspect it.' : 'This room uses an older lobby. The host can start when everyone is ready.'
     const current = JSON.stringify(session.setup?.hold)
     if (current !== lastHold && session.setup?.hold) { lastHold = current; preview(session.setup.hold) }
   }
   coopPaint = paint
+  const networkChanged = () => paint()
+  window.addEventListener('online', networkChanged); window.addEventListener('offline', networkChanged)
+  onlineCleanup = () => { window.removeEventListener('online', networkChanged); window.removeEventListener('offline', networkChanged) }
   paint()
   if (session.isHost && !session.setup) {
     const setup = coopSetup ?? defaultCoopSetup(save)
@@ -238,10 +245,15 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
     if (await session.send('leaveLobby')) { leaveCoopLobby(); api.show('menu') }
     else { error.textContent = 'Could not leave the room. Try again when connected.'; leave.disabled = false }
   }
+  const back = el('button', 'btn ghost', card, 'Back to menu')
+  back.onclick = () => {
+    // Keep the private seat so a dropped connection can be resumed later.
+    coopUnsub?.(); coopUnsub = null; session.close(); coopSession = null; coopSetup = null; api.show('menu')
+  }
   return cleanup
 }
 
-let coopPaint: () => void = () => {}
+let coopPaint: (event?: CoopEvent) => void = () => {}
 
 function defaultCoopSetup(save: SaveData): CoopSetup {
   const last = levels[Math.max(0, Math.min(save.unlocked, levels.length) - 1)]
@@ -264,7 +276,7 @@ function attachCoop(api: LobbyApi): void {
       return
     }
     if (!api.isCurrent()) return
-    if (e.type === 'presence' || e.type === 'hello' || e.type === 'setup' || e.type === 'connection') coopPaint()
+    if (e.type === 'presence' || e.type === 'hello' || e.type === 'setup' || e.type === 'connection') coopPaint(e)
     if (e.type === 'end') { leaveCoopLobby(); api.show('coop') }
   })
   if (session.started && session.setup) {

@@ -53,7 +53,7 @@ const assets = join(root, 'dist', 'assets')
 // level-20 hero progression and the campaign browser: measured +9.7 KiB gzip.
 // Keep less than 3 KiB headroom; all new fire/model assets remain procedural.
 // Your Hold adds ~2.2 KiB to shared save/input code and ~11.5 KiB on-demand
-// for the courtyard, editor, visits and gathering UI. Measured 181.7 / 333.1 KiB.
+// for the courtyard, editor, visits and gathering UI. Measured 181.8 / 333.2 KiB.
 const APP_CHUNK_LIMIT = 184 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 // Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.

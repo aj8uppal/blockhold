@@ -1,6 +1,6 @@
 # Your Hold — product and implementation contract
 
-Status: core implemented and verified locally, September 13, 2026; production release in progress. Weapon origins, squad throws, fine voxel fire, and upgrade previews shipped independently in e559176.
+Status: core deployed to production, September 13, 2026. Weapon origins, squad throws, fine voxel fire, and upgrade previews shipped independently in e559176.
 
 ## Product outcome
 
@@ -112,10 +112,12 @@ Fable 5.1's initial architecture review completed successfully. A requested foll
 
 Validation: 428 unit tests, 56 server/API tests, and 53 production-build browser tests passed. Four isolated browser contexts saw the same host Hold, changed readiness with settings, rejoined an authenticated seat after reload, and started the same battle with preview resources removed. Actual mobile touches select/deselect; dragging during placement leaves the pending cell unchanged. Real saved-battle data survives visits. Failed storage preserves the old save and leaves the draft open. Repeated scene visits maintain stable geometry counts. A fully unlocked Hold rendered with 104 draw calls; no extra renderer or animation loop was added. Portrait postcard export was rendered and visually checked.
 
-Measured bundle: about 181.7 KiB application gzip and 333.1 KiB total JS. Limits are deliberately 184 / 336 KiB. Shared save/input integration contributes about 2.2 KiB; the editor and scene load on demand. Browser emulation is not a physical iPhone/Safari thermal certification.
+Measured bundle: about 181.8 KiB application gzip and 333.2 KiB total JS. Limits are deliberately 184 / 336 KiB. Shared save/input integration contributes about 2.2 KiB; the editor and scene load on demand. Browser emulation is not a physical iPhone/Safari thermal certification.
 
 Release order: build the sync-service image from the repository root using `server/Dockerfile`; deploy `registry.fly.io/blockhold-sync:your-hold-r17`; verify health, readiness, bounded snapshots and cloud round trips; then push the frontend and verify the production URL. There is no database migration or combat-ruleset change. Live co-op rooms reside in memory and are disconnected by the service restart.
 
 Rollback: revert the frontend commit if necessary while retaining the Hold-aware save sanitizer on the backend. Do not roll the server back to an image that strips Hold fields: a subsequent save write could remove customization. Optional fields remain compatible with older frontend clients because the new server retains them atomically. Battle journals omit cosmetic Hold data.
 
 The optional authored siege extension remains separately scoped and has not been implemented. No approval for that extra game mode has been inferred from silence. Durable rooms and the wider public-launch operational roadmap remain separate work.
+
+Production validation: the Hold-aware service is healthy. A separate test account retained its Hold through an older-client save; a test room enforced readiness before its paced start. The deployed frontend passed mobile edit/save/reload and opened a snapshot in a fresh browser profile without edit controls. `scripts/hold-gathering-check.mjs` preserves the four-client gathering check, including an offline/online transition, for future releases.
