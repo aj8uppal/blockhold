@@ -457,7 +457,7 @@ input, select, textarea { color: var(--ui-text); accent-color: var(--ui-gold); }
   .tp-primary .has-preview .d-row { column-gap: 2px; line-height: 1.5; }
 }
 /* The room gathers over its host's real Hold; the scene stays available to inspect. */
-#screens .gathering-screen { pointer-events: none; align-items: flex-start; background: linear-gradient(90deg,#0c171dbb,transparent 64%); padding: 24px; }
+#screens .gathering-screen { backdrop-filter: none; pointer-events: none; align-items: flex-start; background: linear-gradient(90deg,#0c171dbb,transparent 64%); padding: 24px; }
 .gathering-screen .coop-card { pointer-events: auto; width: 340px; padding: 24px; border-radius: 20px; background: #142229f5; border: 1px solid #ffffff28; box-shadow: 0 18px 50px #0003; }
 .gathering-screen .coop-title { font-size: 25px; margin: 0 0 12px; }
 .gathering-screen .coop-sub { font-size: 12px; line-height: 1.6; }

@@ -28,6 +28,8 @@ try{
  await clients[2].page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent.startsWith('Ready ✓')&&!b.disabled))
  // Reload a guest into its authenticated seat and retain the party/ready state.
  const guest=clients[1].page;await guest.reload();await guest.waitForFunction(()=>window.vg);await guest.evaluate(()=>window.vg.screens.show('coop'));await guest.getByRole('button',{name:'Rejoin your room'}).click();await guest.getByRole('button',{name:/Ready ✓/}).waitFor()
+ await host.locator('summary',{hasText:'Battle settings'}).click()
+ await host.locator('.gathering-screen').evaluate(e=>{e.scrollTop=0})
  await host.screenshot({path:(process.env.BLOCKHOLD_SCREENSHOT ?? '/tmp/blockhold-hold-gathering.png')})
  await host.getByRole('button',{name:'Start the battle'}).click()
  for(const{page:p}of clients) await p.waitForFunction(()=>window.vg.game.phase==='playing'&&!window.vg.game.paused,{},{timeout:30000})
