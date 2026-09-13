@@ -33,13 +33,20 @@ try {
   const code = await host.evaluate(() => window.vg.game.coop.code)
   await guest.goto(`${base}?coop=${code}`)
   await guest.waitForFunction(() => window.vg?.game?.coop && !window.vg.game.isRecovering)
-  await host.evaluate(async () => {
+  assert.ok(await host.evaluate(() => window.vg.game.coop.send('pause', false)))
+  for (const page of pages) await page.waitForFunction(() => !window.vg.game.paused)
+  const sent = await host.evaluate(async () => {
     const c = window.vg.game.coop
-    await c.send('cmd', { kind: 'sandboxSpawn', enemy: 'juggernaut', count: 25, lane: 0, hp: 100 })
-    await c.send('cmd', { kind: 'sandboxSpawn', enemy: 'gargoyle', count: 25, lane: 0, hp: 100 })
-    await c.send('speed', 4); await c.send('pause', false)
+    return [
+      await c.send('cmd', { kind: 'sandboxSpawn', enemy: 'juggernaut', count: 25, lane: 0, hp: 100 }),
+      await c.send('cmd', { kind: 'sandboxSpawn', enemy: 'gargoyle', count: 25, lane: 0, hp: 100 }),
+      await c.send('speed', 4),
+    ]
   })
-  await host.waitForFunction(() => window.vg.game.time > 30, null, { timeout: 60000 })
+  assert.deepEqual(sent, [true, true, true])
+  await host.waitForFunction(() => window.vg.game.enemies.length > 0)
+  const combatStart = await host.evaluate(() => window.vg.game.time)
+  await host.waitForFunction(t => window.vg.game.time > t + 30, combatStart, { timeout: 60000 })
   await guest.evaluate(() => window.vg.game.castHeroSignature())
   await host.evaluate(() => window.vg.game.coop.send('pause', true))
   async function compare(label) {
@@ -49,11 +56,11 @@ try {
     })
     const state = await Promise.all(pages.map(p => p.evaluate(() => {
       const g = window.vg.game
-      return { hash: g.sessionStateHash(), tick: g.sessionTick, ruleset: g.balanceRuleset, towers: g.towers.length, powers: g.towers.map(t => t.mythicAbility.readyAt) }
+      return { hash: g.sessionStateHash(), tick: g.sessionTick, ruleset: g.balanceRuleset, towers: g.towers.length, levels: g.towers.map(t=>t.level), mode:g.mode, sandbox:g.isSandbox, enemies:g.enemies.length, powers: g.towers.map(t => t.mythicAbility.readyAt) }
     })))
+    console.log(JSON.stringify({ label, ...state[0] }))
     assert.deepEqual(state[0], state[1]); assert.equal(state[0].ruleset, 17)
     assert.equal(state[0].towers, 8); assert.ok(state[0].powers.some(t => t > 3))
-    console.log(JSON.stringify({ label, ...state[0] }))
   }
   await compare('four-speed combat')
   await guest.reload()
@@ -62,7 +69,7 @@ try {
   await guest.waitForFunction(() => window.vg?.game?.coop && !window.vg.game.isRecovering)
   await compare('mobile rejoin')
   await host.evaluate(() => window.vg.game.coop.send('pause', false))
-  await host.waitForFunction(() => window.vg.game.time > 40, null, { timeout: 60000 })
+  await host.waitForFunction(t => window.vg.game.time > t + 40, combatStart, { timeout: 60000 })
   await guest.evaluate(() => window.vg.game.coop.send('pause', true))
   await compare('continued after rejoin')
   assert.deepEqual(errors, [])
