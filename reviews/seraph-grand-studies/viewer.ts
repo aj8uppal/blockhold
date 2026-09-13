@@ -21,7 +21,7 @@ const stage=new THREE.Group(),context=new THREE.Group(),dynamic=new THREE.Group(
 engine.scene.add(stage,context,dynamic,subjects,effects)
 const options=mode==='fire'?fireDirections:directions,sel=document.querySelector<HTMLSelectElement>('#direction')!,formSel=document.querySelector<HTMLSelectElement>('#form')!
 for(const d of options)sel.add(new Option(d.name,d.id))
-sel.add(new Option('Current live art','current'))
+sel.add(new Option('Current build','current'))
 for(const f of forms)formSel.add(new Option(`${f.label} · ${f.name}`,String(forms.indexOf(f))))
 formSel.hidden=mode==='fire';document.querySelector<HTMLButtonElement>('#attack')!.hidden=mode==='fire'
 let selected=params.get('direction')??options[0].id,index=Math.min(9,Math.max(0,Number(params.get('form')??5))),view=params.get('view')??'studio',pairModels:THREE.Group[]=[]
@@ -79,14 +79,14 @@ function show(direction=selected,form=index){
     dynamic.add(fire.group)
   }
   sel.value=selected;formSel.value=String(index)
-  const name=selected==='current'?'Current live art':options.find(d=>d.id===selected)!.name
+  const name=selected==='current'?'Current build':options.find(d=>d.id===selected)!.name
   document.querySelector('#name')!.replaceChildren(Object.assign(document.createElement('b'),{textContent:mode==='fire'?name:`${name} · ${forms[index].label}`}),Object.assign(document.createElement('small'),{textContent:'Actual Blockhold lighting & models · drag to orbit · scroll to zoom'}))
   attackAt=-100;animatePose(time);framing();return info()
 }
 function animatePose(t:number){
   if(model){
     if(autoAttack&&t-attackAt>1.25)attackAt=t
-    if(selected!=='current'||index===9)poseStoneSeraph(model,t,t-attackAt)
+    poseStoneSeraph(model,t,t-attackAt)
   }
   fire?.update(t)
   const pulse=t-attackAt,active=pulse>=0&&pulse<.7&&!!model
