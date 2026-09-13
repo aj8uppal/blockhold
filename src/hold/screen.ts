@@ -36,7 +36,7 @@ export function mountHold(api: HoldScreenApi, code?: string): HoldControls {
   const names = node('div', header, 'hold-heading')
   node('span', names, 'eyebrow', visitor ? 'Visiting a shared Hold' : 'Your kingdom, made yours')
   const title = node('h1', names, '', snapshot().name)
-  button(header, visitor ? 'My Hold' : 'To battle →', () => visitor ? api.go('hold') : leave('levels'), true)
+  button(header, visitor ? 'My Hold' : 'To battle →', () => leave(visitor ? 'hold' : 'levels'), true)
   const toolbar = node('nav', wrap, 'hold-toolbar'); toolbar.setAttribute('aria-label', 'Hold controls')
   button(toolbar, 'Collection', () => collection())
   const customize = !visitor ? button(toolbar, 'Customize', () => beginEdit()) : null
@@ -88,14 +88,22 @@ export function mountHold(api: HoldScreenApi, code?: string): HoldControls {
       baseline = JSON.stringify(before)
       return false
     }
-    const next = ownedHold(api.save(), { ...draft, updatedAt: Date.now(), seen: [...new Set([...(api.save().hold?.seen ?? []), ...draft.seen])], dailyWon: !!(api.save().hold?.dailyWon || draft.dailyWon) })
+    const next = ownedHold(api.save(), { ...draft, updatedAt: Math.max(Date.now(), before.updatedAt + 1), seen: [...new Set([...(api.save().hold?.seen ?? []), ...draft.seen])], dailyWon: !!(api.save().hold?.dailyWon || draft.dailyWon) })
     const candidate = { ...api.save(), hold: next }
     if (!writeSave(candidate)) { message('Storage is full or blocked. Your draft is still open. Retry Save or export a backup.'); inspector(); return false }
     Object.assign(api.save(), candidate); draft = structuredClone(next); baseline = JSON.stringify(draft); editing = false; pending = null; undo = null
     api.sync(); message(cloud.signedIn ? 'Saved on this device. Cloud sync requested.' : 'Saved on this device.'); redraw(); return true
   }
   function discard(): void { draft = ownedHold(api.save()); baseline = JSON.stringify(draft); editing = false; pending = null; undo = null; selected = null; message(''); redraw() }
-  function leave(where: Parameters<HoldScreenApi['go']>[0], source?: string): void { navigate(() => api.go(where, source)) }
+  function leave(where: Parameters<HoldScreenApi['go']>[0], source?: string): void {
+    navigate(() => {
+      if (visitor) {
+        const url = new URL(location.href), hash = new URLSearchParams(url.hash.slice(1))
+        hash.delete('visit'); url.hash = hash.toString(); history.replaceState(null, '', url)
+      }
+      api.go(where, source)
+    })
+  }
   function navigate(action: () => void): void {
     if (!dirty()) { action(); return }
     const { body, close } = modal('Save your arrangement?')
@@ -124,7 +132,7 @@ export function mountHold(api: HoldScreenApi, code?: string): HoldControls {
   }
   function inspector(): void {
     panel.replaceChildren()
-    if (visitor && !shared) { node('h2', panel, '', 'This visit link could not be opened'); node('p', panel, '', 'It may be incomplete or from a newer version. Your own progress and saved battle are safe.'); button(panel, 'Back to my game', () => api.go('menu'), true); return }
+    if (visitor && !shared) { node('h2', panel, '', 'This visit link could not be opened'); node('p', panel, '', 'It may be incomplete or from a newer version. Your own progress and saved battle are safe.'); button(panel, 'Back to my game', () => leave('menu'), true); return }
     if (pending) {
       node('h2', panel, '', 'Choose a place')
       const problem = placementError(pending, snapshot().pieces)
