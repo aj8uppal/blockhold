@@ -17,6 +17,7 @@ export type ReplayEvent =
   | { t: number, kind: 'build', tower: TowerKind, plot: number }
   | { t: number, kind: 'upgrade', plot: number, level: number, branch: 0 | 1 | null }
   | { t: number, kind: 'sell', plot: number }
+  | { t: number, kind: 'fuseSeraph', plot: number, donor: number }
   | { t: number, kind: 'trap', spot: number, trap: string }
   | { t: number, kind: 'earthwork', spot: number, work: string }
   | { t: number, kind: 'wave', index: number }

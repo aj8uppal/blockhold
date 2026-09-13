@@ -16,6 +16,7 @@ export type CoopCommand =
   | { kind: 'sell', plot: number }
   | { kind: 'ascend', plot: number, perk: 0 | 1 }
   | { kind: 'mythic', plot: number }
+  | { kind: 'fuseSeraph', plot: number, donor: number }
   | { kind: 'overcharge', plot: number }
   | { kind: 'overchargeAll' }
   | { kind: 'expand', c: number, r: number }

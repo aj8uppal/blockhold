@@ -10,7 +10,7 @@ try {
   const page = await browser.newPage()
   await page.route('**/upgrade-capture.html', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Upgrade portraits</title>' }))
   await page.goto(`${url}/upgrade-capture.html`)
-  const portraits = await page.evaluate(async () => {
+  const portraits = await page.evaluate(async (only) => {
     const THREE = await import('/node_modules/.vite/deps/three.js')
     const { towerModel, muzzleHeights } = await import('/src/voxel/models_towers.ts')
     const { buildModel } = await import('/src/voxel/builder.ts')
@@ -23,7 +23,7 @@ try {
     const rim = new THREE.DirectionalLight(0xc6dfff, .7); rim.position.set(4, 3, -4); scene.add(rim)
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .01, 100)
     const result = []
-    for (const id of Object.keys(muzzleHeights)) {
+    for (const id of Object.keys(muzzleHeights).filter(id => !only || id === only)) {
       const model = buildModel(towerModel(id), `preview:${id}`, { castShadow: false })
       scene.add(model)
       const bounds = new THREE.Box3().setFromObject(model), center = bounds.getCenter(new THREE.Vector3())
@@ -41,7 +41,7 @@ try {
     }
     renderer.dispose(); renderer.forceContextLoss()
     return result
-  })
+  }, process.env.TOWER_PREVIEW_ONLY ?? '')
   await mkdir('public/art/towers', { recursive: true })
   for (const [id, data] of portraits) await writeFile(`public/art/towers/${id}.webp`, Buffer.from(data, 'base64'))
   console.log(`Rendered ${portraits.length} tower previews at 384 × 384.`)

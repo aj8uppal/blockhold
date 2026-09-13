@@ -46,7 +46,7 @@ describe('deterministic session journal', () => {
   it('accepts all existing command shapes and strips unknown command data', () => {
     const commands: CoopCommand[] = [
       { kind: 'build', plot: 0, tower: 'barracks' }, { kind: 'upgrade', plot: 1, opt: 1 },
-      { kind: 'sell', plot: 2 }, { kind: 'ascend', plot: 3, perk: 0 },
+      { kind: 'fuseSeraph', plot: 1, donor: 2 }, { kind: 'sell', plot: 2 }, { kind: 'ascend', plot: 3, perk: 0 },
       { kind: 'overcharge', plot: 1 }, { kind: 'mythic', plot: 1 }, { kind: 'policy', plot: 1 }, { kind: 'trackline', plot: 1 },
       { kind: 'holdline', plot: 1, x: -2.5, z: 1.25 }, { kind: 'rally', plot: 1, x: 2, z: -1 },
       { kind: 'trap', spot: 1, trap: 'frost' }, { kind: 'sellTrap', spot: 1 }, { kind: 'earthwork', spot: 1 },
@@ -62,6 +62,9 @@ describe('deterministic session journal', () => {
   it('rejects missing, unknown, nonfinite, fractional and out-of-bounds command fields', () => {
     const bad = [
       { kind: 'build', plot: 0, tower: 'foreign' }, { kind: 'trap', spot: 1, trap: 'foreign' },
+      { kind: 'fuseSeraph', plot: 1 }, { kind: 'fuseSeraph', plot: 1, donor: 1 },
+      { kind: 'fuseSeraph', plot: 1, donor: -1 }, { kind: 'fuseSeraph', plot: 1, donor: 4096 },
+      { kind: 'fuseSeraph', plot: 1, donor: 1.5 }, { kind: 'fuseSeraph', plot: 1, donor: '2' },
       { kind: 'deleteEverything' }, { kind: 'upgrade', plot: 1, opt: 2 }, { kind: 'ascend', plot: 1, perk: -1 },
       { kind: 'sell', plot: -1 }, { kind: 'sell', plot: 0.5 }, { kind: 'sell', plot: 4096 },
       { kind: 'earthwork', spot: '1' }, { kind: 'heroMove', x: Infinity, z: 0 },

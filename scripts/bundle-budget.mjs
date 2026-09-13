@@ -58,7 +58,9 @@ const APP_CHUNK_LIMIT = 184 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 // Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.
 // The how-to sheet now loads on demand; the initial app budget stays unchanged.
-const TOTAL_JS_LIMIT = 336 * 1024
+// Ruleset 18: the native Crimson model, atomic sacrifice and lazy confirmation
+// bring total JS to 336.1 KiB. Allow 1 KiB more; the initial app cap stays 184 KiB.
+const TOTAL_JS_LIMIT = 337 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

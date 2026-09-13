@@ -70,6 +70,8 @@ export function parseBattleCommand(value: unknown): CoopCommand | null {
       return integer(plot, 4095) && TOWERS.includes(value.tower as TowerKind) ? { kind, plot, tower: value.tower as TowerKind } : null
     case 'upgrade':
       return integer(plot, 4095) && integer(value.opt, 1) ? { kind, plot, opt: value.opt } : null
+    case 'fuseSeraph':
+      return integer(plot, 4095) && integer(value.donor, 4095) && plot !== value.donor ? { kind, plot, donor: value.donor } : null
     case 'ascend':
       return integer(plot, 4095) && (value.perk === 0 || value.perk === 1) ? { kind, plot, perk: value.perk } : null
     case 'sell':
@@ -131,7 +133,7 @@ function validate(value: unknown): BattleSession | null {
   for (const entry of value.commands) {
     if (!record(entry) || !integer(entry.tick, value.tick, previousTick)) return null
     const cmd = parseBattleCommand(entry.cmd)
-    if (!cmd) return null
+    if (!cmd || cmd.kind === 'fuseSeraph' && Number(value.ruleset) < 18) return null
     commands.push({ tick: entry.tick, cmd })
     previousTick = entry.tick
   }

@@ -1172,9 +1172,9 @@ export class HUD {
       chip('Damage', `${icon(typeIco)} ${lo}–${hi}`, tower.damageMult > 1 ? 'lit' : '') +
       chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`, tower.rateMult > 1 ? 'lit' : '') +
       chip('Range', `${icon('range')} ${fmtNum(tower.range)}`, tower.range > def.range ? 'lit' : '') +
-      chip(def.beamTargets ? 'DPS / target' : 'DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : '') +
+      chip(tower.isFused ? 'Primary DPS' : def.beamTargets ? 'DPS / target' : 'DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : '') +
       (def.beamTargets ? chip('Targets', `${def.beamTargets}`) : '') +
-      (tower.isSeraph && def.splash ? chip('Splash radius', `${Math.round(def.splash * m.splash * 100) / 100} tiles`) + chip('Targets', 'All in area') : ''))
+      (tower.isSeraph && def.splash ? chip('Splash radius', `${Math.round(def.splash * m.splash * 100) / 100} tiles`) + chip(tower.isFused ? 'Splash damage' : 'Targets', tower.isFused ? '40% · nearby enemies' : 'All in area') : ''))
   }
 
   private refreshMasteryProgress(): void {
@@ -1219,7 +1219,7 @@ export class HUD {
     el('div', 'tp-icon', head, icon(TOWER_ICONS[tower.kind]))
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, tower.def.name)
-    el('div', 'tp-level', title, (tower.level === 6 ? 'Mythic · ' : tower.level === 5 ? '✦ ' : tower.level === 4 ? '★ ' : '')
+    el('div', 'tp-level', title, (tower.isFused ? 'Fusion · ' : tower.level === 6 ? 'Mythic · ' : tower.level === 5 ? '✦ ' : tower.level === 4 ? '★ ' : '')
       + `Tier ${tower.level}/6`
       + `<span class="tp-kills" title="Enemies slain by this building, and the health it has taken from them"> · ${icon('skull')} <span class="tp-kill-n">${tower.kills}</span> · ${icon('swords')} <span class="tp-dmg-n">${fmtDamage(tower.damage)}</span></span>`)
     const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
@@ -1343,6 +1343,14 @@ export class HUD {
       btn.disabled = this.game.gold < opt.cost
       if (btn.disabled) btn.querySelector('.u-need')!.textContent = `Needs ${opt.cost - this.game.gold} more gold`
     })
+    if (tower.isSeraph && tower.level === 6 && !tower.isGhost) {
+      if (tower.isFused) el('div', 'tp-traits', primary, tower.def.description)
+      else {
+        const fusion = el('button', 'btn upgrade has-preview', primary) as HTMLButtonElement
+        fusion.innerHTML = `<span class="u-name">Awaken Crimson Sovereign</span><span class="u-overview"><span class="u-copy"><span class="u-desc">Sacrifice an opposite tier-six Seraph. Choose which tower stays.</span></span><img class="u-model" src="art/towers/seraphCrimson.webp" width="384" height="384" alt="Crimson Sovereign preview" decoding="async"></span>`
+        fusion.onclick = this.menuGuard(() => { void import('./seraphFusion.ts').then(({ showSeraphFusion }) => showSeraphFusion(this.game, tower)) })
+      }
+    }
     // ascension: tier-4+ towers pick one of two shard-bought perks
     if (tower.level >= 4 && !tower.perk) {
       tower.ascensionOptions.forEach((perk, i) => {

@@ -28,6 +28,7 @@ export interface TowerSnapshot {
   /** a ballista holding a line: its bearing as a unit vector */
   hold?: [number, number]
   overchargeUntil?: number
+  fused?: boolean
 }
 
 export interface TrapSnapshot {

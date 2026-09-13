@@ -1,3 +1,4 @@
+import { canFuseSeraphs } from './seraphFusion.ts'
 import { gameSpeed, nextGameSpeed, type GameSpeed } from '../core/gameSpeed.ts'
 import { availableExpansionPlots, placeExpansionPlot, EXPANSION_EVERY } from './expansion.ts'
 import { huntById, huntLevel, huntClearGold, awardHunt, heroHunts, masteryReady, masteryHint, type HuntDef, type HuntId } from './hunts.ts'
@@ -131,6 +132,7 @@ export class Game implements World {
       for (const e of this.enemies) values.push(e.markedUntil, e.nullifiedUntil, e.healBlockedUntil, e.brittleUntil, e.wardBrokenUntil)
       for (const s of this.soldiers) values.push(s.oathUntil)
     }
+    if (ruleset >= 18) for (const t of this.towers) values.push(t.isFused ? 1 : 0)
     return stateHash(values)
   }
 
@@ -796,6 +798,7 @@ export class Game implements World {
         branch: t.branch,
         perk: t.perk?.id ?? null,
         policy: t.targetPolicy,
+        ...(t.isFused ? { fused: true } : {}),
         hold: t.holdLine ? [t.holdLine.x, t.holdLine.z] as [number, number] : undefined,
       })),
       traps: this.traps.map(t => ({ spot: t.spot.index, kind: t.kind })),
@@ -1244,6 +1247,11 @@ export class Game implements World {
         case 'sell': if (t) this.sellTower(t); break
         case 'ascend': if (t) this.ascendTower(t, cmd.perk); break
         case 'mythic': if (t) this.activateMythic(t); break
+        case 'fuseSeraph': {
+          const donor = this.towers.find(o => o.plot.index === cmd.donor)
+          if (t && donor) this.fuseSeraph(t, donor)
+          break
+        }
         case 'overcharge': if (t) this.overchargeTower(t); break
         case 'overchargeAll': this.overchargeAll(); break
         case 'expand': this.expandPlot(cmd.c, cmd.r); break
@@ -1931,6 +1939,7 @@ export class Game implements World {
       for (let lvl = 1; lvl < snap.level; lvl++) {
         tower.upgrade(lvl === 3 ? (snap.branch ?? 0) : 0, this)
       }
+      if (snap.fused === true) tower.fuse(this)
       if (snap.perk) {
         const idx = PERKS[snap.kind].findIndex(p => p.id === snap.perk)
         if (idx >= 0) tower.ascend(idx as 0 | 1, this)
@@ -3410,6 +3419,32 @@ export class Game implements World {
     // upgrade, so an upgraded beacon lit nothing new until something else changed
     this.recomputeResonance()
     if (this.localAction) this.selectTower(tower)
+  }
+
+  fusionCandidates(tower: Tower): Tower[] {
+    return this.towers.includes(tower) ? this.towers.filter(donor => canFuseSeraphs(tower, donor)) : []
+  }
+
+  /** One ordered input, never a sale followed by an upgrade. Duplicate or
+   * competing co-op inputs cannot consume the same donor twice. */
+  fuseSeraph(tower: Tower, donor: Tower): boolean {
+    if (this.paused || this.phase !== 'playing' || !this.towers.includes(tower)
+      || !this.towers.includes(donor) || !canFuseSeraphs(tower, donor)) return false
+    if (this.route({ kind: 'fuseSeraph', plot: tower.plot.index, donor: donor.plot.index })) return true
+    clearOwnedEffects(this, tower)
+    clearOwnedEffects(this, donor)
+    if (!tower.fuse(this)) return false
+    if (donor.kills > 0) this.retiredKillers.push({ name: donor.def.name, kills: donor.kills, damage: donor.damage })
+    donor.plot.occupied = false
+    donor.dismantle(this)
+    this.dynamic.remove(donor.group)
+    this.towers.splice(this.towers.indexOf(donor), 1)
+    this.replay.record({ t: this.time, kind: 'fuseSeraph', plot: tower.plot.index, donor: donor.plot.index })
+    this.recomputeResonance()
+    this.particles.buildDust(donor.pos.x, donor.pos.y + .1, donor.pos.z)
+    if (this.localAction || this.selectedTower === donor || this.selectedTower === tower) this.selectTower(tower)
+    this.hud.showToast('Crimson Sovereign awakened', 3)
+    return true
   }
 
   sellTower(tower: Tower): void {

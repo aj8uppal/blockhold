@@ -1,3 +1,4 @@
+import { crimsonSovereign } from './models_seraph_crimson.ts'
 import { berserkerModel } from './models_units.ts'
 import { fireArtillery, worldshakerModel } from './models_artillery.ts'
 import { mythicArchitecture, mythicVessel } from './models_mythic.ts'
@@ -656,10 +657,11 @@ export type TowerModelId =
   | 'barracks1' | 'barracks2' | 'barracks3' | 'barracks4a' | 'barracks4b' | 'barracks5a' | 'barracks5b'
   | 'beacon1' | 'beacon2' | 'beacon3' | 'beacon4a' | 'beacon4b' | 'beacon5a' | 'beacon5b'
   | 'ballista1' | 'ballista2' | 'ballista3' | 'ballista4a' | 'ballista4b' | 'ballista5a' | 'ballista5b'
-  | 'seraph6a' | 'seraph6b'
+  | 'seraphCrimson' | 'seraph6a' | 'seraph6b'
   | 'seraph1' | 'seraph2' | 'seraph3' | 'seraph4a' | 'seraph4b' | 'seraph5a' | 'seraph5b'
 
 const factories: Record<TowerModelId, () => VoxModel> = {
+  seraphCrimson: crimsonSovereign,
   tidecaller1: () => tidecallerModel(1, 0),
   tidecaller2: () => tidecallerModel(2, 0),
   tidecaller3: () => tidecallerModel(3, 0),
@@ -725,6 +727,7 @@ export function towerModel(id: TowerModelId): VoxModel {
 
 /** world-space height where projectiles originate */
 export const muzzleHeights: Record<TowerModelId, number> = {
+  seraphCrimson: 1.782,
   tidecaller1: 0.42,
   tidecaller2: 0.49,
   tidecaller3: 0.56,

@@ -120,7 +120,7 @@ describe('actual Game session recovery', () => {
     game.castHeroSignature()
     ticks(game, 75)
     const before = snapshot(game), journal = game.exportBattleSession()!
-    expect(journal.balanceRuleset).toBe(17)
+    expect(journal.balanceRuleset).toBe(RULESET_VERSION)
     expect(journal.commands.length).toBeGreaterThan(25)
     expect(game.towers.some(t => t.mythicAbility.readyAt > 3)).toBe(true)
     expect(await game.resumeSession(journal)).toBe(true)
@@ -1456,4 +1456,98 @@ it('keeps account mastery out of co-op replay until ordered, then adds it on sol
   expect(await game.resumeSession(saved)).toBe(true)
   expect(game.mythicLock(game.towers[0])).toBeNull()
   game.disposeLevel()
+})
+
+describe('Crimson Sovereign sacrifice', () => {
+  function pair(game: Game, start = 0) {
+    return [0, 1].map((branch, i) => {
+      game.buildTower('seraph', game.terrain!.plots[start + i])
+      const tower = game.towers.at(-1)!
+      for (let level = 1; level < 6; level++) game.upgradeTower(tower, level === 3 ? branch : 0)
+      return tower
+    })
+  }
+  it('consumes only the selected opposite Mythic, keeps terrain and money, and rejects repeat/recursive sacrifices', () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 18181 })
+    const [keeper, donor] = pair(game), [other, otherVoid] = pair(game, 2)
+    game.isSandbox = false // verify sacrifice currency without sandbox refill
+    const gold = game.gold, shards = game.shards, refund = keeper.sellValue
+    const position = donor.plot.pos.clone(), plotCount = game.terrain!.plots.length
+    expect(game.fuseSeraph(keeper, other)).toBe(false)
+    expect(game.fuseSeraph(keeper, keeper)).toBe(false)
+    donor.isGhost = true; expect(game.fuseSeraph(keeper, donor)).toBe(false); donor.isGhost = false
+    game.paused = true; expect(game.fuseSeraph(keeper, donor)).toBe(false); game.paused = false
+    expect(game.fuseSeraph(keeper, donor)).toBe(true)
+    expect(keeper.def.model).toBe('seraphCrimson')
+    expect(keeper.def.signature).toBeUndefined()
+    expect(keeper.def.special).toBeUndefined()
+    expect(keeper.sellValue).toBe(refund)
+    expect([game.gold, game.shards]).toEqual([gold, shards])
+    expect(game.towers).not.toContain(donor)
+    expect(donor.group.parent).toBeNull()
+    expect(donor.plot.occupied).toBe(false)
+    expect(donor.plot.pos).toEqual(position)
+    expect(game.terrain!.plots.length).toBe(plotCount)
+    expect(game.fuseSeraph(donor, keeper)).toBe(false)
+    expect(game.fuseSeraph(keeper, otherVoid)).toBe(false)
+    expect(game.fuseSeraph(otherVoid, other)).toBe(true) // either branch can remain; no shared cap
+    expect(game.towers.every(t => t.isFused)).toBe(true)
+    game.buildTower('arrow', donor.plot)
+    expect(donor.plot.occupied).toBe(true)
+    game.disposeLevel()
+  })
+  it('replays a fusion and its subsequent combat exactly after page reload', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 18182 })
+    const [keeper, donor] = pair(game)
+    ticks(game, 40)
+    expect(game.fuseSeraph(keeper, donor)).toBe(true)
+    issue(game, { kind: 'sandboxSpawn', enemy: 'juggernaut', count: 20, lane: 0, hp: 100 })
+    ticks(game, 1200)
+    expect(keeper.damage).toBeGreaterThan(0)
+    const journal = game.exportBattleSession()!, before = snapshot(game)
+    expect(journal.commands.filter(e => e.cmd.kind === 'fuseSeraph')).toHaveLength(1)
+    ticks(game, 120); const future = snapshot(game)
+    expect(await game.resumeSession(journal)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    expect(game.towers[0].isFused).toBe(true)
+    game.paused = false; ticks(game, 120)
+    expect(snapshot(game)).toEqual(future)
+    game.disposeLevel()
+  })
+  it('orders competing co-op sacrifices once and preserves the result on solo continuation', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 18183 })
+    const [keeper, donor] = pair(game)
+    const battle = game.exportBattleSession()!
+    const connected = room([
+      { type: 'cmd', seat: 0, turn: 1, cmd: { kind: 'fuseSeraph', plot: keeper.plot.index, donor: donor.plot.index } },
+      { type: 'cmd', seat: 1, turn: 1, cmd: { kind: 'fuseSeraph', plot: donor.plot.index, donor: keeper.plot.index } },
+      { type: 'turn', n: 1, ticks: 12 },
+    ])
+    expect(await game.joinCoopBattle(connected.session, setupFor(battle))).toBe(true)
+    expect(game.towers).toHaveLength(1)
+    expect(game.towers[0].isFused).toBe(true)
+    const before = snapshot(game)
+    expect(game.continueSolo()).toBe(true)
+    expect(await game.resumeSession(readSession()!)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    game.disposeLevel()
+  })
+  it('continues an old ruleset-seventeen battle and allows a new fusion without rebalance', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 18184, balanceRuleset: 17 })
+    pair(game); ticks(game, 40)
+    const old = { ...game.exportBattleSession()!, ruleset: 17,
+      stateHash: (game as unknown as Internals).sessionStateHash(17) }
+    expect(await game.resumeSession(old)).toBe(true)
+    expect(game.balanceRuleset).toBe(17)
+    game.paused = false
+    expect(game.fuseSeraph(game.towers[0], game.towers[1])).toBe(true)
+    const saved = game.exportBattleSession()!
+    expect(await game.resumeSession(saved)).toBe(true)
+    expect(game.towers[0].def.model).toBe('seraphCrimson')
+    game.disposeLevel()
+  })
 })

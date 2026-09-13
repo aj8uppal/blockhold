@@ -314,3 +314,20 @@ it('credits only the strongest Beacon with actual supported health damage, exclu
   expect(weak.supportedDamage).toBe(75)
   expect(strong.supportedDamage).toBe(100)
 })
+
+describe('Crimson focus and splash', () => {
+  it('hits one armored boss at full strength and nearby air/ground enemies at 40%, without double hits or distant damage', () => {
+    const boss = enemy(2), ground = enemy(2.2), flying = enemy(2.3, 'gargoyle'), far = enemy(7)
+    boss.armor = 9999; boss.def = { ...boss.def, magicResist: .95 }
+    const { world } = fixture([boss, ground, flying, far])
+    const shot = createProjectile({ kind: 'crimsonPulse', from: new THREE.Vector3(0, 2, 0),
+      at: boss.pos.clone(), target: boss, damage: 1500, splash: 1.5, world })
+    expect([boss, ground, flying, far].map(e => e.maxHp - e.hp)).toEqual([1500, 600, 600, 0])
+    expect(shot.mesh.name).toBe('crimson-pulse')
+    shot.update(.3)
+    expect(shot.done).toBe(true)
+    expect(shot.updateVisual?.(.2)).toBe(true)
+    expect(shot.updateVisual?.(.5)).toBe(false)
+    shot.dispose?.()
+  })
+})

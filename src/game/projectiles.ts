@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { CRIMSON_SPLASH_FRACTION } from './seraphFusion.ts'
 import { World, ProjectileSpec, KillCredit, MineSpec } from './world.ts'
 import { Enemy, Soldier } from './units.ts'
 import { buildModel } from '../voxel/builder.ts'
@@ -588,10 +589,11 @@ class VoidPulse implements Projectile {
   private distance: number
   private ring: THREE.Mesh
   private radius: number
-  constructor(spec: Extract<ProjectileSpec, { kind: 'voidPulse' }>) {
+  constructor(spec: Extract<ProjectileSpec, { kind: 'voidPulse' | 'crimsonPulse' }>) {
     const { world, at } = spec
     const from = spec.visualFrom ?? spec.from
-    this.mesh.name = 'void-pulse'
+    const crimson = spec.kind === 'crimsonPulse'
+    this.mesh.name = crimson ? 'crimson-pulse' : 'void-pulse'
     const mat = (color: number) => {
       const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0,
         depthWrite: false, toneMapped: false, side: THREE.DoubleSide })
@@ -602,7 +604,7 @@ class VoidPulse implements Projectile {
     const end = impact.clone().setY(Math.max(impact.y + .2, at.y + .3))
     this.origin = from.clone(); this.end = end
     this.distance = from.distanceTo(end); this.radius = spec.splash
-    for (const [color, width] of [[0x8250b8, .18], [0x21132f, .10]]) {
+    for (const [color, width] of [[crimson ? 0xb82335 : 0x8250b8, .18], [crimson ? 0xffb56d : 0x21132f, .10]]) {
       const beam = new THREE.Mesh(RAY_GEO, mat(color))
       beam.position.copy(from).add(end).multiplyScalar(.5)
       beam.lookAt(end)
@@ -610,7 +612,7 @@ class VoidPulse implements Projectile {
       this.mesh.add(beam)
       this.beams.push(beam)
     }
-    const ring = new THREE.Mesh(VOID_RING, mat(0x9262c4))
+    const ring = new THREE.Mesh(VOID_RING, mat(crimson ? 0xff493a : 0x9262c4))
     ring.position.copy(impact); ring.rotation.x = -Math.PI / 2
     ring.scale.setScalar(spec.splash)
     this.mesh.add(ring)
@@ -620,7 +622,12 @@ class VoidPulse implements Projectile {
     // This is an area in the map plane; both ground and air units can be hit.
     const hits = world.enemies.filter(e => e.targetable
       && Math.hypot(e.pos.x - at.x, e.pos.z - at.z) <= spec.splash + e.radius)
-    for (const enemy of hits) {
+    if (spec.kind === 'crimsonPulse') {
+      // One full-strength hit. Splash never hits the primary a second time.
+      spec.target.takeDamage(spec.damage, 'true', world, { credit: spec.credit, flavor: 'magic' })
+      for (const enemy of hits) if (enemy !== spec.target)
+        enemy.takeDamage(spec.damage * CRIMSON_SPLASH_FRACTION, 'true', world, { credit: spec.credit, flavor: 'magic' })
+    } else for (const enemy of hits) {
       const dealt = enemy.takeDamage(spec.damage, 'magic', world, { mrPierce: 1, credit: spec.credit, flavor: 'magic' })
       if (dealt > 0 && spec.armorShred) enemy.shredArmor(spec.armorShred)
     }
@@ -715,7 +722,7 @@ class RayProjectile implements Projectile {
 
 export function createProjectile(spec: ProjectileSpec): Projectile {
   switch (spec.kind) {
-    case 'voidPulse': return new VoidPulse(spec)
+    case 'voidPulse': case 'crimsonPulse': return new VoidPulse(spec)
     case 'ray': return new RayProjectile(spec)
     case 'arrow': return new ArrowProjectile(spec)
     case 'bolt': return new BoltProjectile(spec)

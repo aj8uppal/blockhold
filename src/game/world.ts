@@ -86,6 +86,7 @@ export interface World {
 
 /** visualFrom affects drawing only; from retains recorded combat timing. */
 export type ProjectileSpec = { visualFrom?: THREE.Vector3 } & (
+  | { kind: 'crimsonPulse', from: THREE.Vector3, at: THREE.Vector3, target: Enemy, damage: number, splash: number, credit?: KillCredit, world: World }
   | { kind: 'voidPulse', from: THREE.Vector3, at: THREE.Vector3, damage: number, splash: number, armorShred?: number, credit?: KillCredit, world: World }
   | { kind: 'seraphBloom', at: THREE.Vector3, solar: boolean, world: World }
   | { kind: 'arrow', from: THREE.Vector3, target: Enemy, damage: number, crit: boolean, poison?: { dps: number, duration: number }, armorPierce?: number, trueDamage?: number, markDuration?: number, credit?: KillCredit, world: World }

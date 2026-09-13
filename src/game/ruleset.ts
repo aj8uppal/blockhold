@@ -34,8 +34,9 @@
  *  15  Boats use authored moorings instead of unrestricted water cells.
  *  16  Late-tier roster balance, Ballista range ascension and expanded room speeds.
  *  17  Mythic battlefield powers, hero mastery and authored weapon origins.
+ *  18  Opposite Mythic Seraphs fuse into the Crimson Sovereign.
  */
-export const RULESET_VERSION = 17
+export const RULESET_VERSION = 18
 
 /** identifies a reproducible run */
 export interface RunStamp {

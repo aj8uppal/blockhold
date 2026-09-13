@@ -1,3 +1,5 @@
+import { CRIMSON_SOVEREIGN } from './seraphFusion.ts'
+import { poseStoneSeraph } from '../voxel/models_seraph_crimson.ts'
 import { originalTowerDef } from './lateBalance.ts'
 import { MythicAbility } from './mythicAbility.ts'
 import * as THREE from 'three'
@@ -150,6 +152,7 @@ export function beaconReach(range: number, highGround: boolean, lamplighters: nu
 
 /** where the ascension sigil floats, per tower model */
 function towerCrownHeight(model: string): number {
+  if (model === 'seraphCrimson') return 2.53
   if (model.includes('6')) return model.startsWith('seraph') ? 3.5 : 2.0
   const t5 = model.includes('5')
   if (model.startsWith('arrow')) return t5 ? 2.1 : 1.6
@@ -163,6 +166,7 @@ function towerCrownHeight(model: string): number {
 
 /** the colour of each Seraph's light: the aspects differ, the crowns burn hotter */
 const SERAPH_LIGHT: Record<string, number> = {
+  seraphCrimson: 0xff493a,
   seraph1: 0xc2d8ff, seraph2: 0xc4deff, seraph3: 0xe0e8fa,
   seraph4a: 0xffd166, seraph5a: 0xffe08a, seraph6a: 0xfff2b0,
   seraph4b: 0x9d6bff, seraph5b: 0xb98cff, seraph6b: 0xd3b6ff,
@@ -232,6 +236,8 @@ export class Tower {
   private static readonly ECLIPSE_EVERY = 10
   private seraphT = 0
   private seraphPulse = 0
+  private crimsonShotAt = -100
+  isFused = false
   private seraphHeartScale = 1
   private seraphSpeed = 1.3
   private mythicCharge = 0
@@ -297,6 +303,7 @@ export class Tower {
    * fires), the heart pulses with each ray. The crowns speak on a timer.
    */
   private animateSeraph(dt: number, world: World): void {
+    if (this.isFused) { poseStoneSeraph(this.model, world.time, world.time - this.crimsonShotAt); return }
     const firing = this.target !== null
     this.seraphSpeed += ((firing ? 3.2 : 1.3) - this.seraphSpeed) * (1 - Math.exp(-dt * 5))
     this.seraphT += dt * this.seraphSpeed
@@ -555,7 +562,7 @@ export class Tower {
     const geo = new THREE.RingGeometry(0.46, capstone ? 0.6 : 0.53, 40)
     geo.rotateX(-Math.PI / 2)
     const mat = new THREE.MeshBasicMaterial({
-      color: capstone ? 0xffd98f : 0xffc76a, transparent: true,
+      color: this.isFused ? 0xe85348 : capstone ? 0xffd98f : 0xffc76a, transparent: true,
       opacity: capstone ? 0.5 : 0.3, toneMapped: false, depthWrite: false,
     })
     this.tierHalo = new THREE.Mesh(geo, mat)
@@ -739,6 +746,7 @@ export class Tower {
   private static readonly REVEAL_HOLD = 0.14
 
   private combatDefinition(def: TowerLevelDef, level: number = this.level, branch = this.branch): TowerLevelDef {
+    if (this.isFused) return def
     if ((this.world.balanceRuleset ?? RULESET_VERSION) <= 15) def = originalTowerDef(def)
     if (this.isSeraph && branch === 1 && level >= 4 && (this.world.balanceRuleset ?? RULESET_VERSION) <= 12) {
       const crowned = level >= 5
@@ -786,6 +794,19 @@ export class Tower {
       this.respawnAllSoldiers(world)
       this.updateRallyFlag(world)
     }
+  }
+
+  /** Only Game consumes a donor. This also restores the form in old boundary checkpoints. */
+  fuse(world: World): boolean {
+    if (!this.isSeraph || this.level !== 6 || this.isGhost || this.isFused) return false
+    this.isFused = true
+    this.clearMythicMarker(world)
+    this.mythicAbility.clearField()
+    this.mythicAt = null
+    this.mythicUntil = this.mythicCharge = this.mythicReadyAt = 0
+    this.applyLevel(CRIMSON_SOVEREIGN, world)
+    if (this.crownMesh) this.crownMesh.position.y = towerCrownHeight(this.def.model) * this.sizeMult
+    return true
   }
 
   upgrade(optionIndex: number, world: World): void {
@@ -1339,6 +1360,13 @@ export class Tower {
         break
       }
       case 'seraph': {
+        if (this.isFused) {
+          world.fireProjectile({ kind: 'crimsonPulse', from, visualFrom, at: target.pos.clone(), target,
+            damage: dmg, splash: def.splash! * world.splashMult(), credit: this, world })
+          this.crimsonShotAt = world.time
+          world.sfx('ray', .5)
+          break
+        }
         if (this.branch === 1 && def.splash) {
           world.fireProjectile({ kind: 'voidPulse', from, visualFrom, at: target.pos.clone(), damage: dmg,
             splash: def.splash * world.splashMult(), armorShred: def.special?.kind === 'armorShred' ? def.special.amount : undefined,
