@@ -1,125 +1,145 @@
 import * as THREE from 'three'
 
-const noise = /* glsl */`
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-  float noise(vec2 p) {
-    vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x),
-      mix(hash(i + vec2(0, 1)), hash(i + vec2(1)), f.x), f.y);
-  }
-`
-const flameGeometry = new THREE.PlaneGeometry(1, 1)
-flameGeometry.translate(0, .5, 0)
+const flameGeometry = new THREE.SphereGeometry(1, 8, 7)
+// A rounded foot and a drawn-out tip. These are real volumes, not pixel masks.
+const vertices = flameGeometry.attributes.position
+for (let i = 0; i < vertices.count; i++) {
+  const y = (vertices.getY(i) + 1) / 2, taper = 1 - y * .88
+  vertices.setXYZ(i, vertices.getX(i) * taper, y, vertices.getZ(i) * taper)
+}
+flameGeometry.computeVertexNormals()
+const smokeGeometry = new THREE.SphereGeometry(1, 8, 6)
 const groundGeometry = new THREE.PlaneGeometry(2, 2)
 groundGeometry.rotateX(-Math.PI / 2)
+const vertex = /* glsl */`
+  varying vec2 vUv;
+  void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}
+`
 
-/** Stepped, voxel-sized tongues; two draws per patch, no per-frame geometry uploads. */
+/** Three instanced/static draws per patch. Time and fade are the only frame
+ * uploads; smoke and tongues move on the GPU without per-tick particle work. */
 export class GroundFire {
   readonly group = new THREE.Group()
-  private uniforms = { uTime: { value: 0 }, uFade: { value: 0 } }
+  private uniforms = { uTime: { value: 0 }, uFade: { value: 0 }, uHeat: { value: 0 } }
   private flames: THREE.InstancedMesh
+  private smoke: THREE.InstancedMesh
   private hearth: THREE.Mesh
+  private extinguished: number | null = null
 
   constructor(at: THREE.Vector3, radius: number, private started: number, private until: number) {
     this.group.name = 'mortar-fire'
-    this.group.position.set(at.x, .045, at.z)
+    this.group.position.copy(at); this.group.position.y += .035
     const material = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, toneMapped: false,
-      uniforms: this.uniforms,
+      transparent: true, depthWrite: false, toneMapped: false, uniforms: this.uniforms,
       vertexShader: /* glsl */`
-        uniform float uTime;
-        varying vec2 vUv;
-        varying float vSeed;
-        void main() {
-          vUv = uv;
-          vec4 center = modelMatrix * instanceMatrix * vec4(0, 0, 0, 1);
-          vSeed = dot(center.xz, vec2(13.7, 8.3));
-          float height = length(instanceMatrix[1].xyz);
-          float width = length(instanceMatrix[0].xyz);
-          height *= 0.88 + 0.12 * sin(uTime * 4.0 + vSeed);
-          vec3 right = vec3(viewMatrix[0][0], 0, viewMatrix[2][0]);
-          right = normalize(right);
-          center.xyz += right * position.x * width + vec3(0, position.y * height, 0);
-          gl_Position = projectionMatrix * viewMatrix * center;
+        uniform float uTime,uHeat;
+        varying float vHeight,vFacing,vCore,vSeed;
+        void main(){
+          vec4 center=instanceMatrix*vec4(0,0,0,1);
+          float seed=dot(center.xz,vec2(21.7,13.3));
+          vCore=step(.03,center.y);vSeed=seed;
+          float t=uTime*5.5+seed;
+          vec3 p=position;
+          vHeight=p.y;
+          p.x+=sin(t-p.y*3.)*p.y*p.y*.27;
+          p.z+=cos(t*.83+p.y*4.)*p.y*p.y*.2;
+          p.y*=.82+.14*sin(t)+.08*sin(t*1.71);
+          p*=uHeat;
+          vec4 mv=modelViewMatrix*instanceMatrix*vec4(p,1.);
+          vFacing=abs(dot(normalize(normalMatrix*normal),normalize(-mv.xyz)));
+          gl_Position=projectionMatrix*mv;
         }`,
       fragmentShader: /* glsl */`
-        uniform float uTime, uFade;
-        varying vec2 vUv;
-        varying float vSeed;
-        ${noise}
-        void main() {
-          // Sample the shape on a small grid. The silhouette and the hot core
-          // share the same cells, so this reads as block fire, not a smooth
-          // flame with pixel noise painted over it. Time remains continuous.
-          vec2 cell = (floor(vUv * vec2(20.0, 36.0)) + 0.5) / vec2(20.0, 36.0);
-          float y = cell.y, t = uTime * 1.65;
-          vec2 flow = vec2(cell.x * 3.8 + vSeed, y * 5.2 - t * 1.6);
-          float n = noise(flow) * 0.7 + noise(flow * 2.1 - t * 0.4) * 0.3;
-          float bend = sin(y * 5.0 - t * 2.0 + vSeed) * y * 0.13;
-          float x = abs(cell.x - 0.5 + bend + (n - 0.5) * y * 0.3);
-          float width = sin(3.14159 * pow(y, 0.62)) * 0.33 * (1.0 - y * 0.35);
-          float shape = (width - x) * 3.5 + (n - 0.5) * (0.4 + y * 1.4);
-          float body = smoothstep(0.015, 0.055, shape);
-          float tip = 1.0 - smoothstep(0.92, 0.98, y + (n - 0.5) * 0.3);
-          float alpha = body * tip * uFade;
-          if (abs(cell.x - 0.5) > 0.43 || alpha < 0.015) discard;
-          // Fine cells carry their own heat, from copper edges to a pale core.
-          // Quantized shading keeps the small facets readable as they rise.
-          float heat = clamp(shape * 0.85 + (1.0 - y) * 0.38 + n * 0.12, 0.0, 1.0);
-          heat = floor(heat * 8.0) / 8.0;
-          vec3 color = mix(vec3(0.68, 0.095, 0.018), vec3(1.0, 0.40, 0.055), smoothstep(0.05, 0.48, heat));
-          color = mix(color, vec3(1.0, 0.73, 0.22), smoothstep(0.40, 0.78, heat));
-          color = mix(color, vec3(1.0, 0.94, 0.64), smoothstep(0.72, 1.0, heat));
-          gl_FragColor = vec4(color, alpha * 0.95);
+        uniform float uHeat,uTime;
+        varying float vHeight,vFacing,vCore,vSeed;
+        void main(){
+          float heat=(1.-vHeight)*.60+vFacing*.30+sin(vHeight*12.-uTime*7.+vSeed)*.06;
+          vec3 color=mix(vec3(.82,.075,.008),vec3(1.,.36,.025),smoothstep(.1,.55,heat));
+          color=mix(color,vec3(1.,.84,.34),smoothstep(.57,.97,heat));
+          color=mix(color,mix(vec3(1.,.87,.43),vec3(1.,.53,.09),vHeight),vCore);
+          gl_FragColor=vec4(color,uHeat*mix(.84,.94,vCore));
           #include <colorspace_fragment>
         }`,
     })
-    this.flames = new THREE.InstancedMesh(flameGeometry, material, 11)
+    this.flames = new THREE.InstancedMesh(flameGeometry, material, 26)
     this.flames.frustumCulled = false
-    this.flames.renderOrder = 3
     const pose = new THREE.Object3D()
     for (let i = 0; i < this.flames.count; i++) {
-      const angle = i * 2.39996, spread = radius * .60 * Math.sqrt(i / 10)
-      pose.position.set(Math.cos(angle) * spread, .025, Math.sin(angle) * spread)
-      pose.scale.set(.48 + radius * .21, .85 + .65 * (Math.sin(i * 7.3) * .5 + .5), 1)
+      const n=i%13,core=i>=13,angle=n*2.39996,spread=radius*.68*Math.sqrt(n/12)
+      pose.position.set(Math.cos(angle)*spread,core?.04:.01,Math.sin(angle)*spread)
+      const width=(.18+.035*(n%3))*(core?.58:1)
+      pose.scale.set(width,(.50+.42*(Math.sin(n*7.3)*.5+.5))*(core?.53:1),width)
       pose.updateMatrix(); this.flames.setMatrixAt(i, pose.matrix)
     }
     this.flames.instanceMatrix.needsUpdate = true
-    this.hearth = new THREE.Mesh(groundGeometry, new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, toneMapped: false, uniforms: this.uniforms,
+    this.smoke = new THREE.InstancedMesh(smokeGeometry, new THREE.ShaderMaterial({
+      transparent:true,depthWrite:false,uniforms:this.uniforms,
       vertexShader: /* glsl */`
-        varying vec2 vUv;
-        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1); }`,
+        uniform float uTime,uFade;
+        varying float vAlpha,vLight;
+        void main(){
+          vec4 center=instanceMatrix*vec4(0,0,0,1);
+          float seed=dot(center.xz,vec2(17.3,9.7));
+          float life=fract(uTime*.34+seed);
+          float size=(.09+life*.16)*sin(life*3.14159);
+          vec3 p=center.xyz+position*size;
+          p.y+=.42+life*1.2;
+          p.x+=life*.22+sin(seed+life*4.)*.08;
+          p.z+=sin(seed)*life*.13;
+          vAlpha=sin(life*3.14159)*uFade*.28;
+          vLight=.5+.5*dot(normal,normalize(vec3(-.4,1.,.5)));
+          gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);
+        }`,
       fragmentShader: /* glsl */`
-        uniform float uTime, uFade;
+        varying float vAlpha,vLight;
+        void main(){
+          gl_FragColor=vec4(mix(vec3(.10,.105,.11),vec3(.25,.25,.24),vLight),vAlpha);
+          #include <colorspace_fragment>
+        }`,
+    }),8)
+    this.smoke.frustumCulled = false
+    for (let i=0;i<this.smoke.count;i++) {
+      const angle=i*2.39996,spread=radius*.5*Math.sqrt((i+1)/8)
+      pose.position.set(Math.cos(angle)*spread,0,Math.sin(angle)*spread)
+      pose.scale.setScalar(1);pose.updateMatrix();this.smoke.setMatrixAt(i,pose.matrix)
+    }
+    this.smoke.instanceMatrix.needsUpdate=true
+    this.hearth = new THREE.Mesh(groundGeometry, new THREE.ShaderMaterial({
+      transparent:true,depthWrite:false,toneMapped:false,uniforms:this.uniforms,vertexShader:vertex,
+      fragmentShader: /* glsl */`
+        uniform float uTime,uFade,uHeat;
         varying vec2 vUv;
-        ${noise}
-        void main() {
-          vec2 cell = (floor(vUv * 32.0) + 0.5) / 32.0;
-          float n = noise(cell * 8.0);
-          float edge = 1.0 - smoothstep(0.65, 1.0, length(vUv * 2.0 - 1.0) + (n - 0.5) * 0.2);
-          float ember = smoothstep(0.57, 0.83, n) * (0.7 + 0.3 * sin(uTime * 3.0 + n * 20.0));
-          vec3 color = mix(vec3(0.065, 0.022, 0.012), vec3(0.9, 0.18, 0.015), ember);
-          gl_FragColor = vec4(color, edge * 0.48 * uFade);
+        void main(){
+          vec2 p=vUv*2.-1.;
+          float ripple=sin(p.x*17.+sin(p.y*9.))*sin(p.y*19.+p.x*4.);
+          float edge=1.-smoothstep(.65,.98,length(p)+ripple*.06);
+          float coal=smoothstep(.55,.96,ripple)*(.65+.35*sin(uTime*2.+p.x*12.));
+          vec3 color=mix(vec3(.045,.033,.028),vec3(.95,.12,.008),coal*(.4+uHeat*.6));
+          gl_FragColor=vec4(color,edge*.64*uFade);
           #include <colorspace_fragment>
         }`,
     }))
     this.hearth.scale.setScalar(radius)
-    this.hearth.renderOrder = 2
-    this.group.add(this.hearth, this.flames)
+    this.group.add(this.hearth,this.flames,this.smoke)
     this.update(started)
   }
 
-  update(time: number): void {
-    this.uniforms.uTime.value = time - this.started
-    this.uniforms.uFade.value = Math.max(0, Math.min(1, (time - this.started) / .18, (this.until - time) / .65))
+  /** Cooling is presentation only; the damage zone has already expired. */
+  extinguish(time: number): void { this.extinguished = time }
+
+  update(time: number): boolean {
+    const age=time-this.started,cooling=this.extinguished===null?0:time-this.extinguished
+    this.uniforms.uTime.value=age
+    this.uniforms.uFade.value=Math.max(0,Math.min(1,age/.2,1-cooling/1.8))
+    this.uniforms.uHeat.value=this.extinguished===null?Math.max(0,Math.min(1,age/.16,(this.until-time)/.55)):0
+    this.flames.visible=this.uniforms.uHeat.value>0
+    return cooling<1.8
   }
 
   dispose(): void {
     this.group.removeFromParent()
-    this.flames.dispose()
-    ;(this.flames.material as THREE.Material).dispose()
+    for(const mesh of [this.flames,this.smoke]) {mesh.dispose();(mesh.material as THREE.Material).dispose()}
     ;(this.hearth.material as THREE.Material).dispose()
-    // Both tiny geometries are shared by all patches.
+    // Small geometries are shared by every patch.
   }
 }

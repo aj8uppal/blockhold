@@ -3438,7 +3438,7 @@ export class Game implements World {
     if (!tower.fuse(this)) return false
     if (!this.recovering) {
       const to = tower.model.getObjectByName('muzzle')?.getWorldPosition(new THREE.Vector3()) ?? tower.pos.clone()
-      const effect = seraphAwakening(from, to, tower.pos.y, donor.branch === 0)
+      const effect = seraphAwakening(from, to, tower.pos.y, donor.branch === 0, tower.model)
       effect.updateVisual?.(0)
       this.dynamic.add(effect.mesh)
       this.lingeringProjectiles.push(effect)

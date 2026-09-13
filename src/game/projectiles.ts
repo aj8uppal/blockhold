@@ -749,9 +749,14 @@ export interface BurnZone {
 }
 
 const burnZones: BurnZone[] = []
-function removeBurnZone(_world: World, z: BurnZone): void {
+const coolingBurns: BurnZone[] = []
+function removeBurnZone(world: World, z: BurnZone, smolder = false): void {
   z.done = true
-  z.visual.dispose()
+  if (smolder) {
+    z.visual.extinguish(world.time)
+    coolingBurns.push(z)
+    if (coolingBurns.length > 24) coolingBurns.shift()!.visual.dispose()
+  } else z.visual.dispose()
 }
 
 export function addBurnZone(world: World, at: THREE.Vector3, radius: number, dps: number, duration: number, credit?: KillCredit): void {
@@ -761,7 +766,7 @@ export function addBurnZone(world: World, at: THREE.Vector3, radius: number, dps
     if (own.length >= 3) removeBurnZone(world, own[0])
   }
   const until = world.time + duration
-  const visual = new GroundFire(at, radius, world.time, until)
+  const visual = new GroundFire(new THREE.Vector3(at.x, world.groundY(at.x, at.z), at.z), radius, world.time, until)
   world.dynamic.add(visual.group)
   burnZones.push({ visual, pos: at.clone(), radius, dps, until, done: false, credit })
 }
@@ -770,7 +775,7 @@ export function updateBurnZones(dt: number, world: World): void {
   for (const z of burnZones) {
     if (z.done) continue
     if (world.time > z.until) {
-      removeBurnZone(world, z)
+      removeBurnZone(world, z, true)
       continue
     }
     if (Math.random() < dt * 20) {
@@ -798,6 +803,9 @@ export function updateBurnZones(dt: number, world: World): void {
 /** One visual update per rendered frame, even when combat runs at 4×. */
 export function updateBurnVisuals(world: World): void {
   for (const zone of burnZones) if (!zone.done) zone.visual.update(world.time)
+  for (let i=coolingBurns.length-1;i>=0;i--) {
+    if (!coolingBurns[i].visual.update(world.time)) { coolingBurns[i].visual.dispose(); coolingBurns.splice(i,1) }
+  }
 }
 
 /** Flashover consumes only this Sunforge's live patches; no duplicate blast from retired fire. */
@@ -820,6 +828,8 @@ export function clearBurnZones(world: World): void {
     if (!z.done) removeBurnZone(world, z)
   }
   burnZones.length = 0
+  for (const z of coolingBurns) z.visual.dispose()
+  coolingBurns.length = 0
 }
 
 /** a sold tower takes its buried charges, runes, and burning ground with it */
@@ -827,6 +837,9 @@ export function clearOwnedEffects(world: World, owner: KillCredit): void {
   for (const m of mines) { if (!m.done && m.spec.owner === owner) removeMine(world, m) }
   for (const r of runes) { if (!r.done && r.owner === owner) removeRune(world, r) }
   for (const z of burnZones) { if (!z.done && z.credit === owner) removeBurnZone(world, z) }
+  for (let i=coolingBurns.length-1;i>=0;i--) {
+    if (coolingBurns[i].credit === owner) { coolingBurns[i].visual.dispose(); coolingBurns.splice(i,1) }
+  }
 }
 
 // ---------------- seismic charges (cannon capstone) ----------------
