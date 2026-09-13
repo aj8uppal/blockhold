@@ -140,6 +140,7 @@ function validate(value: unknown): BattleSession | null {
   if (!record(value.initialSave) || !integer(value.initialSave.xp, 99_999_999)) return null
   const initialSave = parseSave(value.initialSave)
   if (!initialSave) return null
+  delete initialSave.hold
   return {
     ruleset: value.ruleset as number,
     ...(value.balanceRuleset === undefined ? {} : { balanceRuleset: value.balanceRuleset as number }),

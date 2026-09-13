@@ -5,6 +5,7 @@ FROM node:24-slim
 WORKDIR /app
 COPY server/package.json ./server/package.json
 COPY server/src ./server/src
+COPY src/core/holdData.ts ./src/core/holdData.ts
 COPY src/core/saveMerge.ts ./src/core/saveMerge.ts
 COPY src/core/gameSpeed.ts ./src/core/gameSpeed.ts
 COPY src/game/ruleset.ts ./src/game/ruleset.ts

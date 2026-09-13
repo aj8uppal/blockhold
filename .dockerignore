@@ -14,3 +14,5 @@
 !src/core/saveMerge.ts
 !src/core/gameSpeed.ts
 !src/game/ruleset.ts
+
+!src/core/holdData.ts

@@ -1,3 +1,4 @@
+import type { HoldSnapshot } from './holdData.ts'
 import { gameSpeed, type GameSpeed } from './gameSpeed.ts'
 import { RULESET_VERSION } from '../game/ruleset.ts'
 import type { BattleSession } from '../game/session.ts'
@@ -26,6 +27,8 @@ export { coopEnabled, inviteCodeFromUrl } from './coopLink.ts'
 
 /** what the host chooses, and what everyone starts from */
 export interface CoopSetup {
+  hold?: HoldSnapshot
+  gathering?: boolean
   levelId: string
   difficulty: Difficulty
   hero: HeroId
@@ -37,9 +40,11 @@ export interface CoopSetup {
   loadout: { armory: Record<string, number>, xp: number, honors?: string[], heroPaths?: Record<string, string>, stars?: Record<string, number> }
 }
 
+interface LobbyPresence { members?: number[], lobbyRevision?: number, readySeats?: number[] }
+
 export type CoopEvent =
-  | { type: 'hello', generation?: number, seat: number, setup: CoopSetup | null, started: boolean, turn: number, speed: number, paused: boolean, seats: number, connected: number[] }
-  | { type: 'presence', seats: number, connected: number[] }
+  | LobbyPresence & { type: 'hello', generation?: number, seat: number, setup: CoopSetup | null, started: boolean, turn: number, speed: number, paused: boolean, seats: number, connected: number[] }
+  | LobbyPresence & { type: 'presence', seats: number, connected: number[] }
   | { type: 'setup', setup: CoopSetup }
   | { type: 'start', setup: CoopSetup, preparing?: boolean, restart?: boolean, generation?: number }
   | { type: 'turn', n: number, ticks: number }
@@ -62,6 +67,9 @@ export class CoopSession {
   generation = 0
   speed: GameSpeed = 1
   private listeners = new Set<(e: CoopEvent) => void>()
+  lobbyRevision = 0
+  readySeats: number[] = []
+  members: number[] = [0]
   seats = 1
   connected: number[] = []
   setup: CoopSetup | null = null
@@ -135,8 +143,9 @@ export class CoopSession {
     return session
   }
 
-  private adopt(data: { generation?: number, seats: number, connected: number[], setup: CoopSetup | null, started?: boolean, history?: CoopEvent[], seq?: number, paused?: boolean, speed?: number }): void {
+  private adopt(data: LobbyPresence & { generation?: number, seats: number, connected: number[], setup: CoopSetup | null, started?: boolean, history?: CoopEvent[], seq?: number, paused?: boolean, speed?: number }): void {
     this.generation = data.generation ?? 0
+    this.lobbyRevision = data.lobbyRevision ?? 0; this.readySeats = data.readySeats ?? []; this.members = data.members ?? Array.from({ length: data.seats }, (_, i) => i)
     this.seats = data.seats; this.connected = data.connected; this.setup = data.setup
     this.started = !!data.started; this.replayEvents = data.history ?? []; this.replaySeq = data.seq ?? 0
     this.paused = !!data.paused; this.speed = gameSpeed(data.speed)
@@ -191,6 +200,7 @@ export class CoopSession {
             const line = packet.split('\n').find(value => value.startsWith('data: '))
             if (!line) continue
             const msg = JSON.parse(line.slice(6)) as CoopEvent & { seq?: number }
+            if (msg.type === 'hello' || msg.type === 'presence') { this.lobbyRevision = msg.lobbyRevision ?? 0; this.readySeats = msg.readySeats ?? []; this.members = msg.members ?? Array.from({ length: msg.seats }, (_, i) => i) }
             if (msg.type === 'hello') {
               const restarted = this.started && (msg.generation ?? 0) !== this.generation
               this.generation = msg.generation ?? 0

@@ -1,3 +1,4 @@
+import { sanitizeHoldSnapshot } from '../../src/core/holdData.ts'
 import { gameSpeed } from '../../src/core/gameSpeed.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
@@ -53,6 +54,8 @@ interface Seat {
 }
 
 interface Room {
+  lobbyRevision: number
+  lobbyReady: Set<number>
   generation: number
   turnMs: number
   ticksPerTurn: number
@@ -123,6 +126,14 @@ function setSetup(room: Room, payload: unknown, res: ServerResponse): boolean {
     send(res, 400, { error: 'Invalid setup.' }); return false
   }
   const setup = payload as Record<string, unknown> | null
+  if (setup?.hold !== undefined) {
+    const hold = sanitizeHoldSnapshot(setup.hold)
+    if (!hold) { send(res, 400, { error: 'Invalid Hold snapshot.' }); return false }
+    payload = { ...setup, hold }
+  }
+  if (setup?.gathering === true && !setup.battle && Buffer.byteLength(JSON.stringify(payload)) > 16_384) {
+    send(res, 413, { error: 'Lobby setup is too large.' }); return false
+  }
   if (setup?.battle !== undefined) {
     const battle = setup.battle as Record<string, unknown> | null
     if (!battle || typeof battle !== 'object' || battle.ruleset !== RULESET_VERSION
@@ -142,8 +153,8 @@ function setSetup(room: Room, payload: unknown, res: ServerResponse): boolean {
   return true
 }
 
-function presence(room: Room): { seats: number, connected: number[] } {
-  return { seats: room.seats.size, connected: [...room.seats.entries()].filter(([, s]) => s.res).map(([n]) => n) }
+function presence(room: Room) {
+  return { seats: room.seats.size, members: [...room.seats.keys()], connected: [...room.seats.entries()].filter(([, s]) => s.res).map(([n]) => n), lobbyRevision: room.lobbyRevision, readySeats: [...room.lobbyReady] }
 }
 
 function startMetronome(room: Room): void {
@@ -237,6 +248,7 @@ export async function handleCoop(
     sweepRooms()
     if (rooms.size >= MAX_ROOMS) { send(res, 503, { error: 'too many rooms' }); return true }
     const room: Room = {
+      lobbyRevision: 0, lobbyReady: new Set(),
       generation: 0,
       turnMs: url.searchParams.get('paced') === '1' ? 100 : TURN_MS,
       ticksPerTurn: url.searchParams.get('paced') === '1' ? 6 : TICKS_PER_TURN,
@@ -272,7 +284,7 @@ export async function handleCoop(
   if (action === 'join' && req.method === 'POST') {
     if (room.ended || !room.replayAvailable) { send(res, 410, { error: 'This battle can no longer be joined.' }); return true }
     if (room.seats.size >= MAX_SEATS) { send(res, 409, { error: 'room is full' }); return true }
-    const seat = room.seats.size
+    const seat = [1, 2, 3].find(id => !room.seats.has(id))!
     const key = randomBytes(12).toString('base64url')
     room.seats.set(seat, { restart: url.searchParams.get('restart') === '1', paced: url.searchParams.get('paced') === '1', key, res: null, lastSeen: Date.now(), sent: { n: 0, until: 0 }, chat: { n: 0, until: 0 } })
     broadcast(room, { type: 'presence', ...presence(room) })
@@ -349,12 +361,22 @@ export async function handleCoop(
         if (room.started) { send(res, 409, { error: 'already started' }); return true }
         if (n !== 0) { send(res, 403, { error: 'host only' }); return true }
         if (!setSetup(room, payload, res)) return true
-        broadcast(room, { type: 'setup', setup: payload })
+        room.lobbyRevision++; room.lobbyReady.clear()
+        broadcast(room, { type: 'setup', setup: room.setup })
+        broadcast(room, { type: 'presence', ...presence(room) })
         break
       }
       case 'start': {
         if (n !== 0) { send(res, 403, { error: 'host only' }); return true }
         if (!room.started) {
+          if ((room.setup as Record<string, unknown> | null)?.gathering === true) {
+            if ([...room.seats].some(([id, seat]) => !seat.res || !room.lobbyReady.has(id))) {
+              send(res, 409, { error: 'Everyone must be connected and ready.' }); return true
+            }
+            if (payload !== undefined && JSON.stringify(payload) !== JSON.stringify(room.setup)) {
+              send(res, 409, { error: 'Settings changed. Ready up again before starting.' }); return true
+            }
+          }
           room.started = true
           room.turn = 0
           if (!setSetup(room, payload ?? room.setup, res)) { room.started = false; return true }
@@ -401,6 +423,21 @@ export async function handleCoop(
         if (room.preparing) room.resumeWhenReady = !payload
         room.paused = !!room.preparing || !!payload
         broadcast(room, { type: 'pause', on: room.paused, seat: n })
+        break
+      }
+      case 'lobbyReady': {
+        const value = payload as { revision?: number, ready?: boolean } | null
+        if (room.started || !room.setup || value?.revision !== room.lobbyRevision || typeof value.ready !== 'boolean') {
+          send(res, 409, { error: 'Settings changed. Ready up again.' }); return true
+        }
+        if (value.ready) room.lobbyReady.add(n); else room.lobbyReady.delete(n)
+        broadcast(room, { type: 'presence', ...presence(room) })
+        break
+      }
+      case 'leaveLobby': {
+        if (room.started) { send(res, 409, { error: 'The battle has already started.' }); return true }
+        if (n === 0) { room.ended = true; broadcast(room, { type: 'end', seat: n }); stopRoom(room) }
+        else { room.lobbyReady.delete(n); room.seats.delete(n); seat.res?.end(); broadcast(room, { type: 'presence', ...presence(room) }) }
         break
       }
       case 'ready': {

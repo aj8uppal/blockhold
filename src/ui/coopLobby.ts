@@ -1,3 +1,6 @@
+import { holdSnapshot } from '../hold/catalog.ts'
+import type { HoldSnapshot } from '../core/holdData.ts'
+import { readSession } from '../game/session.ts'
 import { HUNTS, huntAccess } from '../game/hunts.ts'
 import type { SaveData } from '../core/save.ts'
 import type { Difficulty, HeroId } from '../game/types.ts'
@@ -16,6 +19,7 @@ import type { ScreenName } from './screens.ts'
  * the first visit never pays for it.
  */
 export interface LobbyApi {
+  preview: (snapshot: HoldSnapshot) => Promise<() => void>
   root: HTMLElement
   save: () => SaveData
   show: (name: ScreenName) => void
@@ -50,15 +54,24 @@ export function leaveCoopLobby(): void {
  * fight. The battle starts for everyone on the host's word; the room is
  * then the game's, and this lobby only rerenders while it is on screen.
  */
-export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
+export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
   const save = api.save()
-  const wrap = el('div', 'screen menu-screen', api.root)
+  let disposed = false, sceneCleanup: (() => void) | null = null, sceneVersion = 0
+  const preview = (snapshot: HoldSnapshot) => {
+    const version = ++sceneVersion
+    sceneCleanup?.(); sceneCleanup = null
+    void api.preview(snapshot).then(cleanup => { if (disposed || version !== sceneVersion) cleanup(); else sceneCleanup = cleanup })
+  }
+  const cleanup = () => { disposed = true; sceneVersion++; sceneCleanup?.() }
+  const wrap = el('div', 'screen menu-screen gathering-screen', api.root)
   const card = el('div', 'menu-hero coop-card', wrap)
   el('h2', 'coop-title', card, `${icon('helmPlume')} Co-op`)
   const session = coopSession
+  preview(session?.setup?.hold ?? holdSnapshot(save))
 
   if (!session) {
-    el('div', 'coop-sub', card, 'Build and defend together. You share gold, lives, and one battlefield.')
+    el('div', 'coop-sub', card, 'Gather at your Hold, choose a battlefield, and defend together. Up to four wardens share gold and lives.')
+    if (readSession()) el('p', 'coop-sub dim', card, 'Opening a room keeps your saved solo battle. Starting a new battle replaces that continuation.')
     const open = el('button', 'btn primary big', card, `${icon('castle')} Open a room`) as HTMLButtonElement
     const err = el('div', 'coop-error', card, '')
     if (CoopSession.savedRoom()) {
@@ -66,18 +79,22 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
       rejoin.onclick = async () => {
         rejoin.disabled = true
         try {
-          coopSession = await CoopSession.resume()
+          const next = await CoopSession.resume()
+          if (disposed) { next.close(); return }
+          coopSession = next
           attachCoop(api)
-          if (coopSession) api.show('coop')
+          if (coopSession && !disposed) api.show('coop')
         } catch (e) { err.textContent = e instanceof Error ? e.message : 'Could not rejoin'; rejoin.disabled = false }
       }
     }
     open.onclick = async () => {
       open.disabled = true
       try {
-        coopSession = await CoopSession.create()
+        const next = await CoopSession.create()
+          if (disposed) { next.close(); return }
+          coopSession = next
         attachCoop(api)
-        if (coopSession) api.show('coop')
+        if (coopSession && !disposed) api.show('coop')
       } catch (e) {
         err.textContent = e instanceof Error ? e.message : 'Could not open a room'
         open.disabled = false
@@ -98,9 +115,11 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
       if (code.length < 5) { err.textContent = 'A room code is five letters'; return }
       join.disabled = true
       try {
-        coopSession = await CoopSession.join(code)
+        const next = await CoopSession.join(code)
+          if (disposed) { next.close(); return }
+          coopSession = next
         attachCoop(api)
-        if (coopSession) api.show('coop')
+        if (coopSession && !disposed) api.show('coop')
       } catch (e) {
         err.textContent = e instanceof Error ? e.message : 'Could not join'
         join.disabled = false
@@ -111,7 +130,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
     if (prefill && prefill.length === 5) void doJoin()
     const back = el('button', 'btn ghost', card, '← Menu') as HTMLButtonElement
     back.onclick = () => api.show('menu')
-    return
+    return cleanup
   }
 
   // in a room
@@ -123,83 +142,103 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): void {
     try { await navigator.clipboard.writeText(url); share.textContent = 'Link copied' } catch { share.textContent = url }
     setTimeout(() => { share.innerHTML = `${icon('share')} Copy invite link` }, 2200)
   }
-  const who = el('div', 'coop-who', card, '')
+  const who = el('div', 'gathering-seats', card)
+  const error = el('p', 'coop-error', card); error.setAttribute('role', 'status')
+  let pending = false
+  const plan = el('div', 'coop-plan', card)
   const paintWho = () => {
-    const n = session.connected.length
-    who.innerHTML = `${icon('helmPlume')} <b>${n}</b> of <b>${session.seats}</b> ${session.seats === 1 ? 'warden' : 'wardens'} connected` +
-      (session.seats < 2 ? ' · waiting for a friend' : n < session.seats ? ' · someone is reconnecting' : '')
-  }
-  paintWho()
-
-  if (session.isHost) {
-    const setup = coopSetup ?? defaultCoopSetup(save)
-    coopSetup = setup
-    const sendSetup = () => { coopSetup = setup; void session.send('setup', setup) }
-    el('div', 'diff-sub', card, 'Battle mode')
-    const mode = el('select', 'coop-select', card) as HTMLSelectElement
-    mode.setAttribute('aria-label', 'Co-op battle mode')
-    for (const [value, label] of [['campaign', 'Campaign'], ['sandbox', 'Sandbox · free building, no rewards']]) {
-      const option = document.createElement('option'); option.value = value; option.textContent = label
-      option.selected = value === (setup.mode ?? 'campaign'); mode.append(option)
+    who.replaceChildren()
+    for (let id = 0; id < 4; id++) {
+      const member = session.members.includes(id), connected = session.connected.includes(id), ready = session.readySeats.includes(id)
+      const cell = el('div', `gathering-seat${connected ? ' connected' : ''}`, who)
+      el('strong', '', cell, id === 0 ? 'Host' : `Warden ${id + 1}`)
+      el('span', '', cell, !member ? 'Open seat' : !connected ? 'Reconnecting…' : ready ? 'Ready ✓' : 'Choosing')
     }
-    mode.onchange = () => { setup.mode = mode.value === 'sandbox' ? 'sandbox' : 'campaign'; setup.levelId = levels[0].id; setup.hero = 'aldric'; sendSetup(); api.show('coop') }
-    el('div', 'diff-sub', card, 'Choose the battlefield')
-    const sel = el('select', 'coop-select', card) as HTMLSelectElement
-    sel.setAttribute('aria-label', 'Co-op battlefield')
-    levels.forEach((lvl, i) => {
-      if (setup.mode !== 'sandbox' && i >= save.unlocked) return
-      const o = document.createElement('option')
-      o.value = lvl.id; o.textContent = `${i + 1}. ${lvl.name}`
-      if (lvl.id === setup.levelId) o.selected = true
-      sel.appendChild(o)
-    })
-    if (setup.mode !== 'sandbox' && huntAccess(save)) for (const hunt of HUNTS) {
-      const o = document.createElement('option')
-      o.value = `hunt-${hunt.id}`; o.textContent = `Hunt · ${hunt.name}`
-      o.selected = o.value === setup.levelId; sel.append(o)
-    }
-    sel.onchange = () => { setup.levelId = sel.value; sendSetup() }
-    el('div', 'diff-sub', card, 'Champion')
-    const heroRow = el('div', 'mode-row', card)
-    for (const def of Object.values(HERO_DEFS)) {
-      if (setup.mode !== 'sandbox' && !isUnlocked(save, 'hero', def.id)) continue
-      const b = el('button', `mode-option${setup.hero === def.id ? ' picked' : ''}`, heroRow, def.name) as HTMLButtonElement
-      b.setAttribute('aria-pressed', String(setup.hero === def.id))
-      b.onclick = () => { setup.hero = def.id; heroRow.querySelectorAll('.mode-option').forEach(x => { x.classList.toggle('picked', x === b); x.setAttribute('aria-pressed', String(x === b)) }); sendSetup() }
-    }
-    el('div', 'diff-sub', card, 'Challenge')
-    const diffRow = el('div', 'mode-row', card)
-    for (const key of ['casual', 'normal', 'veteran'] as Difficulty[]) {
-      const d = difficultyMods(setup.levelId, key)
-      const b = el('button', `mode-option${setup.difficulty === key ? ' picked' : ''}`, diffRow, d.name) as HTMLButtonElement
-      b.setAttribute('aria-pressed', String(setup.difficulty === key))
-      b.onclick = () => { setup.difficulty = key; diffRow.querySelectorAll('.mode-option').forEach(x => { x.classList.toggle('picked', x === b); x.setAttribute('aria-pressed', String(x === b)) }); sendSetup() }
-    }
-    const start = el('button', 'btn primary big', card, `${icon('swords')} Start the battle`) as HTMLButtonElement
-    const paintStart = () => { start.disabled = session.connected.length < 1 }
-    paintStart()
-    start.onclick = () => {
-      setup.seed = newRunSeed()
-      setup.loadout = { armory: { ...save.armory }, xp: save.xp, stars: { ...save.stars }, honors: [...(save.honors ?? [])], heroPaths: { ...save.heroPaths } }
-      void session.send('start', setup)
-    }
-    // the first setup goes out as soon as the room has a picture to send
-    sendSetup()
-    coopPaint = () => { paintWho(); paintStart() }
-  } else {
-    const plan = el('div', 'coop-plan', card, '')
-    const paintPlan = () => {
-      const st = session.setup
-      if (!st) { plan.textContent = 'The host is choosing…'; return }
+    const st = session.setup
+    if (st) {
       const lvl = levels.find(l => l.id === st.levelId) ?? HUNTS.find(h => `hunt-${h.id}` === st.levelId)
       plan.textContent = `${st.mode === 'sandbox' ? 'Sandbox · ' : ''}${lvl?.name ?? st.levelId} · ${difficultyMods(st.levelId, st.difficulty).name} · ${HERO_DEFS[st.hero]?.name ?? st.hero}`
+    } else plan.textContent = 'The host is choosing the battle…'
+  }
+  const send = async (type: string, payload?: unknown) => {
+    pending = true; paint(); error.textContent = ''
+    const ok = await session.send(type, payload)
+    pending = false
+    if (!ok) error.textContent = 'Could not update the room. Check your connection and try again.'
+    if (!disposed) paint()
+    return ok
+  }
+  if (session.isHost) {
+    const setup = session.setup ?? coopSetup ?? defaultCoopSetup(save)
+    coopSetup = setup
+    const details = el('details', 'gathering-settings', card)
+    el('summary', '', details, 'Battle settings')
+    const update = async (patch: Partial<CoopSetup>) => {
+      const next = { ...(session.setup ?? coopSetup ?? setup), ...patch }
+      if (await send('setup', next)) coopSetup = next
     }
-    paintPlan()
-    el('div', 'coop-sub dim', card, 'Waiting for the host to start…')
-    coopPaint = () => { paintWho(); paintPlan() }
+    el('label', 'diff-sub', details, 'Mode')
+    const mode = el('select', 'coop-select', details); mode.setAttribute('aria-label', 'Co-op battle mode')
+    for (const [value, label] of [['campaign', 'Campaign'], ['sandbox', 'Sandbox · no rewards']]) {
+      const option = document.createElement('option'); option.value = value; option.textContent = label; option.selected = value === (setup.mode ?? 'campaign'); mode.append(option)
+    }
+    mode.onchange = async () => { if (await send('setup', { ...setup, mode: mode.value, levelId: levels[0].id, hero: 'aldric' })) api.show('coop') }
+    el('label', 'diff-sub', details, 'Battlefield')
+    const sel = el('select', 'coop-select', details); sel.setAttribute('aria-label', 'Co-op battlefield')
+    levels.forEach((lvl, i) => {
+      if (setup.mode !== 'sandbox' && i >= save.unlocked) return
+      const o = document.createElement('option'); o.value = lvl.id; o.textContent = lvl.name; o.selected = lvl.id === setup.levelId; sel.append(o)
+    })
+    if (setup.mode !== 'sandbox' && huntAccess(save)) for (const hunt of HUNTS) {
+      const o = document.createElement('option'); o.value = `hunt-${hunt.id}`; o.textContent = hunt.name; o.selected = o.value === setup.levelId; sel.append(o)
+    }
+    sel.onchange = () => { void update({ levelId: sel.value }) }
+    el('label', 'diff-sub', details, 'Champion')
+    const hero = el('select', 'coop-select', details); hero.setAttribute('aria-label', 'Co-op champion')
+    for (const def of Object.values(HERO_DEFS)) {
+      if (setup.mode !== 'sandbox' && !isUnlocked(save, 'hero', def.id)) continue
+      const option = document.createElement('option'); option.value = def.id; option.textContent = def.name; option.selected = def.id === setup.hero; hero.append(option)
+    }
+    hero.onchange = () => { void update({ hero: hero.value as HeroId }) }
+    el('label', 'diff-sub', details, 'Difficulty')
+    const diff = el('select', 'coop-select', details); diff.setAttribute('aria-label', 'Co-op difficulty')
+    for (const key of ['casual', 'normal', 'veteran'] as Difficulty[]) {
+      const option = document.createElement('option'); option.value = key; option.textContent = difficultyMods(setup.levelId, key).name; option.selected = key === setup.difficulty; diff.append(option)
+    }
+    diff.onchange = () => { void update({ difficulty: diff.value as Difficulty }) }
+  }
+  const ready = el('button', 'btn primary', card, 'Ready')
+  ready.onclick = () => { void send('lobbyReady', { revision: session.lobbyRevision, ready: !session.readySeats.includes(session.seat) }) }
+  const start = session.isHost ? el('button', 'btn primary big', card, 'Start the battle') : null
+  if (start) start.onclick = () => { void send('start') }
+  const help = el('p', 'coop-sub dim', card)
+  let lastHold = JSON.stringify(session.setup?.hold)
+  function paint(): void {
+    if (!session) return
+    paintWho()
+    const connected = session.connected.includes(session.seat)
+    ready.textContent = session.readySeats.includes(session.seat) ? 'Ready ✓ · tap to undo' : 'Ready'
+    ready.disabled = pending || !connected || !session.setup
+    ready.setAttribute('aria-pressed', String(session.readySeats.includes(session.seat)))
+    if (start) start.disabled = pending || !session.setup || !session.members.every(id => session.readySeats.includes(id) && session.connected.includes(id))
+    card.querySelectorAll('select').forEach(select => { select.disabled = pending || !connected })
+    help.textContent = !connected ? 'Reconnecting to the room…' : session.setup?.gathering ? 'Everyone readies up. The host starts when the party is ready. Tap a trophy to inspect it.' : 'This room uses an older lobby. The host can start when everyone is ready.'
+    const current = JSON.stringify(session.setup?.hold)
+    if (current !== lastHold && session.setup?.hold) { lastHold = current; preview(session.setup.hold) }
+  }
+  coopPaint = paint
+  paint()
+  if (session.isHost && !session.setup) {
+    const setup = coopSetup ?? defaultCoopSetup(save)
+    void send('setup', setup)
   }
   const leave = el('button', 'btn ghost', card, 'Leave the room') as HTMLButtonElement
-  leave.onclick = () => { leaveCoopLobby(); api.show('menu') }
+  leave.onclick = async () => {
+    leave.disabled = true
+    if (await session.send('leaveLobby')) { leaveCoopLobby(); api.show('menu') }
+    else { error.textContent = 'Could not leave the room. Try again when connected.'; leave.disabled = false }
+  }
+  return cleanup
 }
 
 let coopPaint: () => void = () => {}
@@ -207,7 +246,7 @@ let coopPaint: () => void = () => {}
 function defaultCoopSetup(save: SaveData): CoopSetup {
   const last = levels[Math.max(0, Math.min(save.unlocked, levels.length) - 1)]
   const hero = (Object.hasOwn(HERO_DEFS, save.lastHero) && isUnlocked(save, 'hero', save.lastHero as HeroId) ? save.lastHero : 'aldric') as HeroId
-  return { levelId: last.id, difficulty: 'normal', hero, seed: 0, loadout: { armory: { ...save.armory }, xp: save.xp, stars: { ...save.stars }, honors: [...(save.honors ?? [])], heroPaths: { ...save.heroPaths } } }
+  return { levelId: last.id, difficulty: 'normal', hero, seed: newRunSeed(), gathering: true, hold: holdSnapshot(save), loadout: { armory: { ...save.armory }, xp: save.xp, stars: { ...save.stars }, honors: [...(save.honors ?? [])], heroPaths: { ...save.heroPaths } } }
 }
 
 function attachCoop(api: LobbyApi): void {
@@ -225,7 +264,7 @@ function attachCoop(api: LobbyApi): void {
       return
     }
     if (!api.isCurrent()) return
-    if (e.type === 'presence' || e.type === 'hello' || e.type === 'setup') coopPaint()
+    if (e.type === 'presence' || e.type === 'hello' || e.type === 'setup' || e.type === 'connection') coopPaint()
     if (e.type === 'end') { leaveCoopLobby(); api.show('coop') }
   })
   if (session.started && session.setup) {

@@ -1,3 +1,5 @@
+import { sanitizeHold, mergeHold, rememberHoldDaily, type HoldRecord } from './holdData.ts'
+
 /**
  * Merging two copies of a player's progress.
  *
@@ -21,6 +23,7 @@
  */
 
 export interface CloudSave {
+  hold?: HoldRecord
   unlocked: number
   stars: Record<string, number>
   armory: Record<string, number>
@@ -128,6 +131,7 @@ export function sanitizeCloudSave(v: unknown): CloudSave {
     capstones: Array.isArray(o.capstones)
       ? [...new Set(o.capstones.filter((x): x is string => typeof x === 'string' && /^[a-z]+:[01]$/.test(x)))].slice(0, 32)
       : [],
+    hold: sanitizeHold(o.hold),
     honors: sanitizeHonors(o.honors),
     heroPaths: sanitizeHeroPaths(o.heroPaths),
     lastHero: typeof o.lastHero === 'string' && /^[a-z]{1,24}$/.test(o.lastHero) ? o.lastHero : 'aldric',
@@ -159,6 +163,9 @@ function betterDaily(a: CloudSave['dailyBest'], b: CloudSave['dailyBest']): Clou
 }
 
 export function mergeSaves(a: CloudSave, b: CloudSave): CloudSave {
+  // Preserve daily rewards before betterDaily replaces the older result.
+  a = { ...a }; b = { ...b }
+  rememberHoldDaily(a); rememberHoldDaily(b)
   // whichever copy was written more recently owns the fields a player is
   // allowed to change their mind about
   const recent = b.updatedAt >= a.updatedAt ? b : a
@@ -171,6 +178,7 @@ export function mergeSaves(a: CloudSave, b: CloudSave): CloudSave {
     trials[k] = [...new Set([...(trials[k] ?? []), ...v])]
   }
   return {
+    hold: mergeHold(a.hold, b.hold),
     unlocked: Math.max(a.unlocked, b.unlocked),
     stars: maxMerge(a.stars, b.stars),
     bestEndless: maxMerge(a.bestEndless, b.bestEndless),

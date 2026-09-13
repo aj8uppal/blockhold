@@ -1,0 +1,83 @@
+#screens > .hold-screen { pointer-events: none; }
+.hold-screen { position: absolute; inset: 0; color: var(--ui-text); font-size: 14px; background: linear-gradient(180deg,#09121870,transparent 22%,transparent 75%,#09121840); }
+.hold-screen button, .hold-screen input, .hold-screen textarea { font: inherit; }
+.hold-screen .btn { min-height: 44px; padding: 11px 15px; font-size: 13px; line-height: 1.3; border-radius: 10px; }
+.hold-header, .hold-toolbar, .hold-camera, .hold-panel, .hold-sheet { pointer-events: auto; }
+.hold-header { position: absolute; top: max(16px,env(safe-area-inset-top)); left: max(20px,env(safe-area-inset-left)); right: max(20px,env(safe-area-inset-right)); display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.hold-header > .btn, .hold-toolbar, .hold-camera { background: #142229ee; border: 1px solid #ffffff28; box-shadow: 0 8px 26px #0002; }
+.hold-header > .primary { background: var(--ui-gold); }
+.hold-heading { text-align: center; min-width: 0; }
+.hold-heading h1 { margin: 2px 0 0; font-size: 24px; font-weight: 650; letter-spacing: -.045em; overflow-wrap: anywhere; }
+.hold-heading .eyebrow { color: #fff3d4; text-shadow: 0 1px 7px #0008; }
+.hold-toolbar { display: flex; gap: 4px; position: absolute; bottom: max(22px,env(safe-area-inset-bottom)); left: 24px; padding: 6px; border-radius: 14px; }
+.hold-toolbar .btn, .hold-camera .btn { border-color: transparent; background: transparent; }
+.hold-toolbar .btn:hover, .hold-camera .btn:hover { background: #ffffff12; }
+.hold-camera { position: absolute; left: 24px; top: 100px; display: flex; border-radius: 12px; padding: 3px; }
+.hold-camera .btn { padding: 8px 12px; min-width: 40px; }
+.hold-panel { position: absolute; right: max(24px,env(safe-area-inset-right)); top: 110px; width: 320px; max-height: calc(100% - 170px); overflow: auto; padding: 24px; border: 1px solid #ffffff28; border-radius: 20px; background: #132128f5; box-shadow: 0 18px 48px #0003; scrollbar-width: thin; }
+.hold-screen h2 { font-size: 23px; font-weight: 620; line-height: 1.2; letter-spacing: -.035em; margin: 8px 0 14px; }
+.hold-screen h3 { font-size: 15px; font-weight: 600; margin: 10px 0 6px; }
+.hold-screen p { font-size: 13px; line-height: 1.65; color: #b9c7cb; margin: 8px 0 16px; }
+.hold-panel > .btn { width: 100%; margin: 8px 0; }
+.hold-panel .eyebrow:not(:first-child) { display: block; margin-top: 24px; }
+.hold-count { padding: 14px 0; border-top: 1px solid #ffffff16; color: var(--ui-gold); font-size: 13px; }
+.hold-hint { display: block; color: #a5b8bf; line-height: 1.5; font-size: 11px; margin: 8px 0; }
+.hold-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 16px; }
+.hold-actions .btn { flex: 1; padding: 10px; }
+.hold-edit-actions { border-top: 1px solid #ffffff18; padding-top: 16px; }
+.hold-label { display: block; color: #b9c7cb; font-size: 12px; margin: 16px 0; }
+.hold-input { display: block; width: 100%; border: 1px solid #ffffff35; border-radius: 8px; padding: 12px; margin-top: 8px; background: #09151c; color: #f5f3ec; box-sizing: border-box; }
+.hold-options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 10px 0; }
+.hold-screen [aria-pressed=true] { background: #e9c07820; border-color: #e9c07890; color: #f2d096; }
+.hold-screen .btn:disabled { opacity: .45; cursor: default; }
+.hold-status { position: absolute; bottom: 92px; left: 24px; max-width: min(500px,60vw); padding: 9px 14px; border-radius: 8px; background: #132128ee; color: #f3d494; font-size: 12px; line-height: 1.5; }
+.hold-status:empty { display: none; }
+.hold-overlay { position: fixed; inset: 0; display: grid; align-items: center; justify-items: center; padding: 24px; background: #0711179c; pointer-events: auto; z-index: 3; }
+.hold-sheet { width: min(880px,100%); max-height: calc(100dvh - 80px); overflow: auto; padding: 26px; border: 1px solid #ffffff28; border-radius: 22px; box-sizing: border-box; background: #132128; box-shadow: 0 20px 80px #0006; scrollbar-width: thin; }
+.hold-sheet:not(:has(.hold-collection)) { width: min(460px,100%); }
+.hold-sheet > .btn { display: block; width: 100%; margin-top: 10px; }
+.hold-sheet-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.hold-sheet-head h2 { margin-top: 6px; }
+.hold-sheet-head .btn { font-size: 24px; padding: 4px 14px; }
+.hold-filters { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 20px; }
+.hold-filters .btn { padding: 8px 12px; }
+.hold-collection { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.hold-reward { display: flex; flex-direction: column; padding: 18px; border: 1px solid #ffffff1d; border-radius: 14px; background: #ffffff04; }
+.hold-reward-icon { color: #e9c078; padding: 10px 0; }
+.hold-reward-icon .ico { width: 32px; height: 32px; }
+.hold-reward small { font-size: 11px; color: #a7bbc1; }
+.hold-reward p { font-size: 12px; margin-top: 14px; }
+.hold-reward > .btn { margin-top: auto; }
+@media (max-width: 700px) and (orientation: portrait) {
+  .hold-header { left: 12px; right: 12px; gap: 8px; }
+  .hold-header .btn { padding: 9px 12px; font-size: 12px; }
+  .hold-heading .eyebrow { display: none; }
+  .hold-heading h1 { font-size: 19px; }
+  .hold-camera { left: 12px; top: 78px; }
+  .hold-panel { left: 12px; right: 12px; width: auto; top: auto; bottom: max(88px,calc(env(safe-area-inset-bottom) + 76px)); max-height: 31dvh; padding: 18px; border-radius: 18px; }
+  .hold-panel h2 { font-size: 21px; }
+  .hold-panel p { margin-bottom: 10px; }
+  .hold-toolbar { left: 12px; right: 12px; bottom: max(12px,env(safe-area-inset-bottom)); justify-content: space-around; padding: 5px; }
+  .hold-toolbar .btn { padding: 10px; }
+  .hold-status { left: 12px; right: 12px; max-width: none; bottom: calc(34dvh + 92px); }
+  .hold-overlay { padding: 10px; }
+  .hold-sheet { padding: 18px; max-height: calc(100dvh - 30px); }
+  .hold-collection { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+  .hold-reward { padding: 13px; }
+  .placing .hold-panel { max-height: 20dvh; }
+  .hold-hint { font-size: 10px; }
+}
+@media (max-height: 580px) and (orientation: landscape) {
+  .hold-header { top: 10px; left: 14px; right: 14px; }
+  .hold-heading .eyebrow { display: none; }
+  .hold-heading h1 { font-size: 20px; }
+  .hold-panel { top: 72px; bottom: 12px; right: 14px; width: 255px; max-height: none; padding: 16px; }
+  .hold-panel h2 { font-size: 20px; }
+  .hold-camera { top: 70px; left: 14px; }
+  .hold-toolbar { left: 14px; bottom: 12px; }
+  .hold-toolbar .btn { padding: 10px; }
+  .hold-status { left: 14px; bottom: 78px; max-width: calc(100% - 320px); }
+  .hold-sheet { max-height: calc(100dvh - 20px); padding: 18px; }
+}
+
+.hold-screen [hidden] { display: none !important; }

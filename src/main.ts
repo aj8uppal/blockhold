@@ -57,6 +57,36 @@ function createGame(): Game {
 const game = createGame()
 const hud = new HUD(game)
 const screens = new Screens(() => game.save)
+let holdInput: import('./hold/screen.ts').HoldControls | null = null
+let holdMountToken = 0, coopPreviewToken = 0
+screens.onOpenHold = code => {
+  const token = ++holdMountToken
+  void import('./hold/screen.ts').then(({ mountHold }) => {
+    if (!screens.isCurrent('hold') || token !== holdMountToken) return
+    holdInput = mountHold({ root: screens.root, engine: game.engine, save: () => game.save,
+      restoreBackdrop: game.hideMenuBackdrop(), sync: syncNow,
+      go: (where, source) => { if (where === 'daily') screens.onPlayDaily(); else if (where === 'levels' && source) screens.showHoldObjective(source); else screens.show(where) },
+    }, code)
+    const controls = holdInput
+    screens.setCleanup(() => { if (holdInput === controls) holdInput = null; controls.dispose() })
+  })
+}
+screens.onCoopBackdrop = async snapshot => {
+  const token = ++coopPreviewToken
+  const { HoldScene } = await import('./hold/scene.ts')
+  if (!screens.isCurrent('coop') || token !== coopPreviewToken) return () => {}
+  const { holdCatalog } = await import('./hold/catalog.ts')
+  if (!screens.isCurrent('coop') || token !== coopPreviewToken) return () => {}
+  const scene = new HoldScene(game.engine, snapshot, game.hideMenuBackdrop(), true)
+  const controls = { click: (x: number, y: number) => {
+    const hit = scene.pick(x, y), p = snapshot.pieces.find(p => p.id === hit?.id)
+    scene.highlight(p)
+    const reward = holdCatalog(game.save).find(r => r.id === p?.id)
+    if (reward) hud.showToast(`${reward.name} · ${reward.requirement}`, 5)
+  }, key: () => {}, dispose: () => scene.dispose() }
+  holdInput = controls
+  return () => { if (holdInput === controls) holdInput = null; scene.dispose() }
+}
 // storage that throws is a browser setting, not a bug; the game still plays,
 // but the player deserves to know their campaign is not being kept
 const storageWorks = safeLocal.available()
@@ -215,7 +245,17 @@ screens.onPlayLevel = (id, difficulty, hero, mode) => {
   )
 }
 // a challenge link drops the visitor straight onto the sender's exact board
-const challenge = readChallenge()
+const visitCode = new URLSearchParams(location.hash.slice(1)).get('visit')
+window.addEventListener('hashchange', () => {
+  const visit = new URLSearchParams(location.hash.slice(1)).get('visit')
+  if (visit === null) return
+  if (game.phase === 'idle') {
+    const open = () => screens.show('hold', { visit })
+    if (holdInput?.navigate) holdInput.navigate(open); else open()
+  }
+  else hud.showToast('Save your battle and return home before opening this Hold link.', 5)
+})
+const challenge = visitCode !== null ? null : readChallenge()
 const challengeSeed = challenge?.levelId ? null : (challenge?.seed ?? null)
 
 screens.onPlayDaily = () => {
@@ -403,6 +443,7 @@ if (challenge) {
   screens.show('menu')
   game.showMenuBackdrop()
   hud.setChrome(false)
+  if (visitCode !== null) screens.show('hold', { visit: visitCode })
 }
 
 // dev/testing handle
@@ -552,7 +593,7 @@ const endPointer = (e: PointerEvent, isClick: boolean) => {
   lastCentroid = null
   if (!isClick || wasDrag) return
   if (e.pointerType === 'touch') canvasTouchClickUntil = performance.now() + 500
-  if (btn === 0) game.handleClick(e.clientX, e.clientY, e.pointerType === 'touch')
+  if (btn === 0) { if (holdInput) holdInput.click(e.clientX, e.clientY); else game.handleClick(e.clientX, e.clientY, e.pointerType === 'touch') }
   else if (btn === 2 && game.targetMode) game.setTargetMode(null)
 }
 
@@ -603,7 +644,7 @@ function syncNow(): void {
   })
 }
 void cloud.finishSignIn(game.save).then(merged => {
-  if (merged) { Object.assign(game.save, merged); writeSave(game.save); if (game.phase === 'idle') screens.show('menu'); hud.showToast('Signed in. Your progress is synced.', 4) }
+  if (merged) { Object.assign(game.save, merged); writeSave(game.save); if (game.phase === 'idle' && screens.isCurrent('menu')) screens.show('menu'); hud.showToast('Signed in. Your progress is synced.', 4) }
   else if (cloud.status().lastError) hud.showToast(cloud.status().lastError!, 6)
   if (cloud.signedIn) syncNow()
 })
@@ -618,6 +659,7 @@ window.addEventListener('pagehide', () => telemetry.flush())
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat || e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))) return
+  if (holdInput) { holdInput.key(e); return }
   // Space/Enter activate a focused control; they must not also call a wave.
   if ((e.code === 'Space' || e.code === 'Enter') && e.target instanceof Element && e.target.closest('button, summary, a')) return
   if (e.code === 'KeyV' && !isPortalMode()) { toggleFullscreen(); return }

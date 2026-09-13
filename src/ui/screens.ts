@@ -23,7 +23,7 @@ import { isUnlocked, levelProgress, nextUnlock, unlockLevel, xpForLevel, MAX_LEV
 import { cloud } from '../core/cloud.ts'
 import { dailyShareText, challengeUrl, runChallengeUrl, runShareText, type DailyResult } from '../game/share.ts'
 
-export type ScreenName = 'menu' | 'sandbox' | 'levels' | 'victory' | 'defeat' | 'coop' | 'hunts' | 'none'
+export type ScreenName = 'menu' | 'hold' | 'sandbox' | 'levels' | 'victory' | 'defeat' | 'coop' | 'hunts' | 'none'
 
 const THEME_ART: Record<string, string> = {
   forest: 'linear-gradient(160deg, #79c057 0%, #4e9a3d 55%, #2e7a52 100%)',
@@ -186,14 +186,21 @@ export class Screens {
   }
 
   private current: ScreenName = 'none'
+  private cleanup: (() => void) | null = null
+  onOpenHold: (code?: string) => void = () => {}
+  onCoopBackdrop: (snapshot: import('../core/holdData.ts').HoldSnapshot) => Promise<() => void> = async () => () => {}
+  isCurrent(name: ScreenName): boolean { return this.current === name }
+  setCleanup(cleanup: () => void): void { this.cleanup = cleanup }
 
-  show(name: ScreenName, opts: { stars?: number, levelId?: string, stats?: BattleStats, coopCode?: string } = {}): void {
+  show(name: ScreenName, opts: { stars?: number, levelId?: string, stats?: BattleStats, coopCode?: string, visit?: string } = {}): void {
+    this.cleanup?.(); this.cleanup = null
     this.root.innerHTML = ''
     this.current = name
     this.root.classList.toggle('hidden', name === 'none')
     this.root.classList.toggle('transparent-bg', name === 'victory' || name === 'defeat')
     switch (name) {
       case 'menu': this.renderMenu(); break
+      case 'hold': this.onOpenHold(opts.visit); break
       case 'levels': this.renderLevels(); break
       case 'sandbox': this.renderLevels(true); break
       case 'hunts': void import('./endgame.ts').then(({ renderEndgame }) => { if (this.current === 'hunts') renderEndgame(this.root, this.save(), this.onPlayHunt, () => this.show('menu')) }); break
@@ -210,10 +217,14 @@ export class Screens {
     const masthead = el('header', 'home-masthead', wrap)
     el('div', 'home-brand', masthead, `${icon('castle')} <span>BLOCKHOLD</span>`)
     el('span', 'home-edition', masthead, 'A voxel tower defense')
-    if (pieces.towers > 0) {
+    {
       const hold = el('button', 'menu-account hold-view', masthead, `${icon('castle')} Your Hold`)
-      hold.setAttribute('aria-pressed', 'false')
-      hold.onclick = () => hold.setAttribute('aria-pressed', String(wrap.classList.toggle('viewing-hold')))
+      hold.onclick = () => this.show('hold')
+      void import('../hold/catalog.ts').then(({ newHoldRewards }) => {
+        if (!hold.isConnected) return
+        const n = newHoldRewards(this.save()).length
+        if (n) hold.append(document.createTextNode(` · ${n} new`))
+      })
     }
     const layout = el('div', 'home-layout', wrap)
     const card = el('div', 'menu-hero main-menu', layout)
@@ -308,20 +319,7 @@ export class Screens {
     // something standing, so a bare Hold never invites a picture of nothing.
     if (pieces.towers > 0) {
       const shot = el('button', 'hold-share', footer, `${icon('share')} Share my Hold`) as HTMLButtonElement
-      shot.onclick = async () => {
-        shot.disabled = true
-        shot.textContent = 'Painting\u2026'
-        try {
-          const ok = await this.onSharePostcard()
-          shot.textContent = ok ? 'Saved' : 'Could not save'
-        } catch {
-          shot.textContent = 'Could not save'
-        }
-        setTimeout(() => {
-          shot.disabled = false
-          shot.innerHTML = `${icon('share')} Share my Hold`
-        }, 2600)
-      }
+      shot.onclick = () => this.show('hold')
     }
     this.renderPrivacyRow(settings)
     const cleared = pieces.towers
@@ -403,8 +401,9 @@ export class Screens {
     void import('./coopLobby.ts').then(({ renderCoopLobby }) => {
       if (this.current !== 'coop') return
       this.root.innerHTML = ''
-      renderCoopLobby({
+      this.cleanup = renderCoopLobby({
         root: this.root,
+        preview: snapshot => this.onCoopBackdrop(snapshot),
         save: this.save,
         show: (name) => this.show(name),
         isCurrent: () => this.current === 'coop',
@@ -637,6 +636,12 @@ export class Screens {
       btn.textContent = 'Select and copy'
     }
     setTimeout(() => { btn.innerHTML = label }, 2500)
+  }
+
+  showHoldObjective(levelId: string): void {
+    this.show('levels')
+    const index = levels.findIndex(l => l.id === levelId)
+    if (index >= 0 && index < this.save().unlocked) this.showDifficultyPicker(levelId, levels[index].name)
   }
 
   private showDifficultyPicker(levelId: string, levelName: string, sandbox = false): void {

@@ -1,7 +1,9 @@
+import { sanitizeHold, rememberHoldDaily, type HoldRecord } from './holdData.ts'
 import { sanitizeHonors, sanitizeHeroPaths, sanitizeXpClaims } from './saveMerge.ts'
 import { seedXpFromProgress } from '../game/progress.ts'
 
 export interface SaveData {
+  hold?: HoldRecord
   unlocked: number              // number of unlocked levels (>=1)
   stars: Record<string, number>
   armory: Record<string, number>  // upgrade track id -> purchased tier
@@ -123,6 +125,7 @@ export function parseSave(d: unknown): SaveData | null {
           capstones: Array.isArray(o.capstones)
             ? [...new Set(o.capstones.filter((x): x is string => typeof x === 'string' && /^[a-z]+:[01]$/.test(x)))].slice(0, 32)
             : [],
+          hold: sanitizeHold(o.hold),
           honors: sanitizeHonors(o.honors),
           xpClaims: sanitizeXpClaims(o.xpClaims),
           heroPaths: sanitizeHeroPaths(o.heroPaths),
@@ -155,6 +158,7 @@ export function loadSave(): SaveData {
 
 /** one-time fills for fields that did not exist when the save was written */
 function migrate(save: SaveData): SaveData {
+  rememberHoldDaily(save)
   if (save.xp < 0) save.xp = seedXpFromProgress(save)
   return save
 }
@@ -167,6 +171,7 @@ function migrate(save: SaveData): SaveData {
 export function writeSave(data: SaveData): boolean {
   // stamped here, on the live object, so the cloud layer reads the moment the
   // player's progress actually changed rather than the moment it was uploaded
+  rememberHoldDaily(data)
   data.changedAt = Date.now()
   try {
     localStorage.setItem(KEY, JSON.stringify(data))

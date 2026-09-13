@@ -456,3 +456,29 @@ input, select, textarea { color: var(--ui-text); accent-color: var(--ui-gold); }
   .tp-primary .has-preview .d-label { flex: 0 0 39px; width: auto; }
   .tp-primary .has-preview .d-row { column-gap: 2px; line-height: 1.5; }
 }
+/* The room gathers over its host's real Hold; the scene stays available to inspect. */
+#screens .gathering-screen { pointer-events: none; align-items: flex-start; background: linear-gradient(90deg,#0c171dbb,transparent 64%); padding: 24px; }
+.gathering-screen .coop-card { pointer-events: auto; width: 340px; padding: 24px; border-radius: 20px; background: #142229f5; border: 1px solid #ffffff28; box-shadow: 0 18px 50px #0003; }
+.gathering-screen .coop-title { font-size: 25px; margin: 0 0 12px; }
+.gathering-screen .coop-sub { font-size: 12px; line-height: 1.6; }
+.gathering-screen .coop-code { font-size: 27px; letter-spacing: .16em; margin: 8px 0; }
+.gathering-screen .btn { font-size: 13px; padding: 11px 16px; min-height: 44px; }
+.gathering-seats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 18px 0; }
+.gathering-seat { padding: 12px; border-radius: 10px; background: #ffffff04; border: 1px solid #ffffff14; }
+.gathering-seat strong, .gathering-seat span { display: block; font-size: 12px; }
+.gathering-seat span { font-size: 11px; color: #9fadb3; margin-top: 6px; }
+.gathering-seat.connected { border-color: #d9bc7044; }
+.gathering-seat.connected span { color: #d9c48b; }
+.gathering-settings { border-top: 1px solid #ffffff20; border-bottom: 1px solid #ffffff20; padding: 6px 0; margin: 12px 0; }
+.gathering-settings summary { cursor: pointer; min-height: 44px; align-content: center; font-size: 13px; }
+.gathering-settings .diff-sub { display: block; text-align: left; margin: 10px 0 5px; font-size: 12px; }
+.gathering-settings .coop-select { padding: 10px; font-size: 13px; min-height: 44px; }
+@media (max-width: 700px) and (orientation: portrait) {
+  #screens .gathering-screen { justify-content: flex-end; padding: 12px; background: linear-gradient(0deg,#0c171d88,transparent 65%); }
+  #screens .gathering-screen::before, #screens .gathering-screen::after { display: none; }
+  .gathering-screen .coop-card { width: 100%; max-height: 56dvh; overflow: auto; padding: 18px; }
+}
+@media (max-height: 580px) and (orientation: landscape) {
+  #screens .gathering-screen { padding: 12px; }
+  .gathering-screen .coop-card { width: 310px; padding: 18px; }
+}

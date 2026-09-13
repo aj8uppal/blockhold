@@ -373,3 +373,68 @@ test('a mixed-version room asks for a refresh instead of restarting only the upd
     assert.equal(state.json.generation, 0); assert.equal(state.json.seats, 2)
   } finally { stream.abort(); resetRooms(); await h.close() }
 })
+
+test('Hold gatherings validate snapshots, preserve readiness on reconnect, reset on settings and gate all four seats', async () => {
+  resetRooms()
+  const h = await harness()
+  const controllers: AbortController[] = []
+  try {
+    const { json: host } = await h.call('POST', '/v1/coop/rooms?paced=1', { body: {} })
+    const path = `/v1/coop/rooms/${host.code}`
+    const seats = [host]
+    for (let i = 0; i < 3; i++) seats.push((await h.call('POST', `${path}/join?paced=1`, { body: {} })).json)
+    const send = (id: number, type: string, payload?: unknown) => h.call('POST', `${path}/send`, { body: { seat: seats[id].seat, key: seats[id].key, type, payload } })
+    const hold = { version: 1, name: 'Gathering', theme: 'forest', color: 'ruby', keep: 'stone', pieces: [{ id: 'tree:0', x: 0, z: 0, r: 0 }], date: 100 }
+    const setup = { gathering: true, hold, levelId: 'greenhollow', seed: 42 }
+    assert.equal((await send(0, 'setup', { ...setup, hold: { ...hold, pieces: Array(81).fill(hold.pieces[0]) } })).status, 400)
+    assert.equal((await send(1, 'setup', setup)).status, 403)
+    assert.equal((await send(0, 'setup', setup)).status, 202)
+    assert.equal((await send(0, 'start')).status, 409)
+    const connect = async (id: number) => {
+      const ctrl = new AbortController(); controllers.push(ctrl)
+      const response = await fetch(`${h.base}${path}/events?seat=${id}&key=${seats[id].key}&paced=1&ruleset=${RULESET_VERSION}`, { signal: ctrl.signal })
+      assert.equal(response.status, 200)
+      return ctrl
+    }
+    for (let i = 0; i < 4; i++) await connect(i)
+    for (let i = 0; i < 4; i++) assert.equal((await send(i, 'lobbyReady', { revision: 1, ready: true })).status, 202)
+    // A newer settings snapshot invalidates every previous confirmation.
+    assert.equal((await send(0, 'setup', { ...setup, seed: 43 })).status, 202)
+    assert.equal((await send(0, 'lobbyReady', { revision: 1, ready: true })).status, 409)
+    let resumed = await h.call('POST', `${path}/resume`, { body: { seat: 1, key: seats[1].key } })
+    assert.deepEqual(resumed.json.readySeats, [])
+    assert.equal(resumed.json.lobbyRevision, 2)
+    for (let i = 0; i < 4; i++) await send(i, 'lobbyReady', { revision: 2, ready: true })
+    controllers[1].abort()
+    await new Promise(r => setTimeout(r, 30))
+    assert.equal((await send(0, 'start')).status, 409)
+    await connect(1)
+    resumed = await h.call('POST', `${path}/resume`, { body: { seat: 1, key: seats[1].key } })
+    assert.deepEqual(resumed.json.readySeats, [0, 1, 2, 3])
+    assert.deepEqual(resumed.json.setup.hold, hold)
+    // Host cannot change the plan as part of the start request.
+    assert.equal((await send(0, 'start', { ...setup, seed: 99 })).status, 409)
+    assert.equal((await send(0, 'start')).status, 202)
+    // The paced renderer-ready signal still completes battle preparation separately.
+    for (let i = 0; i < 4; i++) await send(i, 'ready')
+    resumed = await h.call('POST', `${path}/resume`, { body: { seat: 1, key: seats[1].key } })
+    assert.equal(resumed.json.started, true)
+    assert.equal(resumed.json.paused, false)
+  } finally { controllers.forEach(c => c.abort()); resetRooms(); await h.close() }
+})
+
+test('leaving a gathering frees only the guest seat and new guests never inherit its ready state', async () => {
+  resetRooms(); const h = await harness()
+  try {
+    const { json: host } = await h.call('POST', '/v1/coop/rooms', { body: {} })
+    const path = `/v1/coop/rooms/${host.code}`
+    const { json: guest } = await h.call('POST', `${path}/join`, { body: {} })
+    const { json: guest2 } = await h.call('POST', `${path}/join`, { body: {} })
+    assert.equal((await h.call('POST', `${path}/send`, { body: { ...guest, type: 'leaveLobby' } })).status, 202)
+    const { json: next } = await h.call('POST', `${path}/join`, { body: {} })
+    assert.equal(next.seat, guest.seat); assert.notEqual(next.key, guest.key)
+    assert.equal((await h.call('POST', `${path}/resume`, { body: guest2 })).status, 200)
+    assert.equal((await h.call('POST', `${path}/resume`, { body: guest })).status, 403)
+    assert.deepEqual(next.readySeats, [])
+  } finally { resetRooms(); await h.close() }
+})

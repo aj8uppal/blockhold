@@ -1561,6 +1561,13 @@ export class Game implements World {
     this.engine.yawGoal = this.engine.yaw = -0.6
   }
 
+  /** Hide the menu diorama while a disposable cosmetic preview owns the camera. */
+  hideMenuBackdrop(): () => void {
+    const group = this.holdGroup
+    if (group) group.visible = false
+    return () => { if (group?.parent) group.visible = true }
+  }
+
   private holdGroup: THREE.Group | null = null
 
   /** dev-only: pose a diorama in an empty scene, for capturing art */
@@ -1785,7 +1792,7 @@ export class Game implements World {
       this.journal = {
         ruleset: RULESET_VERSION, balanceRuleset: this.balanceRuleset, ...(this.combatRuleset ? { combatRuleset: this.combatRuleset } : {}), levelId: level.id, difficulty, heroId, mode,
         ...(this.hunt ? { hunt: this.hunt.id } : {}), seed: this.runSeed, tick: 0,
-        commands: [], initialSave: JSON.parse(JSON.stringify(this.roster)) as SaveData,
+        commands: [], initialSave: { ...JSON.parse(JSON.stringify(this.roster)) as SaveData, hold: undefined },
         savedAt: Date.now(), wave: 0,
       }
       if (!this.recovering) this.saveSession()

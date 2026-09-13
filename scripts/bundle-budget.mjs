@@ -52,11 +52,13 @@ const assets = join(root, 'dist', 'assets')
 // Ruleset 17 adds thirteen distinct Mythic powers, sixteen authored capstones,
 // level-20 hero progression and the campaign browser: measured +9.7 KiB gzip.
 // Keep less than 3 KiB headroom; all new fire/model assets remain procedural.
-const APP_CHUNK_LIMIT = 180 * 1024
+// Your Hold adds ~2.2 KiB to shared save/input code and ~11.5 KiB on-demand
+// for the courtyard, editor, visits and gathering UI. Measured 181.7 / 333.1 KiB.
+const APP_CHUNK_LIMIT = 184 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 // Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.
 // The how-to sheet now loads on demand; the initial app budget stays unchanged.
-const TOTAL_JS_LIMIT = 320 * 1024
+const TOTAL_JS_LIMIT = 336 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

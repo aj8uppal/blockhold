@@ -1,3 +1,4 @@
+import { mergeHold } from './holdData.ts'
 import type { SaveData } from './save.ts'
 import { mergeSaves, sanitizeCloudSave, type CloudSave } from './saveMerge.ts'
 
@@ -55,6 +56,7 @@ function dropLocal(key: string): void {
  */
 export function toCloud(save: SaveData, updatedAt = save.changedAt ?? Date.now()): CloudSave {
   return sanitizeCloudSave({
+    hold: save.hold,
     unlocked: save.unlocked,
     stars: save.stars,
     armory: save.armory,
@@ -78,6 +80,7 @@ export function toCloud(save: SaveData, updatedAt = save.changedAt ?? Date.now()
 export function applyCloud(save: SaveData, cloud: CloudSave): SaveData {
   return {
     ...save,
+    hold: mergeHold(save.hold, cloud.hold),
     unlocked: cloud.unlocked,
     stars: cloud.stars,
     armory: cloud.armory,
