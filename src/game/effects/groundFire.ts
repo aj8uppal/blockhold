@@ -22,6 +22,7 @@ export class GroundFire {
   private sparks: THREE.InstancedMesh
   get heat(): number { return this.uniforms.uHeat.value }
   private extinguished: number | null = null
+  private coolingHeat = 0
 
   constructor(at: THREE.Vector3, readonly radius: number, private started: number, private until: number) {
     this.group.name = 'mortar-fire'
@@ -147,7 +148,7 @@ export class GroundFire {
           base.y=.1+large*.4+life*(.6+large*.3);
           base.xz+=vec2(sin(seed),cos(seed*.7))*life*.19;
           vAlpha=sin(life*3.14159)*uHeat;
-          if(vGlow>.5){base.y=.15;size=.24;vAlpha=.16*uHeat*uGlow;}
+          if(vGlow>.5){base.y=.10;size=.18;vAlpha=.12*uHeat*uGlow;}
           vec4 mv=modelViewMatrix*vec4(base,1.);
           float a=.7+life*.5,c=cos(a),s=sin(a);
           mv.xy+=mat2(c,-s,s,c)*position.xy*size;
@@ -174,13 +175,17 @@ export class GroundFire {
   }
 
   /** Cooling is presentation only; the damage zone has already expired. */
-  extinguish(time: number): void { this.extinguished = time }
+  extinguish(time: number): void {
+    this.update(time)
+    this.coolingHeat = this.heat
+    this.extinguished = time
+  }
 
   update(time: number): boolean {
     const age=time-this.started,cooling=this.extinguished===null?0:time-this.extinguished
     this.uniforms.uTime.value=age
     this.uniforms.uFade.value=Math.max(0,Math.min(1,age/.2,1-cooling/1.8))
-    this.uniforms.uHeat.value=this.extinguished===null?Math.max(0,Math.min(1,age/.16,(this.until-time)/.55)):0
+    this.uniforms.uHeat.value=this.extinguished===null?Math.max(0,Math.min(1,age/.16,(this.until-time)/.55)):this.coolingHeat*Math.max(0,1-cooling/.45)
     this.flames.visible=this.uniforms.uHeat.value>0
     return cooling<1.8
   }

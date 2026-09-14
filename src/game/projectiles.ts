@@ -763,7 +763,8 @@ export function addBurnZone(world: World, at: THREE.Vector3, radius: number, dps
   // per-tower cap: overcharged mortars must not layer unbounded true DPS on a choke
   if (credit) {
     const own = burnZones.filter(z => !z.done && z.credit === credit)
-    if (own.length >= 3) removeBurnZone(world, own[0])
+    // Retire damage immediately, but let the old flame settle into its embers.
+    if (own.length >= 3) removeBurnZone(world, own[0], true)
   }
   const until = world.time + duration
   const visual = new GroundFire(new THREE.Vector3(at.x, world.groundY(at.x, at.z), at.z), radius, world.time, until)

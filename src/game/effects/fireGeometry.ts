@@ -2,10 +2,10 @@ import * as THREE from 'three'
 
 export const fireBases = [
   [-.45,-.35, .85,.72],[.05,-.46,.96,.72],[.47,-.26,.79,.71],
-  [-.55,.16,.63,.66],[.46,.23,.66,.68],[-.29,.46,.55,.50],
-  [.24,.52,.50,.48],[-.04,.06,.58,.55],
+  [-.55,.16,.63,.66],[.46,.23,.66,.68],[-.29,.46,.30,.40],
+  [.24,.52,.26,.38],[-.04,.06,.35,.45],
   [-.24,-.06,.28,.40],[.24,-.05,.32,.40],[-.05,.31,.26,.40],
-].map(([x,z,h,w])=>[x*.70,z*.70,h*.70,w*.70])
+].map(([x,z,h,w])=>[x*.70,z*.70,h*.52,w*.56])
 // Lofted, irregular octagonal sections form a continuous solid. Offsets and
 // one extended shoulder break the symmetry; faces share edges throughout.
 const profile=[

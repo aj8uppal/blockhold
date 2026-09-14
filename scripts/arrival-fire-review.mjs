@@ -5,23 +5,41 @@ const base=(process.env.BLOCKHOLD_CHECK_URL??'http://127.0.0.1:5197').replace(/\
 mkdirSync(`${dir}/renders`,{recursive:true})
 const browser=await chromium.launch(),errors=[],metrics={}
 async function record(page,kind){
- const video=await page.evaluate(async kind=>{
+ const result=await page.evaluate(async kind=>{
   const source=document.querySelector('canvas'),opaque=document.createElement('canvas');opaque.width=source.width;opaque.height=source.height
   const ctx=opaque.getContext('2d',{alpha:false});let copying=true
-  function copy(){ctx.drawImage(source,0,0);if(copying)requestAnimationFrame(copy)}copy()
+  const seen=new Map();let abruptRemovals=0,peak=0
+  function copy(){
+   ctx.drawImage(source,0,0)
+   if(kind==='barrage'){
+    const patches=window.vg.game.dynamic.children.filter(o=>o.name==='mortar-fire');peak=Math.max(peak,patches.length)
+    for(const [patch,heat]of seen)if(!patch.parent){if(heat>.15)abruptRemovals++;seen.delete(patch)}
+    for(const patch of patches)seen.set(patch,patch.children[1].material.uniforms.uHeat.value)
+   }
+   if(copying)requestAnimationFrame(copy)
+  }copy()
   const stream=opaque.captureStream(30),chunks=[],r=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8',videoBitsPerSecond:2600000})
   r.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};const stopped=new Promise(resolve=>r.onstop=resolve);r.start()
   const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));await delay(600)
   const g=window.vg.game
   if(kind==='arrival'){g.fuseSeraph(g.towers[0],g.towers[1]);g.clearSelection();await delay(3700)}
+  else if(kind==='barrage'){
+   for(let i=0;i<5;i++){g.towers[0].fire(g.enemies[0],g);g.towers[0].cooldown=100;await delay(650)}
+   await delay(7400)
+  }
   else{g.towers[0].fire(g.enemies[0],g);g.towers[0].cooldown=100;await delay(7900)}
   r.stop();await stopped;copying=false;stream.getTracks().forEach(t=>t.stop())
-  const bytes=new Uint8Array(await new Blob(chunks).arrayBuffer());let str='';for(let i=0;i<bytes.length;i+=8192)str+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(str)
+  const bytes=new Uint8Array(await new Blob(chunks).arrayBuffer());let str='';for(let i=0;i<bytes.length;i+=8192)str+=String.fromCharCode(...bytes.subarray(i,i+8192));return {video:btoa(str),abruptRemovals,peak}
  },kind)
- writeFileSync(`${dir}/renders/${kind}.webm`,Buffer.from(video,'base64'))
+ writeFileSync(`${dir}/renders/${kind}.webm`,Buffer.from(result.video,'base64'))
+ if(kind==='barrage'){
+  const {abruptRemovals,peak}=result
+  metrics[kind]={abruptRemovals,peak}
+  if(abruptRemovals||peak<=3)throw Error('Barrage did not exercise a clean handoff: '+JSON.stringify(metrics[kind]))
+ }
 }
 try{
- for(const kind of['arrival','fire'].filter(k=>!process.env.BLOCKHOLD_CAPTURE||k===process.env.BLOCKHOLD_CAPTURE)){
+ for(const kind of['arrival','fire','barrage'].filter(k=>!process.env.BLOCKHOLD_CAPTURE||k===process.env.BLOCKHOLD_CAPTURE)){
   const context=await browser.newContext({viewport:{width:1200,height:840}})
   await context.addInitScript(()=>localStorage.setItem('blockhold.save.v1',JSON.stringify({xp:20000,taughtBasics:true,sfxMuted:true,musicMuted:true})))
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())})
@@ -45,13 +63,13 @@ try{
   },kind)
   await page.waitForTimeout(700)
   await record(page,kind)
-  metrics[kind]=await page.evaluate(()=>({effects:window.vg.game.dynamic.children.filter(o=>o.name==='mortar-fire'||o.name==='seraph-awakening').length,drawCalls:window.vg.game.engine.renderer.info.render.calls}))
+  metrics[kind]={...metrics[kind],...await page.evaluate(()=>({effects:window.vg.game.dynamic.children.filter(o=>o.name==='mortar-fire'||o.name==='seraph-awakening').length,drawCalls:window.vg.game.engine.renderer.info.render.calls}))}
   if(metrics[kind].effects!==0)throw Error('Effect did not clear: '+kind)
   await context.close()
  }
  // Pull review stills from the recorded gameplay, using the same browser decoder.
  const page=await browser.newPage({viewport:{width:1200,height:840}})
- for(const [kind,frames]of[['arrival',[['transfer',1.03],['arrival',1.74],['settled',3.9]]],['fire',[['flames',2.2],['coals',6.1]]]]){
+ for(const [kind,frames]of[['arrival',[['transfer',1.03],['arrival',1.74],['settled',3.9]]],['fire',[['flames',2.2],['coals',6.1]]],['barrage',[['barrage',3.3]]]]){
   if(process.env.BLOCKHOLD_CAPTURE&&kind!==process.env.BLOCKHOLD_CAPTURE)continue
   await page.setContent(`<style>body{margin:0;background:#0e171c}video{width:1200px;height:840px;display:block}</style><video muted playsinline preload="auto" src="${base}/${dir}/renders/${kind}.webm"></video>`)
   const v=page.locator('video');await v.evaluate(v=>new Promise(resolve=>{if(v.readyState>=2)resolve();else v.onloadeddata=resolve}))

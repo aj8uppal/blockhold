@@ -35,6 +35,34 @@ it('selling the owner clears its cooling patches without erasing another towerâ€
   expect(world.dynamic.children).toHaveLength(0)
 })
 
+it('successive shells retire damage at the cap while the old flames cool without popping',()=>{
+  const owner={} as KillCredit
+  for(let i=0;i<3;i++){
+    world.time=i*.4
+    addBurnZone(world,at,1,10,5,owner)
+  }
+  world.time=1.2;updateBurnVisuals(world)
+  const oldest=world.dynamic.children[0]
+  const material=(oldest.children[1] as THREE.Mesh).material as THREE.ShaderMaterial
+  const heat=()=>material.uniforms.uHeat.value as number
+  expect(heat()).toBe(1)
+  addBurnZone(world,at,1,10,5,owner)
+  updateBurnZones(.1,world);updateBurnVisuals(world)
+  expect(oldest.parent).toBe(world.dynamic)
+  expect(heat()).toBe(1)
+  expect(enemy.takeDamage).toHaveBeenCalledTimes(3)
+  expect(enemy.takeDamage.mock.calls.reduce((sum,call)=>sum+call[0],0)).toBe(3)
+  world.time=1.4;updateBurnVisuals(world)
+  expect(heat()).toBeGreaterThan(0)
+  expect(heat()).toBeLessThan(1)
+  world.time=1.7;updateBurnVisuals(world)
+  expect(oldest.children[1].visible).toBe(false)
+  expect(oldest.parent).toBe(world.dynamic)
+  world.time=3.1;updateBurnVisuals(world)
+  expect(oldest.parent).toBe(null)
+  expect(world.dynamic.children).toHaveLength(3)
+})
+
 it('bounds cooling effects even when many patches expire at once and clears them on reset',()=>{
   for(let i=0;i<40;i++)addBurnZone(world,at,1,10,1)
   world.time=1.1;updateBurnZones(.1,world)

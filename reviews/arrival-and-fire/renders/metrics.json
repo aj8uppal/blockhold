@@ -1,6 +1,8 @@
 {
   "metrics": {
-    "fire": {
+    "barrage": {
+      "abruptRemovals": 0,
+      "peak": 10,
       "effects": 0,
       "drawCalls": 49
     }
