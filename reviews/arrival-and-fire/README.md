@@ -2,13 +2,16 @@
 
 The latest fire pass uses continuous, irregular faceted volumes. Eight main
 flames and three low flickers share one geometry; four stepped heat regions remain
-self-lit. Narrow, offset cores rise inside the faceted orange bodies. Uneven shoulders, asymmetrical offsets and independent upward phases
-keep the silhouettes varied. The primary flames are roughly 20% smaller, with
-tighter spacing and slimmer foreground tongues. Foreground size eases down
+self-lit. Narrow, offset cores rise inside the faceted orange bodies. Uneven
+shoulders and asymmetrical offsets keep the silhouettes varied. Each tongue holds
+a short pose before flicking upward into the next, with its own cadence and a
+stable base. The primary flames are roughly 20% smaller, with a further 18%
+reduction in spacing and slimmer foreground tongues. Foreground size eases down
 relative to the camera.
 
 - Four draws per patch: solid flames, a translucent irregular scorch/coal patch,
-  six low-poly smoke puffs, and one instanced draw for 14 sparks plus eight subtle
+  nine low-poly smoke puffs (five rising, four lower around the flames), and one
+  instanced draw for 14 sparks plus eight subtle
   core halos. These are local halos, not a full-screen bloom pass.
 - Time/fade uniforms animate the fire on the GPU. No per-frame flame or spark
   matrix uploads, downloaded textures, or new postprocessing dependency.
@@ -58,5 +61,8 @@ patches. Omit `BLOCKHOLD_CAPTURE` to regenerate the earlier merge clip too.
   Explicit bundle caps move from 184/337 to 185/339 KiB for that implementation.
 - The two-browser co-op check covers shared combat, rejoin and solo recovery.
 - Browser emulation checks rendering, not physical mobile heat or battery drain.
+
+The latest clustering/smoke/flicker refinement reran the fire lifecycle tests,
+raw WebGL checks, build, lint and bundle budget. It adds no draw calls or lights.
 
 Production is unchanged by this pass.

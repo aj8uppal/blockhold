@@ -29,6 +29,8 @@ export class GroundFire {
     const material = new THREE.ShaderMaterial({
       depthWrite: true, toneMapped: false, vertexColors: true, uniforms: {...this.uniforms,uRadius:{value:radius}},
       side: THREE.DoubleSide,
+      // Each tongue holds a short pose, then flicks into the next. Its facets
+      // share the beat; only the middle and tip move, never the planted foot.
       vertexShader: /* glsl */`
         uniform float uTime,uHeat,uRadius;
         attribute vec4 aBase;
@@ -36,15 +38,16 @@ export class GroundFire {
         varying vec3 vColor,vLocal;
         void main(){
           vColor=color;vLocal=position;
-          float t=uTime*(2.4+.24*sin(aSeed))+aSeed;
+          float beat=uTime*(9.+1.3*sin(aSeed))+aSeed;
+          float tick=floor(beat),blend=smoothstep(.65,1.,fract(beat));
+          float t=(tick+blend)*.45+aSeed;
+          float flick=mix(sin(tick*2.17+aSeed),sin((tick+1.)*2.17+aSeed),blend);
           vec3 p=position;
           float y=p.y;
-          // An upward travelling bend; the foot stays planted. The narrow tip
-          // moves more than the shoulder, with no independent facet jitter.
           p.x+=sin(t-y*4.)*y*y*.13;
           p.z+=cos(t*.73-y*3.)*y*y*.07;
           p.x*=1.-y*.12*sin(t-y*3.);
-          p.y+=y*y*(.12*sin(t-y*2.)+.055*sin(t*1.63-y*4.));
+          p.y+=y*y*(.12*sin(t-y*2.)+.07*flick);
           vec2 view=normalize(cameraPosition.xz-modelMatrix[3].xz);
           float a=atan(view.x,view.y)+sin(aSeed)*.65,c=cos(a),s=sin(a);
           p.xz=mat2(c,-s,s,c)*p.xz*aBase.w;
@@ -54,11 +57,10 @@ export class GroundFire {
           p.xz+=aBase.xy*uRadius;
           gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);
         }`,
+      // Unlit, asymmetric heat regions follow the rising core through the volume.
       fragmentShader: /* glsl */`
         varying vec3 vColor,vLocal;
         void main(){
-          // Stepped regions follow the rising core through the faceted volume.
-          // They are unlit and asymmetric, so the sun cannot extinguish a core.
           vec2 p=floor(vLocal.xy*14.+.5)/14.;
           float axis=.035*sin(p.y*7.);
           vec3 color=vec3(.88,.057,.003);
@@ -79,14 +81,15 @@ export class GroundFire {
         varying float vAlpha,vLight;
         void main(){
           vec4 center=instanceMatrix*vec4(0,0,0,1);
-          float seed=dot(center.xz,vec2(17.3,9.7));
+          float seed=dot(center.xz,vec2(17.3,9.7))+center.y*17.;
+          float low=step(.32,center.y);
           float life=fract(uTime*.34+seed);
-          float size=(.10+life*.21)*sin(life*3.14159);
-          vec3 p=center.xyz+position*size;
-          p.y+=.38+life*.9;
+          float size=mix(.10+life*.23,.12+life*.14,low)*sin(life*3.14159);
+          vec3 p=vec3(center.x,0,center.z)+position*size;
+          p.y+=mix(.35+life*.9,.12+life*.45,low);
           p.x+=life*.22+sin(seed+life*4.)*.08;
           p.z+=sin(seed)*life*.13;
-          vAlpha=sin(life*3.14159)*uFade*.19;
+          vAlpha=sin(life*3.14159)*uFade*mix(.19,.13,low);
           vLight=.5+.5*dot(normal,normalize(vec3(-.4,1.,.5)));
           vec4 mv=modelViewMatrix*vec4(p,1.);
           vAlpha*=pow(max(0.,dot(normalize(normalMatrix*normal),normalize(-mv.xyz))),1.3);
@@ -98,11 +101,11 @@ export class GroundFire {
           gl_FragColor=vec4(mix(vec3(.10,.105,.11),vec3(.25,.25,.24),vLight),vAlpha);
           #include <colorspace_fragment>
         }`,
-    }),6)
+    }),9)
     this.smoke.frustumCulled = false
     for (let i=0;i<this.smoke.count;i++) {
-      const [x,z]=fireBases[i%5]
-      pose.position.set(x*radius,0,z*radius)
+      const [x,z]=fireBases[i%8]
+      pose.position.set(x*radius*1.1,i*.071,z*radius*1.1)
       pose.scale.setScalar(1);pose.updateMatrix();this.smoke.setMatrixAt(i,pose.matrix)
     }
     this.smoke.instanceMatrix.needsUpdate=true
