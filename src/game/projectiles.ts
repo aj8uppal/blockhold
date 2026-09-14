@@ -778,13 +778,6 @@ export function updateBurnZones(dt: number, world: World): void {
       removeBurnZone(world, z, true)
       continue
     }
-    if (Math.random() < dt * 20) {
-      world.particles.burnEmber(
-        z.pos.x + (Math.random() - 0.5) * z.radius * 1.6,
-        0.05,
-        z.pos.z + (Math.random() - 0.5) * z.radius * 1.6,
-      )
-    }
     for (const e of world.enemies) {
       if (!e.alive || e.airborne) continue
       if (Math.hypot(e.pos.x - z.pos.x, e.pos.z - z.pos.z) < z.radius + e.radius) {

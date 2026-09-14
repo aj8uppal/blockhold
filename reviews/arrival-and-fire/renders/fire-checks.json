@@ -1,0 +1,32 @@
+{
+  "state": {
+    "exposure": 1.12,
+    "heat": 1,
+    "drawCalls": 58,
+    "triangles": 11282,
+    "lights": 2,
+    "time": 1.4166666666666619
+  },
+  "stress": {
+    "before": {
+      "before": 54,
+      "programs": 14
+    },
+    "after": {
+      "calls": 98,
+      "programs": 14,
+      "lights": 2,
+      "flames": 12
+    }
+  },
+  "errors": [],
+  "checks": [
+    "glow on/off",
+    "normal zoom",
+    "orbit",
+    "pause",
+    "battery phone",
+    "sale clears lighting",
+    "12-patch draw and shader bounds"
+  ]
+}

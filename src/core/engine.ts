@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { updateFireLights } from '../game/effects/groundFire.ts'
 import { prefersReducedMotion } from './platform.ts'
 import { clamp, lerp } from './utils.ts'
 import { ThemeColors } from '../game/terrain.ts'
@@ -11,6 +12,7 @@ export class Engine {
   renderer: THREE.WebGLRenderer
   scene: THREE.Scene
   camera: THREE.PerspectiveCamera
+  private fireLights = Array.from({length:2},()=>new THREE.PointLight(0xffa02d,0,2,2))
   sun!: THREE.DirectionalLight
   private hemi!: THREE.HemisphereLight
   private ambient!: THREE.AmbientLight
@@ -58,6 +60,7 @@ export class Engine {
     this.scene = new THREE.Scene()
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 220)
     this.setupLights()
+    this.scene.add(...this.fireLights)
     // touch devices start one tier down; the watchdog can drop further
     this.qualityTier = qualityTierFor(this.qualityPreference, !!window.matchMedia?.('(pointer: coarse)').matches)
     this.applyQuality()
@@ -549,6 +552,7 @@ export class Engine {
     const now = performance.now()
     if (!force && this.qualityPreference === 'battery' && now - this.lastDrawAt < 1000 / 30 - 1) return
     this.lastDrawAt = now
+    updateFireLights(this.fireLights,this.camera.position)
     this.renderer.render(this.scene, this.camera)
   }
 }

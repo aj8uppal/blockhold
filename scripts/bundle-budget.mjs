@@ -54,13 +54,16 @@ const assets = join(root, 'dist', 'assets')
 // Keep less than 3 KiB headroom; all new fire/model assets remain procedural.
 // Your Hold adds ~2.2 KiB to shared save/input code and ~11.5 KiB on-demand
 // for the courtyard, editor, visits and gathering UI. Measured 181.8 / 333.2 KiB.
-const APP_CHUNK_LIMIT = 184 * 1024
+// Faceted fire, GPU sparks, transparent smoke fading and two shared point
+// lights add ~1.7 KiB total (including ~0.4 KiB in Three). No texture downloads
+// or postprocessing dependency. Measured 184.9 / 338.6 KiB after this pass.
+const APP_CHUNK_LIMIT = 185 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 // Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.
 // The how-to sheet now loads on demand; the initial app budget stays unchanged.
 // Ruleset 18: the native Crimson model, atomic sacrifice and lazy confirmation
 // bring total JS to 336.1 KiB. Allow 1 KiB more; the initial app cap stays 184 KiB.
-const TOTAL_JS_LIMIT = 337 * 1024
+const TOTAL_JS_LIMIT = 339 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

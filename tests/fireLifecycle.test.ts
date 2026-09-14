@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { addBurnZone, updateBurnZones, updateBurnVisuals, clearBurnZones, clearOwnedEffects } from '../src/game/projectiles.ts'
 import type { World, KillCredit } from '../src/game/world.ts'
+import { updateFireLights } from '../src/game/effects/groundFire.ts'
 
 const enemy={alive:true,airborne:false,pos:new THREE.Vector3(),radius:.2,takeDamage:vi.fn()}
 const world={time:0,dynamic:new THREE.Group(),enemies:[enemy],groundY:()=>2,particles:{burnEmber:vi.fn()}} as unknown as World
@@ -40,4 +41,27 @@ it('bounds cooling effects even when many patches expire at once and clears them
   expect(world.dynamic.children.length).toBeLessThanOrEqual(24)
   clearBurnZones(world)
   expect(world.dynamic.children).toHaveLength(0)
+})
+
+it('shares flame geometry and bounds lighting across patches, then clears it on expiry and reset',()=>{
+  const lights=[new THREE.PointLight(),new THREE.PointLight()]
+  for(let i=0;i<12;i++)addBurnZone(world,new THREE.Vector3(i*2,0,0),1,10,1)
+  world.time=.5;updateBurnVisuals(world)
+  const first=world.dynamic.children[0].children[1] as THREE.Mesh
+  for(const patch of world.dynamic.children){
+    expect((patch.children[1] as THREE.Mesh).geometry).toBe(first.geometry)
+    expect(patch.children).toHaveLength(4)
+  }
+  updateFireLights(lights,new THREE.Vector3(0,5,5))
+  for(const light of lights){
+    expect(light.intensity).toBeGreaterThan(0)
+    expect(light.intensity).toBeLessThanOrEqual(.35)
+    expect(light.position.y).toBeCloseTo(2.355)
+    expect(light.castShadow).toBe(false)
+  }
+  world.time=1.1;updateBurnZones(.1,world);updateBurnVisuals(world)
+  updateFireLights(lights,new THREE.Vector3())
+  expect(lights.every(l=>l.intensity===0)).toBe(true)
+  clearBurnZones(world);updateFireLights(lights,new THREE.Vector3())
+  expect(lights.every(l=>l.intensity===0)).toBe(true)
 })

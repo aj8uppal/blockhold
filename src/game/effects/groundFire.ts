@@ -1,17 +1,9 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { fireGeometry, fireBases } from './fireGeometry.ts'
 
-// Connected, offset chunks form each tongue; their silhouettes stay crisp
-// from every angle without screen-space pixelation or a smooth droplet shape.
-const chunks=[
-  [0,.10,0,.72,.20,.62],[-.06,.28,.01,.60,.20,.54],
-  [.04,.46,-.01,.46,.20,.43],[-.04,.63,.02,.33,.18,.31],
-  [.02,.78,0,.22,.15,.21],[.07,.91,.02,.13,.14,.13],
-  [.32,.24,-.04,.24,.26,.27],[.38,.43,-.02,.14,.17,.17],
-].map(([x,y,z,w,h,d])=>new THREE.BoxGeometry(w,h,d).translate(x,y,z))
-const flameGeometry=mergeGeometries(chunks)!
-chunks.forEach(g=>g.dispose())
-const smokeGeometry = new THREE.SphereGeometry(1, 8, 6)
+const smokeGeometry = new THREE.IcosahedronGeometry(1, 1)
+const sparkGeometry = new THREE.PlaneGeometry(2, 2)
+const activeFires = new Set<GroundFire>()
 const groundGeometry = new THREE.PlaneGeometry(2, 2)
 groundGeometry.rotateX(-Math.PI / 2)
 const vertex = /* glsl */`
@@ -19,62 +11,67 @@ const vertex = /* glsl */`
   void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}
 `
 
-/** Three instanced/static draws per patch. Time and fade are the only frame
+/** Four instanced/static draws per patch. Time and fade are the only frame
  * uploads; smoke and tongues move on the GPU without per-tick particle work. */
 export class GroundFire {
   readonly group = new THREE.Group()
-  private uniforms = { uTime: { value: 0 }, uFade: { value: 0 }, uHeat: { value: 0 } }
-  private flames: THREE.InstancedMesh
+  private uniforms = { uGlow: {value: 1}, uTime: { value: 0 }, uFade: { value: 0 }, uHeat: { value: 0 } }
+  private flames: THREE.Mesh
   private smoke: THREE.InstancedMesh
   private hearth: THREE.Mesh
+  private sparks: THREE.InstancedMesh
+  get heat(): number { return this.uniforms.uHeat.value }
   private extinguished: number | null = null
 
-  constructor(at: THREE.Vector3, radius: number, private started: number, private until: number) {
+  constructor(at: THREE.Vector3, readonly radius: number, private started: number, private until: number) {
     this.group.name = 'mortar-fire'
     this.group.position.copy(at); this.group.position.y += .035
     const material = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, toneMapped: false, uniforms: this.uniforms,
+      depthWrite: true, toneMapped: false, vertexColors: true, uniforms: {...this.uniforms,uRadius:{value:radius}},
+      side: THREE.DoubleSide,
       vertexShader: /* glsl */`
-        uniform float uTime,uHeat;
-        varying float vHeight,vFacing,vCore,vSeed;
+        uniform float uTime,uHeat,uRadius;
+        attribute vec4 aBase;
+        attribute float aSeed;
+        varying vec3 vColor,vLocal;
         void main(){
-          vec4 center=instanceMatrix*vec4(0,0,0,1);
-          float seed=dot(center.xz,vec2(21.7,13.3));
-          vCore=step(.03,center.y);vSeed=seed;
-          float t=uTime*5.5+seed;
+          vColor=color;vLocal=position;
+          float t=uTime*(2.4+.24*sin(aSeed))+aSeed;
           vec3 p=position;
-          vHeight=p.y;
-          p.x+=sin(t-p.y*3.)*p.y*p.y*.27;
-          p.z+=cos(t*.83+p.y*4.)*p.y*p.y*.2;
-          p.y*=.82+.14*sin(t)+.08*sin(t*1.71);
-          p*=uHeat;
-          vec4 mv=modelViewMatrix*instanceMatrix*vec4(p,1.);
-          vFacing=abs(dot(normalize(normalMatrix*normal),normalize(-mv.xyz)));
-          gl_Position=projectionMatrix*mv;
+          float y=p.y;
+          // An upward travelling bend; the foot stays planted. The narrow tip
+          // moves more than the shoulder, with no independent facet jitter.
+          p.x+=sin(t-y*4.)*y*y*.13;
+          p.z+=cos(t*.73-y*3.)*y*y*.07;
+          p.x*=1.-y*.12*sin(t-y*3.);
+          p.y+=y*y*(.12*sin(t-y*2.)+.055*sin(t*1.63-y*4.));
+          vec2 view=normalize(cameraPosition.xz-modelMatrix[3].xz);
+          float a=atan(view.x,view.y)+sin(aSeed)*.65,c=cos(a),s=sin(a);
+          p.xz=mat2(c,-s,s,c)*p.xz*aBase.w;
+          float front=smoothstep(.0,.55,dot(aBase.xy,view));
+          p.y*=aBase.z;
+          p*=uHeat*(1.-front*.22);
+          p.xz+=aBase.xy*uRadius;
+          gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);
         }`,
       fragmentShader: /* glsl */`
-        uniform float uHeat,uTime;
-        varying float vHeight,vFacing,vCore,vSeed;
+        varying vec3 vColor,vLocal;
         void main(){
-          float heat=(1.-vHeight)*.60+vFacing*.30+sin(vHeight*12.-uTime*7.+vSeed)*.06;
-          vec3 color=mix(vec3(.82,.075,.008),vec3(1.,.36,.025),smoothstep(.1,.55,heat));
-          color=mix(color,vec3(1.,.84,.34),smoothstep(.57,.97,heat));
-          color=mix(color,mix(vec3(1.,.97,.66),vec3(1.,.65,.12),vHeight),vCore);
-          gl_FragColor=vec4(color,uHeat*mix(.84,.94,vCore));
+          // Stepped regions follow the rising core through the faceted volume.
+          // They are unlit and asymmetric, so the sun cannot extinguish a core.
+          vec2 p=floor(vLocal.xy*14.+.5)/14.;
+          float axis=.035*sin(p.y*7.);
+          vec3 color=vec3(.88,.057,.003);
+          if(abs(p.x-axis)<.31-p.y*.20&&p.y<.94)color=vec3(1.,.29,.006);
+          if(abs(p.x-axis-.02)<.22-p.y*.17&&p.y<.78)color=vec3(1.,.67,.025);
+          if(abs(p.x-axis+.015)<.11-p.y*.13&&p.y>.055&&p.y<.54)color=vec3(1.,.92,.61);
+          gl_FragColor=vec4(color*vColor,1.);
           #include <colorspace_fragment>
         }`,
     })
-    this.flames = new THREE.InstancedMesh(flameGeometry, material, 18)
+    this.flames = new THREE.Mesh(fireGeometry, material)
     this.flames.frustumCulled = false
     const pose = new THREE.Object3D()
-    for (let i = 0; i < this.flames.count; i++) {
-      const n=i%9,core=i>=9,angle=n*2.39996,spread=radius*.68*Math.sqrt(n/8)
-      pose.position.set(Math.cos(angle)*spread,core?.04:.01,Math.sin(angle)*spread)
-      const width=(.42+.045*(n%3))*(core?.60:1)
-      pose.scale.set(width,(.38+.32*(Math.sin(n*7.3)*.5+.5))*(core?.60:1),width)
-      pose.updateMatrix(); this.flames.setMatrixAt(i, pose.matrix)
-    }
-    this.flames.instanceMatrix.needsUpdate = true
     this.smoke = new THREE.InstancedMesh(smokeGeometry, new THREE.ShaderMaterial({
       transparent:true,depthWrite:false,uniforms:this.uniforms,
       vertexShader: /* glsl */`
@@ -84,14 +81,16 @@ export class GroundFire {
           vec4 center=instanceMatrix*vec4(0,0,0,1);
           float seed=dot(center.xz,vec2(17.3,9.7));
           float life=fract(uTime*.34+seed);
-          float size=(.09+life*.16)*sin(life*3.14159);
+          float size=(.10+life*.21)*sin(life*3.14159);
           vec3 p=center.xyz+position*size;
-          p.y+=.42+life*1.2;
+          p.y+=.38+life*.9;
           p.x+=life*.22+sin(seed+life*4.)*.08;
           p.z+=sin(seed)*life*.13;
-          vAlpha=sin(life*3.14159)*uFade*.28;
+          vAlpha=sin(life*3.14159)*uFade*.19;
           vLight=.5+.5*dot(normal,normalize(vec3(-.4,1.,.5)));
-          gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);
+          vec4 mv=modelViewMatrix*vec4(p,1.);
+          vAlpha*=pow(max(0.,dot(normalize(normalMatrix*normal),normalize(-mv.xyz))),1.3);
+          gl_Position=projectionMatrix*mv;
         }`,
       fragmentShader: /* glsl */`
         varying float vAlpha,vLight;
@@ -99,31 +98,75 @@ export class GroundFire {
           gl_FragColor=vec4(mix(vec3(.10,.105,.11),vec3(.25,.25,.24),vLight),vAlpha);
           #include <colorspace_fragment>
         }`,
-    }),8)
+    }),6)
     this.smoke.frustumCulled = false
     for (let i=0;i<this.smoke.count;i++) {
-      const angle=i*2.39996,spread=radius*.5*Math.sqrt((i+1)/8)
-      pose.position.set(Math.cos(angle)*spread,0,Math.sin(angle)*spread)
+      const [x,z]=fireBases[i%5]
+      pose.position.set(x*radius,0,z*radius)
       pose.scale.setScalar(1);pose.updateMatrix();this.smoke.setMatrixAt(i,pose.matrix)
     }
     this.smoke.instanceMatrix.needsUpdate=true
     this.hearth = new THREE.Mesh(groundGeometry, new THREE.ShaderMaterial({
-      transparent:true,depthWrite:false,toneMapped:false,uniforms:this.uniforms,vertexShader:vertex,
+      transparent:true,depthWrite:false,toneMapped:false,uniforms:{...this.uniforms,uBases:{value:fireBases.slice(0,8).map(b=>new THREE.Vector2(b[0],b[1]))}},vertexShader:vertex,
       fragmentShader: /* glsl */`
         uniform float uTime,uFade,uHeat;
+        uniform vec2 uBases[8];
         varying vec2 vUv;
         void main(){
           vec2 p=vUv*2.-1.;
           float ripple=sin(p.x*17.+sin(p.y*9.))*sin(p.y*19.+p.x*4.);
-          float edge=1.-smoothstep(.65,.98,length(p)+ripple*.06);
-          float coal=smoothstep(.55,.96,ripple)*(.65+.35*sin(uTime*2.+p.x*12.));
-          vec3 color=mix(vec3(.045,.033,.028),vec3(.95,.12,.008),coal*(.4+uHeat*.6));
-          gl_FragColor=vec4(color,edge*.64*uFade);
+          float base=0.;
+          for(int i=0;i<8;i++){vec2 d=p-uBases[i];base+=exp(-dot(d,d)*24.);}
+          float edge=smoothstep(.06,.75,base+ripple*.06);
+          float coal=smoothstep(.5,.92,ripple)*min(1.,base)*(.72+.28*sin(uTime*2.+p.x*12.));
+          vec3 color=mix(vec3(.018,.016,.014),vec3(1.,.19,.008),coal*(.35+uHeat*.65));
+          gl_FragColor=vec4(color,edge*(.66+ripple*.08)*uFade);
           #include <colorspace_fragment>
         }`,
     }))
     this.hearth.scale.setScalar(radius)
-    this.group.add(this.hearth,this.flames,this.smoke)
+    this.sparks = new THREE.InstancedMesh(sparkGeometry,new THREE.ShaderMaterial({
+      transparent:true,depthWrite:false,toneMapped:false,blending:THREE.AdditiveBlending,
+      uniforms:this.uniforms,
+      vertexShader: /* glsl */`
+        uniform float uTime,uHeat,uGlow;
+        varying vec2 vUv;
+        varying float vAlpha,vLife,vGlow;
+        void main(){
+          vUv=uv;
+          vec3 base=instanceMatrix[3].xyz;
+          float id=base.y,seed=id*2.39996;
+          vGlow=1.-step(8.,id);
+          float life=fract(uTime*(.42+.05*sin(seed))+seed);
+          vLife=life;
+          float large=step(.75,fract(seed*.31));
+          float size=mix(.012,.03,large)*sin(life*3.14159);
+          base.y=.1+large*.4+life*(.6+large*.3);
+          base.xz+=vec2(sin(seed),cos(seed*.7))*life*.19;
+          vAlpha=sin(life*3.14159)*uHeat;
+          if(vGlow>.5){base.y=.15;size=.24;vAlpha=.16*uHeat*uGlow;}
+          vec4 mv=modelViewMatrix*vec4(base,1.);
+          float a=.7+life*.5,c=cos(a),s=sin(a);
+          mv.xy+=mat2(c,-s,s,c)*position.xy*size;
+          gl_Position=projectionMatrix*mv;
+        }`,
+      fragmentShader: /* glsl */`
+        varying vec2 vUv;
+        varying float vAlpha,vLife,vGlow;
+        void main(){
+          float soft=pow(max(0.,1.-length(vUv*2.-1.)),2.);
+          vec3 color=mix(vec3(1.,.55,.04),vec3(.85,.10,.008),vLife*(1.-vGlow));
+          gl_FragColor=vec4(color,vAlpha*mix(1.,soft,vGlow));
+          #include <colorspace_fragment>
+        }`,
+    }),22)
+    this.sparks.name='fire-glow-and-embers';this.sparks.frustumCulled=false
+    for(let i=0;i<22;i++){
+      const [x,z]=fireBases[i%8]
+      pose.position.set(x*radius,i,z*radius);pose.updateMatrix();this.sparks.setMatrixAt(i,pose.matrix)
+    }
+    this.group.add(this.hearth,this.flames,this.smoke,this.sparks)
+    activeFires.add(this)
     this.update(started)
   }
 
@@ -140,9 +183,26 @@ export class GroundFire {
   }
 
   dispose(): void {
+    activeFires.delete(this)
     this.group.removeFromParent()
-    for(const mesh of [this.flames,this.smoke]) {mesh.dispose();(mesh.material as THREE.Material).dispose()}
+    for(const mesh of [this.flames,this.smoke,this.sparks]) {if(mesh instanceof THREE.InstancedMesh)mesh.dispose();(mesh.material as THREE.Material).dispose()}
     ;(this.hearth.material as THREE.Material).dispose()
     // Small geometries are shared by every patch.
+  }
+}
+
+/** Two stable, shadowless lights for the whole scene; adding a patch never
+ * changes the material shader variants or creates a light per particle. */
+export function updateFireLights(lights: readonly THREE.PointLight[], camera: THREE.Vector3): void {
+  let previous: GroundFire | undefined
+  for(const light of lights){
+    let best: GroundFire | undefined, score=0
+    for(const fire of activeFires){
+      if(previous && fire.group.position.distanceToSquared(previous.group.position)<previous.radius*previous.radius)continue
+      const weight=fire.heat/(1+fire.group.position.distanceToSquared(camera))
+      if(weight>score){best=fire;score=weight}
+    }
+    light.intensity=best?best.heat*.35:0
+    if(best){light.position.copy(best.group.position);light.position.y+=.32;light.distance=best.radius*1.65;previous=best}
   }
 }

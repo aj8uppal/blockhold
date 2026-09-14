@@ -1,9 +1,5 @@
 {
   "metrics": {
-    "arrival": {
-      "effects": 0,
-      "drawCalls": 65
-    },
     "fire": {
       "effects": 0,
       "drawCalls": 49

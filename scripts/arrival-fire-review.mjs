@@ -21,7 +21,7 @@ async function record(page,kind){
  writeFileSync(`${dir}/renders/${kind}.webm`,Buffer.from(video,'base64'))
 }
 try{
- for(const kind of['arrival','fire']){
+ for(const kind of['arrival','fire'].filter(k=>!process.env.BLOCKHOLD_CAPTURE||k===process.env.BLOCKHOLD_CAPTURE)){
   const context=await browser.newContext({viewport:{width:1200,height:840}})
   await context.addInitScript(()=>localStorage.setItem('blockhold.save.v1',JSON.stringify({xp:20000,taughtBasics:true,sfxMuted:true,musicMuted:true})))
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())})
@@ -52,6 +52,7 @@ try{
  // Pull review stills from the recorded gameplay, using the same browser decoder.
  const page=await browser.newPage({viewport:{width:1200,height:840}})
  for(const [kind,frames]of[['arrival',[['transfer',1.03],['arrival',1.74],['settled',3.9]]],['fire',[['flames',2.2],['coals',6.1]]]]){
+  if(process.env.BLOCKHOLD_CAPTURE&&kind!==process.env.BLOCKHOLD_CAPTURE)continue
   await page.setContent(`<style>body{margin:0;background:#0e171c}video{width:1200px;height:840px;display:block}</style><video muted playsinline preload="auto" src="${base}/${dir}/renders/${kind}.webm"></video>`)
   const v=page.locator('video');await v.evaluate(v=>new Promise(resolve=>{if(v.readyState>=2)resolve();else v.onloadeddata=resolve}))
   for(const [name,time]of frames){

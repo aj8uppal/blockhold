@@ -8,10 +8,13 @@ import * as THREE from 'three'
 
 const VERT = /* glsl */`
   attribute float aSize;
+  attribute float aAlpha;
+  varying float vAlpha;
   attribute vec3 aColor;
   varying vec3 vColor;
   void main() {
     vColor = aColor;
+    vAlpha = aAlpha;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     gl_PointSize = aSize * (240.0 / -mv.z);
     gl_Position = projectionMatrix * mv;
@@ -19,12 +22,13 @@ const VERT = /* glsl */`
 
 const FRAG = /* glsl */`
   varying vec3 vColor;
+  varying float vAlpha;
   void main() {
     vec2 uv = gl_PointCoord - 0.5;
     float d = length(uv);
     if (d > 0.5) discard;
     float a = smoothstep(0.5, 0.18, d);
-    gl_FragColor = vec4(vColor, a);
+    gl_FragColor = vec4(vColor, a * vAlpha);
   }`
 
 export interface EmitOpts {
@@ -51,6 +55,7 @@ class ParticlePool {
   private pos: Float32Array
   private col: Float32Array
   private size: Float32Array
+  private alpha: Float32Array
   private vel: Float32Array
   private data: Float32Array // life, maxLife, gravity, drag per particle
   private baseCol: Float32Array
@@ -63,6 +68,7 @@ class ParticlePool {
     this.pos = new Float32Array(max * 3)
     this.col = new Float32Array(max * 3)
     this.size = new Float32Array(max)
+    this.alpha = new Float32Array(max)
     this.vel = new Float32Array(max * 3)
     this.data = new Float32Array(max * 4)
     this.baseCol = new Float32Array(max * 3)
@@ -72,6 +78,7 @@ class ParticlePool {
     this.geometry.setAttribute('position', new THREE.BufferAttribute(this.pos, 3))
     this.geometry.setAttribute('aColor', new THREE.BufferAttribute(this.col, 3))
     this.geometry.setAttribute('aSize', new THREE.BufferAttribute(this.size, 1))
+    this.geometry.setAttribute('aAlpha', new THREE.BufferAttribute(this.alpha, 1))
     // park dead particles far below the map
     for (let i = 0; i < max; i++) this.pos[i * 3 + 1] = -100
     const mat = new THREE.ShaderMaterial({
@@ -150,13 +157,16 @@ class ParticlePool {
       }
       const t = life / this.data[i * 4 + 1]
       const fade = t < 0.35 ? t / 0.35 : 1
-      this.col[i * 3] = this.baseCol[i * 3] * fade
-      this.col[i * 3 + 1] = this.baseCol[i * 3 + 1] * fade
-      this.col[i * 3 + 2] = this.baseCol[i * 3 + 2] * fade
+      // Smoke must fade in opacity, not turn into opaque black puffs.
+      this.alpha[i] = fade
+      this.col[i * 3] = this.baseCol[i * 3]
+      this.col[i * 3 + 1] = this.baseCol[i * 3 + 1]
+      this.col[i * 3 + 2] = this.baseCol[i * 3 + 2]
       this.size[i] = this.baseSize[i] * t + this.endSize[i] * (1 - t)
     }
     this.geometry.attributes.position.needsUpdate = true
     this.geometry.attributes.aColor.needsUpdate = true
+    this.geometry.attributes.aAlpha.needsUpdate = true
     this.geometry.attributes.aSize.needsUpdate = true
   }
 }
@@ -246,10 +256,6 @@ export class Particles {
 
   smokeTrail(x: number, y: number, z: number): void {
     this.normal.emit({ x, y, z, count: 1, color: [0x888888, 0xaaaaaa], speed: 0.15, life: 0.5, size: 0.35, sizeEnd: 0.6, gravity: -0.4, dirY: 0.6, spread: 0.03 })
-  }
-
-  burnEmber(x: number, y: number, z: number): void {
-    this.add.emit({ x, y, z, count: 2, color: [0xff8c42, 0xffd23c], speed: 0.4, life: 0.6, size: 0.25, gravity: -1.6, dirY: 0.85, spread: 0.4 })
   }
 
   stunStars(x: number, y: number, z: number): void {
