@@ -30,6 +30,10 @@ try{
   return {exposure:g.engine.renderer.toneMappingExposure,heat:fire.children[1].material.uniforms.uHeat.value,drawCalls:g.engine.renderer.info.render.calls,triangles:g.engine.renderer.info.render.triangles,lights:g.engine.scene.children.filter(o=>o.isPointLight).length,time:fire.children[1].material.uniforms.uTime.value}
  })
  assert.equal(state.lights,2);assert.equal(state.exposure,1.12)
+ await page.evaluate(()=>{const e=window.vg.game.engine;e.dist=e.distGoal=4;e.updateCamera(0)})
+ await page.waitForTimeout(120)
+ await page.locator('canvas').screenshot({path:`${dir}/fire-close.png`})
+ await page.evaluate(()=>{const e=window.vg.game.engine;e.dist=e.distGoal=7;e.updateCamera(0)})
  await page.evaluate(()=>window.vg.game.dynamic.getObjectByName('mortar-fire').getObjectByName('fire-glow-and-embers').material.uniforms.uGlow.value=0)
  await page.waitForTimeout(120)
  await page.locator('canvas').screenshot({path:`${dir}/fire-no-glow.png`})

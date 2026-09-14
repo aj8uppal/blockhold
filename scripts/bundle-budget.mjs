@@ -57,7 +57,9 @@ const assets = join(root, 'dist', 'assets')
 // Faceted fire, GPU sparks, transparent smoke fading and two shared point
 // lights add ~1.7 KiB total (including ~0.4 KiB in Three). No texture downloads
 // or postprocessing dependency. Measured 184.9 / 338.6 KiB after this pass.
-const APP_CHUNK_LIMIT = 185 * 1024
+// Three sculpted flame volumes with integrated heat facets and a ground halo
+// add ~0.3 KiB gzip. They retain four draws per patch and the existing light pool.
+const APP_CHUNK_LIMIT = 186 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 // Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.
 // The how-to sheet now loads on demand; the initial app budget stays unchanged.

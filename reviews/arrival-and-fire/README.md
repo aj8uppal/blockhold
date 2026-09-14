@@ -1,19 +1,22 @@
 # Faceted fire and the Crimson arrival
 
-The latest fire pass uses continuous, irregular faceted volumes. Five main
-flames and six low flickers share one geometry; four stepped heat regions remain
-self-lit. Narrow, offset cores rise inside the faceted orange bodies. Uneven
-shoulders and asymmetrical offsets keep the silhouettes varied. Each tongue holds
-a short pose before flicking upward into the next, with its own cadence and a
-stable base. The main flames are 26% shorter and 20% narrower than the first
-production faceted effect. Foreground tongues are reduced further, with lower,
-smaller and dimmer core halos. The tighter cluster and faceted heat colors remain.
-Foreground size also eases down relative to the camera.
+Three hand-shaped flame outlines now form closed volumes with bulging front
+and back faces. Four nested, asymmetric contours are stitched into real heat
+facets: orange edges, gold bodies, yellow interiors and pale cream cores. There
+is no pixel-grid color mask. Flame orientations remain fixed in world space;
+only foreground size responds to the camera. Five main tongues and three low
+flickers preserve the compact heights and clear view of characters.
+
+The bodies bend, narrow and stretch with independent sharp rhythms while their
+bases stay planted. Core facets stay bright without sunlight or glow. Broader
+smoke puffs drift behind the flames and fade more strongly across the foreground
+and during cooling. Fine embers replace large orange coal spots; the charcoal
+patch and warm perimeter spill connect the burning area without replacing the
+underlying path.
 
 - Four draws per patch: solid flames, a translucent irregular scorch/coal patch,
   nine low-poly smoke puffs (five rising, four lower around the flames), and one
-  instanced draw for 14 sparks plus eight subtle
-  core halos. These are local halos, not a full-screen bloom pass.
+  instanced draw for 13 sparks, eight body halos and one ground spill. These are local halos, not a full-screen bloom pass.
 - Time/fade uniforms animate the fire on the GPU. No per-frame flame or spark
   matrix uploads, downloaded textures, or new postprocessing dependency.
 - Two shadowless point lights serve the entire scene. Their stable count avoids
@@ -60,9 +63,11 @@ patches. Omit `BLOCKHOLD_CAPTURE` to regenerate the earlier merge clip too.
 - Raw WebGL checks cover glow on/off, normal zoom, camera orbit, pause, a phone
   viewport in battery mode, sale cleanup and 12 simultaneous patches. Two lights
   remain allocated; patches reuse shaders. No browser or shader errors.
-- Build, typecheck and lint pass. Measured gzip is 184.9 KiB app / 338.6 KiB total.
+- Build, typecheck and lint pass. Measured gzip is approximately 185.2 KiB app / 338.8 KiB total.
   This pass adds about 1.7 KiB including ~0.4 KiB for Three's point-light support.
-  Explicit bundle caps move from 184/337 to 185/339 KiB for that implementation.
+  This reconstruction adds about 0.3 KiB gzip; the app cap moves from 185 to
+  186 KiB and the total cap stays 339 KiB. Each patch uses 1,904 flame triangles
+  (previously 1,408), with no additional draws, lights or textures.
 - The two-browser co-op check covers shared combat, rejoin and solo recovery.
 - Browser emulation checks rendering, not physical mobile heat or battery drain.
 

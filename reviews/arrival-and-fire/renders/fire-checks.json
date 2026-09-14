@@ -3,9 +3,9 @@
     "exposure": 1.12,
     "heat": 1,
     "drawCalls": 58,
-    "triangles": 11762,
+    "triangles": 12754,
     "lights": 2,
-    "time": 1.416666666666662
+    "time": 1.4166666666666619
   },
   "stress": {
     "before": {

@@ -36,21 +36,21 @@ export class GroundFire {
         uniform float uTime,uHeat,uRadius;
         attribute vec4 aBase;
         attribute float aSeed;
-        varying vec3 vColor,vLocal;
+        varying vec3 vColor;
         void main(){
-          vColor=color;vLocal=position;
+          vColor=color;
           float beat=uTime*(9.+1.3*sin(aSeed))+aSeed;
           float tick=floor(beat),blend=smoothstep(.65,1.,fract(beat));
           float t=(tick+blend)*.45+aSeed;
           float flick=mix(sin(tick*2.17+aSeed),sin((tick+1.)*2.17+aSeed),blend);
           vec3 p=position;
           float y=p.y;
-          p.x+=sin(t-y*4.)*y*y*.13;
-          p.z+=cos(t*.73-y*3.)*y*y*.07;
-          p.x*=1.-y*.12*sin(t-y*3.);
-          p.y+=y*y*(.12*sin(t-y*2.)+.07*flick);
+          p.x+=sin(t-y*4.)*y*y*.18;
+          p.z+=cos(t*.73-y*3.)*y*y*.10;
+          p.x*=1.-y*.22*sin(t-y*3.);
+          p.y+=y*y*(.15*sin(t-y*2.)+.08*flick);
           vec2 view=normalize(cameraPosition.xz-modelMatrix[3].xz);
-          float a=atan(view.x,view.y)+sin(aSeed)*.65,c=cos(a),s=sin(a);
+          float a=aSeed*.7,c=cos(a),s=sin(a);
           p.xz=mat2(c,-s,s,c)*p.xz*aBase.w;
           float front=smoothstep(.0,.55,dot(aBase.xy,view));
           p.y*=aBase.z;
@@ -60,15 +60,9 @@ export class GroundFire {
         }`,
       // Unlit, asymmetric heat regions follow the rising core through the volume.
       fragmentShader: /* glsl */`
-        varying vec3 vColor,vLocal;
+        varying vec3 vColor;
         void main(){
-          vec2 p=floor(vLocal.xy*14.+.5)/14.;
-          float axis=.035*sin(p.y*7.);
-          vec3 color=vec3(.88,.057,.003);
-          if(abs(p.x-axis)<.31-p.y*.20&&p.y<.94)color=vec3(1.,.29,.006);
-          if(abs(p.x-axis-.02)<.22-p.y*.17&&p.y<.78)color=vec3(1.,.67,.025);
-          if(abs(p.x-axis+.015)<.11-p.y*.13&&p.y>.055&&p.y<.54)color=vec3(1.,.92,.61);
-          gl_FragColor=vec4(color*vColor,1.);
+          gl_FragColor=vec4(vColor,1.);
           #include <colorspace_fragment>
         }`,
     })
@@ -78,19 +72,21 @@ export class GroundFire {
     this.smoke = new THREE.InstancedMesh(smokeGeometry, new THREE.ShaderMaterial({
       transparent:true,depthWrite:false,uniforms:this.uniforms,
       vertexShader: /* glsl */`
-        uniform float uTime,uFade;
+        uniform float uTime,uFade,uHeat;
         varying float vAlpha,vLight;
         void main(){
           vec4 center=instanceMatrix*vec4(0,0,0,1);
           float seed=dot(center.xz,vec2(17.3,9.7))+center.y*17.;
           float low=step(.32,center.y);
-          float life=fract(uTime*.34+seed);
-          float size=mix(.10+life*.23,.12+life*.14,low)*sin(life*3.14159);
+          float life=fract(uTime*.26+seed);
+          float size=mix(.12+life*.28,.12+life*.16,low)*sin(life*3.14159);
           vec3 p=vec3(center.x,0,center.z)+position*size;
           p.y+=mix(.35+life*.9,.12+life*.45,low);
           p.x+=life*.22+sin(seed+life*4.)*.08;
           p.z+=sin(seed)*life*.13;
-          vAlpha=sin(life*3.14159)*uFade*mix(.19,.13,low);
+          vec2 view=normalize(cameraPosition.xz-modelMatrix[3].xz);
+          float front=smoothstep(-.1,.3,dot(center.xz,view));
+          vAlpha=sin(life*3.14159)*uFade*mix(.30,.16,low)*(1.-front*.5)*(.35+.65*uHeat);
           vLight=.5+.5*dot(normal,normalize(vec3(-.4,1.,.5)));
           vec4 mv=modelViewMatrix*vec4(p,1.);
           vAlpha*=pow(max(0.,dot(normalize(normalMatrix*normal),normalize(-mv.xyz))),1.3);
@@ -99,7 +95,7 @@ export class GroundFire {
       fragmentShader: /* glsl */`
         varying float vAlpha,vLight;
         void main(){
-          gl_FragColor=vec4(mix(vec3(.10,.105,.11),vec3(.25,.25,.24),vLight),vAlpha);
+          gl_FragColor=vec4(mix(vec3(.025,.028,.032),vec3(.11,.115,.12),vLight),vAlpha);
           #include <colorspace_fragment>
         }`,
     }),9)
@@ -118,13 +114,14 @@ export class GroundFire {
         varying vec2 vUv;
         void main(){
           vec2 p=vUv*2.-1.;
-          float ripple=sin(p.x*17.+sin(p.y*9.))*sin(p.y*19.+p.x*4.);
+          float ripple=sin(p.x*43.+sin(p.y*35.))*sin(p.y*47.-p.x*11.);
           float base=0.;
           for(int i=0;i<8;i++){vec2 d=p-uBases[i];base+=exp(-dot(d,d)*24.);}
-          float edge=smoothstep(.06,.75,base+ripple*.06);
-          float coal=smoothstep(.5,.92,ripple)*min(1.,base)*(.72+.28*sin(uTime*2.+p.x*12.));
+          float grain=sin(p.x*13.+sin(p.y*9.))*sin(p.y*17.);
+          float edge=smoothstep(.18,1.5,base+grain*.3);
+          float coal=smoothstep(.70,.98,ripple)*smoothstep(.65,2.4,base)*(.75+.25*sin(uTime*2.+p.x*12.));
           vec3 color=mix(vec3(.018,.016,.014),vec3(1.,.19,.008),coal*(.35+uHeat*.65));
-          gl_FragColor=vec4(color,edge*(.66+ripple*.08)*uFade);
+          gl_FragColor=vec4(color,edge*(.42+grain*.035)*uFade);
           #include <colorspace_fragment>
         }`,
     }))
@@ -135,39 +132,48 @@ export class GroundFire {
       vertexShader: /* glsl */`
         uniform float uTime,uHeat,uGlow;
         varying vec2 vUv;
-        varying float vAlpha,vLife,vGlow;
+        varying float vAlpha,vLife,vGlow,vGround;
         void main(){
           vUv=uv;
           vec3 base=instanceMatrix[3].xyz;
           float id=base.y,seed=id*2.39996;
-          vGlow=1.-step(8.,id);
+          vGlow=1.-step(9.,id);vGround=step(8.,id)*vGlow;
           float life=fract(uTime*(.42+.05*sin(seed))+seed);
           vLife=life;
           float large=step(.75,fract(seed*.31));
           float size=mix(.012,.03,large)*sin(life*3.14159);
-          base.y=.1+large*.4+life*(.6+large*.3);
-          base.xz+=vec2(sin(seed),cos(seed*.7))*life*.19;
+          base.y=.08+large*.2+life*(.42+large*.25);
+          base.xz+=vec2(sin(seed),cos(seed*.7))*life*.19*(1.-vGlow);
           vAlpha=sin(life*3.14159)*uHeat;
-          if(vGlow>.5){base.y=.10;size=.18;vAlpha=.12*uHeat*uGlow;}
+          if(vGlow>.5){base.y=instanceMatrix[1][1]*.4;vAlpha=.5*uHeat*uGlow;}
           vec4 mv=modelViewMatrix*vec4(base,1.);
           float a=.7+life*.5,c=cos(a),s=sin(a);
-          mv.xy+=mat2(c,-s,s,c)*position.xy*size;
+          if(vGround>.5){
+            base.y=.015;
+            mv=modelViewMatrix*vec4(base+vec3(position.x,0.,position.y)*instanceMatrix[0][0]*.7,1.);
+            vAlpha=.16*uHeat*uGlow;
+          }else if(vGlow>.5)mv.xy+=position.xy*vec2(instanceMatrix[0][0]*.7,instanceMatrix[1][1]*.7)*uHeat;
+          else mv.xy+=mat2(c,-s,s,c)*position.xy*size;
           gl_Position=projectionMatrix*mv;
         }`,
       fragmentShader: /* glsl */`
         varying vec2 vUv;
-        varying float vAlpha,vLife,vGlow;
+        varying float vAlpha,vLife,vGlow,vGround;
         void main(){
-          float soft=pow(max(0.,1.-length(vUv*2.-1.)),2.);
-          vec3 color=mix(vec3(1.,.55,.04),vec3(.85,.10,.008),vLife*(1.-vGlow));
+          vec2 p=vUv*2.-1.;
+          float soft=exp(-mix(1.7,3.,vGround)*(p.x*p.x/mix(.45-.25*p.y,1.,vGround)+p.y*p.y))*(1.-smoothstep(.65,1.,length(p)));
+          soft*=mix(1.,smoothstep(.05,.65,length(p))*(1.-.2*sin(p.x*19.+sin(p.y*13.))),vGround);
+          vec3 color=mix(vec3(1.,.45-vGround*.23,.024),vec3(.85,.10,.008),vLife*(1.-vGlow));
           gl_FragColor=vec4(color,vAlpha*mix(1.,soft,vGlow));
           #include <colorspace_fragment>
         }`,
     }),22)
     this.sparks.name='fire-glow-and-embers';this.sparks.frustumCulled=false
     for(let i=0;i<22;i++){
-      const [x,z]=fireBases[i%8]
-      pose.position.set(x*radius,i,z*radius);pose.updateMatrix();this.sparks.setMatrixAt(i,pose.matrix)
+      const [x,z,h,w]=fireBases[i%8]
+      pose.position.set(x*radius,i,z*radius);pose.scale.set(w,h,1)
+      if(i===8){pose.position.set(0,i,0);pose.scale.setScalar(radius)}
+      pose.updateMatrix();this.sparks.setMatrixAt(i,pose.matrix)
     }
     this.group.add(this.hearth,this.flames,this.smoke,this.sparks)
     activeFires.add(this)
