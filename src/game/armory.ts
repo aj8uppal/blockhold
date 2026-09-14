@@ -1,5 +1,6 @@
 import { SaveData } from '../core/save.ts'
 import { isUnlocked } from './progress.ts'
+import { FRONTIER_BOARDS } from './frontierIndex.ts'
 
 /**
  * The Royal Armory: permanent kingdom upgrades bought with campaign stars.
@@ -64,16 +65,23 @@ export function hasArmory(save: SaveData, id: string): boolean {
  * nothing has to migrate.
  */
 export function starsEarned(save: SaveData): number {
-  return Object.values(save.stars).reduce((a, b) => a + b, 0) + crownStars(save) + trialStars(save)
+  return Object.entries(save.stars).reduce((a, [id, b]) => a + (FRONTIER_IDS.has(id) ? 0 : b), 0) + crownStars(save) + trialStars(save)
 }
+
+/**
+ * The Frontier's boards keep their own stars and medals. The board above is
+ * priced against the campaign; ten more boards paying into it at the same
+ * rate would buy it outright, and the grind it exists for would be gone.
+ */
+const FRONTIER_IDS = new Set(FRONTIER_BOARDS.map(b => b.id))
 
 /** one star per trial won: two per map, the last twenty of the board */
 export function trialStars(save: SaveData): number {
-  return Object.values(save.trials ?? {}).reduce((n, t) => n + (Array.isArray(t) ? t.length : 0), 0)
+  return Object.entries(save.trials ?? {}).reduce((n, [id, t]) => n + (!FRONTIER_IDS.has(id) && Array.isArray(t) ? t.length : 0), 0)
 }
 
 export function crownStars(save: SaveData): number {
-  return Object.values(save.medals ?? {}).filter(m => Array.isArray(m) && m.includes('veteran')).length
+  return Object.entries(save.medals ?? {}).filter(([id, m]) => !FRONTIER_IDS.has(id) && Array.isArray(m) && m.includes('veteran')).length
 }
 
 /** the tracks this account can see: the rest wait behind the ladder */

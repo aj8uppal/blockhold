@@ -454,9 +454,9 @@ class Meteor implements Projectile {
     this.mesh.rotation.y += dt * 3
     world.particles.trail(this.mesh.position.x, this.mesh.position.y, this.mesh.position.z, 0xff8c42, 0.5)
     world.particles.smokeTrail(this.mesh.position.x, this.mesh.position.y + 0.2, this.mesh.position.z)
-    if (this.mesh.position.y <= 0.1) {
+    if (this.mesh.position.y <= at.y + 0.1) {
       this.done = true
-      world.particles.explosion(at.x, 0.15, at.z, 1.4)
+      world.particles.explosion(at.x, at.y + 0.15, at.z, 1.4)
       world.sfx('explosion', 1)
       world.shake(0.22)
       for (const e of world.enemies) {
@@ -863,10 +863,12 @@ export function addMine(world: World, at: THREE.Vector3, spec: MineSpec): void {
   const geo = new THREE.BoxGeometry(0.26, 0.12, 0.26)
   const mat = new THREE.MeshBasicMaterial({ color: 0x3a2d24, toneMapped: false })
   const mesh = new THREE.Mesh(geo, mat)
-  mesh.position.set(at.x, 0.06, at.z)
+  // shells land 0.02 above the road; a raised road keeps its height, the floor stays exactly 0
+  const floor = at.y > 0.1 ? at.y - 0.02 : 0
+  mesh.position.set(at.x, floor + 0.06, at.z)
   mesh.rotation.y = Math.random() * Math.PI
   world.dynamic.add(mesh)
-  mines.push({ mesh, pos: at.clone().setY(0), spec, armedAt: world.time + spec.armTime, until: world.time + spec.life, done: false })
+  mines.push({ mesh, pos: at.clone().setY(floor), spec, armedAt: world.time + spec.armTime, until: world.time + spec.life, done: false })
 }
 
 export function updateMines(dt: number, world: World): void {

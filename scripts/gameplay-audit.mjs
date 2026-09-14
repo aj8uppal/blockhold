@@ -24,16 +24,20 @@ try {
   await page.goto(server.resolvedUrls.local[0])
   await page.waitForFunction(() => window.vg?.game)
   const metadata = await page.evaluate(async () => {
-    const {levels}=await import('/src/game/levels.ts')
+    const {allLevels,loadFrontier}=await import('/src/game/levels.ts')
+    await loadFrontier()
     const {buildPaths}=await import('/src/game/path.ts')
     const {judgeLevel}=await import('/src/game/balanceModel.ts')
-    return levels.map(l=>({...l, laneLengths:buildPaths(l).lanes.map(p=>p.length), staticPressure:judgeLevel(l,'normal')}))
+    return allLevels.map(l=>({...l, laneLengths:buildPaths(l).lanes.map(p=>p.length), staticPressure:judgeLevel(l,'normal')}))
   })
   const results=[]
-  for(const level of metadata.filter(l=>!config.maps.length||config.maps.includes(l.id))) {
+  // the Frontier is audited on request (--maps frontier, or by id); the campaign by default, as before
+  const wanted=l=>config.maps.length?(config.maps.includes(l.id)||(config.maps.includes('frontier')&&l.frontier)):!l.frontier
+  for(const level of metadata.filter(wanted)) {
     for(const difficulty of config.difficulties) for(const build of config.builds) for(const seed of config.seeds) {
       const result=await page.evaluate(async ({id,difficulty,build,seed,active,hero})=>{
-        const {levelById,levels}=await import('/src/game/levels.ts')
+        const {levelById,levels,loadFrontier}=await import('/src/game/levels.ts')
+        await loadFrontier()
         const {towerTrees,investedGold}=await import('/src/game/towerDefs.ts')
         const {enemyDefs,enemyDef}=await import('/src/game/enemyDefs.ts')
         const {ARMORY_TRACKS}=await import('/src/game/armory.ts')
@@ -58,7 +62,9 @@ try {
         }
         const profile=profiles[build]
         g.save.armory={};
-        let stars=levels.findIndex(l=>l.id===id)*3;const starBudget=stars
+        // Frontier boards are open from the start: budget the Armory a player plausibly brings to each tier
+        const board=levelById(id)
+        let stars=board.frontier?{easy:6,medium:15,hard:21}[board.frontier.tier]:levels.findIndex(l=>l.id===id)*3;const starBudget=stars
         if(active)for(const [track,maxTier] of [['coffers',3],['comet',1],['musterroll',1],['drill',3],['bulwark',1],['secondwind',1]]){
           const costs=ARMORY_TRACKS.find(t=>t.id===track).tierCosts;
           for(let i=0;i<maxTier&&stars>=costs[i];i++){g.save.armory[track]=i+1;stars-=costs[i]}

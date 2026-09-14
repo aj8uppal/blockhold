@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { box, buildModel, type VoxBox, type VoxModel } from '../voxel/builder.ts'
-import { gridToWorld } from './path.ts'
+import { buildPaths, gridToWorld, waypointHeight } from './path.ts'
 import type { LevelDef } from './types.ts'
 
 /**
@@ -173,8 +173,14 @@ export function deriveEarthworkSpots(
   const ends: { cell: [number, number], gap: number }[] = []
   for (const lane of level.lanes) {
     if (!lane.length) continue
-    ends.push({ cell: lane[0], gap: SPAWN_GAP })
-    ends.push({ cell: lane[lane.length - 1], gap: GATE_GAP })
+    ends.push({ cell: [lane[0][0], lane[0][1]], gap: SPAWN_GAP })
+    ends.push({ cell: [lane[lane.length - 1][0], lane[lane.length - 1][1]], gap: GATE_GAP })
+  }
+  // a cutting is a level channel dug into the road; a ramp has no level
+  // stretch to dig, so only flat road qualifies (a bridge is never 'road')
+  const raised = new Set<string>()
+  if (level.lanes.some(lane => lane.some(w => waypointHeight(w) !== 0))) {
+    for (const [key, s] of buildPaths(level).surfaces) if (s.lo !== s.hi) raised.add(key)
   }
   const nearEnd = (c: number, r: number) =>
     ends.some(e => Math.hypot(e.cell[0] - c, e.cell[1] - r) < e.gap)
@@ -185,7 +191,7 @@ export function deriveEarthworkSpots(
   for (let r = 0; r < level.height; r++) {
     for (let c = 0; c < level.width; c++) {
       if (nearEnd(c, r)) continue
-      if (cellKind(c, r) === 'road' && !isTrapSpot(c, r)) cuttings.push([c, r])
+      if (cellKind(c, r) === 'road' && !isTrapSpot(c, r) && !raised.has(`${c},${r}`)) cuttings.push([c, r])
     }
   }
   void touchesRoad

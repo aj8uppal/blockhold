@@ -59,13 +59,18 @@ const assets = join(root, 'dist', 'assets')
 // or postprocessing dependency. Measured 184.9 / 338.6 KiB after this pass.
 // Three sculpted flame volumes with integrated heat facets and a ground halo
 // add ~0.3 KiB gzip. They retain four draws per patch and the existing light pool.
-const APP_CHUNK_LIMIT = 186 * 1024
+// The Frontier: ten boards that load on demand in their own ~17.7 KiB chunk
+// (drawings, waves, ten themes and painted skies, scenery, weather). The app
+// chunk gains ~5.7 KiB for what the engine itself learned - roads that climb,
+// bridges over open sky, crenellated terraces - plus the Frontier browser and
+// the small index the menus read. Measured 191.3 / 362.8 KiB.
+const APP_CHUNK_LIMIT = 192 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 // Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.
 // The how-to sheet now loads on demand; the initial app budget stays unchanged.
 // Ruleset 18: the native Crimson model, atomic sacrifice and lazy confirmation
 // bring total JS to 336.1 KiB. Allow 1 KiB more; the initial app cap stays 184 KiB.
-const TOTAL_JS_LIMIT = 339 * 1024
+const TOTAL_JS_LIMIT = 364 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

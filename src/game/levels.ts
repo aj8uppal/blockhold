@@ -617,8 +617,36 @@ export const levels: LevelDef[] = [
   tidereachLevel,
 ]
 
+/**
+ * Every playable board: the campaign's chapters, then the Frontier. Anything
+ * that resolves a board by id - a resumed battle, a shared link, a co-op
+ * room - searches this. Anything about the campaign's *order* (unlocks, the
+ * Daily's rotation, "next chapter") keeps using `levels`.
+ */
+export const allLevels: LevelDef[] = [...levels]
+
+/** called by the Frontier chunk as it arrives */
+export function registerBoards(boards: LevelDef[]): void {
+  for (const board of boards) if (!allLevels.some(l => l.id === board.id)) allLevels.push(board)
+}
+
+let frontierLoading: Promise<void> | null = null
+
+/**
+ * Fetch the Frontier's boards (and their scenery and skies) once. Everything
+ * that opens a Frontier board by id waits on this first; the menus that only
+ * list them read frontierIndex.ts and never need to.
+ */
+export function loadFrontier(): Promise<void> {
+  return frontierLoading ??= import('./frontier.ts').then(() => undefined, err => {
+    // a dropped connection must not poison every later attempt
+    frontierLoading = null
+    throw err
+  })
+}
+
 export function levelById(id: string): LevelDef {
-  const l = levels.find(l => l.id === id)
+  const l = allLevels.find(l => l.id === id)
   if (!l) throw new Error(`unknown level ${id}`)
   return l
 }

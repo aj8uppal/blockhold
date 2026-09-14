@@ -19,7 +19,8 @@ import { canRecordTape } from './core/captureSupport.ts'
 import { Game } from './game/game.ts'
 import { HUD } from './ui/hud.ts'
 import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
-import { levelById, levels } from './game/levels.ts'
+import { allLevels, levelById, levels, loadFrontier } from './game/levels.ts'
+import { isFrontierId } from './game/frontierIndex.ts'
 import { audio } from './core/audio.ts'
 import './style.css'
 import './ui/theme.css'
@@ -234,6 +235,12 @@ screens.onPlayTrial = (id, kind) => {
 }
 
 screens.onPlayLevel = (id, difficulty, hero, mode) => {
+  // a Frontier board is normally fetched by the time its setup sheet opens;
+  // an end-screen "next battle" can outrun it, so wait rather than throw
+  if (isFrontierId(id) && !allLevels.some(l => l.id === id)) {
+    void loadFrontier().then(() => screens.onPlayLevel(id, difficulty, hero, mode))
+    return
+  }
   const level = levelById(id)
   enterBattle()
   // end-screen replays reuse the difficulty/hero/mode of the run that just ended
@@ -366,9 +373,13 @@ screens.onResume = () => {
   }
   const cp = readCheckpoint()
   if (!cp) return
+  if (isFrontierId(cp.levelId) && !allLevels.some(l => l.id === cp.levelId)) {
+    void loadFrontier().then(() => screens.onResume())
+    return
+  }
   // stale checkpoints outlive the build that wrote them; drop one whose level
   // is gone rather than throwing out of `levelById` on the player's tap
-  if (!levels.some(l => l.id === cp.levelId)) { clearCheckpoint(); screens.show('menu'); return }
+  if (!allLevels.some(l => l.id === cp.levelId)) { clearCheckpoint(); screens.show('menu'); return }
   hud.reset()
   hud.setChrome(true)
   screens.show('none')
@@ -419,9 +430,28 @@ game.onPhaseChange = (phase, stars) => {
 // the boot screen has done its job the moment there is a menu behind it
 document.getElementById('loading')?.remove()
 
-if (challenge) {
+if (challenge?.levelId && isFrontierId(challenge.levelId)) {
+  // a Frontier board's link: fetch the board, then drop the visitor onto it
+  const link = challenge
+  hud.showToast('Opening a Frontier board…', 3)
+  void loadFrontier().then(() => {
+    hud.reset()
+    hud.setChrome(true)
+    screens.show('none')
+    game.startLevel(levelById(link.levelId!), 'normal', (game.save.lastHero as never) ?? 'aldric',
+      link.endless ? 'endless' : 'campaign', { seed: link.seed })
+    if (!challengeIsCurrent()) {
+      setTimeout(() => hud.showToast('This challenge was made under older rules, so it may not play out identically.', 7), 1800)
+    }
+  }, () => {
+    screens.show('menu')
+    game.showMenuBackdrop()
+    hud.setChrome(false)
+    hud.showToast('Could not load this Frontier board. Check your connection and open the link again.', 6)
+  })
+} else if (challenge) {
   // arriving from someone else's link: play their board, skip the menu
-  if (challenge.levelId && levels.some(l => l.id === challenge.levelId)) {
+  if (challenge.levelId && allLevels.some(l => l.id === challenge.levelId)) {
     // a campaign or Long Night challenge: the same map from the same seed
     hud.reset()
     hud.setChrome(true)

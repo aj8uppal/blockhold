@@ -224,6 +224,13 @@ export class Enemy {
   private nextHitFlashAt = 0
   private dyingT = 0
   private yaw = 0
+  /**
+   * The road surface under this enemy. Every height an animation writes is
+   * measured up from it, so a walker climbs a ramp and a flyer keeps its
+   * altitude over a causeway. Exactly 0 on a map whose roads never leave the
+   * ground, which keeps every recorded battle there bit-for-bit the same.
+   */
+  private laneY = 0
   private bar: HealthBar
   private parts: Record<string, THREE.Object3D | undefined>
   readonly barY: number
@@ -295,7 +302,8 @@ export class Enemy {
       this.group.add(this.raiseRing)
     }
     const start = lane.sample(startDist, this.offset)
-    this.group.position.set(start.x, def.yOffset ?? 0, start.z)
+    this.laneY = start.y
+    this.group.position.set(start.x, this.laneY + (def.yOffset ?? 0), start.z)
     this.yaw = Math.atan2(start.dirX, start.dirZ)
     this.group.rotation.y = this.yaw
   }
@@ -587,7 +595,8 @@ export class Enemy {
     if (!this.hexTarget) return
     this.releaseHex()
     const s = this.lane.sample(this.dist, this.offset)
-    this.group.position.set(s.x, 0, s.z)
+    this.laneY = s.y
+    this.group.position.set(s.x, s.y, s.z)
   }
 
   forceRemove(): void {
@@ -646,7 +655,7 @@ export class Enemy {
       this.dyingT += dt
       const t = this.dyingT / 0.55
       this.group.rotation.x = -t * Math.PI / 2 * 0.9
-      this.group.position.y = Math.max((this.def.yOffset ?? 0) * (1 - t * 2), 0) + Math.sin(Math.min(t, 1) * Math.PI) * 0.1
+      this.group.position.y = this.laneY + Math.max((this.def.yOffset ?? 0) * (1 - t * 2), 0) + Math.sin(Math.min(t, 1) * Math.PI) * 0.1
       const s = (this.def.scale ?? 1) * UNIT_SCALE * Math.max(0.01, 1 - Math.max(0, t - 0.5) * 2)
       this.group.scale.setScalar(s)
       if (this.dyingT > 0.7) this.state = 'gone'
@@ -858,6 +867,7 @@ export class Enemy {
       const s = this.lane.sample(this.dist, this.offset)
       this.group.position.x = s.x
       this.group.position.z = s.z
+      this.laneY = s.y
       const targetYaw = Math.atan2(s.dirX, s.dirZ)
       this.yaw = lerpAngle(this.yaw, targetYaw, dt * 7)
       this.animWalk(dt, speed)
@@ -885,12 +895,12 @@ export class Enemy {
       if (this.parts.wingL) this.parts.wingL.rotation.z = flap * span
       if (this.parts.wingR) this.parts.wingR.rotation.z = -flap * span
       if (big && this.parts.head) this.parts.head.rotation.x = Math.sin(t * 1.8) * 0.08
-      this.group.position.y = ((this.def.yOffset ?? 0.85) + Math.sin(t * (big ? 1.7 : 2.2)) * (big ? 0.09 : 0.07)) * (1 - this.landingBlend)
+      this.group.position.y = this.laneY + ((this.def.yOffset ?? 0.85) + Math.sin(t * (big ? 1.7 : 2.2)) * (big ? 0.09 : 0.07)) * (1 - this.landingBlend)
       return
     }
     const cycle = Math.sin(t * (4.5 + speed * 5))
     const bob = Math.abs(Math.sin(t * (4.5 + speed * 5))) * 0.035
-    this.group.position.y = bob
+    this.group.position.y = this.laneY + bob
     if (m === 'sprinter') {
       for (const [name, phase] of [['legFL', 0], ['legBR', 0], ['legFR', Math.PI], ['legBL', Math.PI]] as const) {
         const p = this.parts[name]
@@ -908,7 +918,7 @@ export class Enemy {
       if (this.parts.body) this.parts.body.rotation.z = Math.sin(t * 2.6) * 0.06
       if (this.parts.armL) this.parts.armL.rotation.x = -0.4 + Math.sin(t * 2.6) * 0.15
       if (this.parts.armR) this.parts.armR.rotation.x = -0.4 - Math.sin(t * 2.6) * 0.15
-      this.group.position.y = 0.06 + Math.sin(t * 2.2) * 0.05
+      this.group.position.y = this.laneY + 0.06 + Math.sin(t * 2.2) * 0.05
       return
     }
     if (m === 'acolyte' || m === 'warlock') {
@@ -947,7 +957,7 @@ export class Enemy {
       if (P.legsL) P.legsL.rotation.y = 0.28 + snap * 0.3
       if (P.legsR) P.legsR.rotation.y = -0.28 - snap * 0.3
       if (P.body) P.body.rotation.x = -p * 0.15 + snap * 0.42
-      this.group.position.y = snap * 0.09
+      this.group.position.y = this.laneY + snap * 0.09
       return
     }
     if (m === 'sprinter') {
@@ -956,7 +966,7 @@ export class Enemy {
         if (P[n]) P[n]!.rotation.x = -p * 0.9 + snap * 1.4
       }
       if (P.head) P.head.rotation.x = -p * 0.3 + snap * 0.55
-      this.group.position.y = snap * 0.13
+      this.group.position.y = this.laneY + snap * 0.13
       return
     }
     if (m === 'brute' || m === 'juggernaut') {

@@ -150,6 +150,23 @@ input, select, textarea { color: var(--ui-text); accent-color: var(--ui-gold); }
 .level-goal .ico { width: 14px; height: 14px; }
 .locked-goal { color: #91a0a8; }
 
+/* Campaign / Frontier: two shelves of the same map room. */
+.levels-tabs { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--ui-line); border-radius: 11px; background: #ffffff05; }
+.levels-tab { display: flex; align-items: center; gap: 7px; padding: 7px 13px; border: 0; border-radius: 8px; background: transparent; color: var(--ui-muted); font-size: 12px; font-weight: 550; }
+.levels-tab .ico { width: 14px; height: 14px; }
+.levels-tab.picked { background: var(--ui-raised); color: var(--ui-text); }
+.levels-tab.picked .ico { color: var(--ui-gold); }
+.frontier-tier-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; width: 100%; max-width: 1440px; flex-shrink: 0; padding: 26px 0 14px; }
+.frontier-screen .campaign-heading + .frontier-tier-head { padding-top: 4px; }
+.frontier-tier-name { font-size: 18px; font-weight: 600; letter-spacing: -.02em; color: var(--tier, var(--ui-text)); }
+.frontier-tier-count { color: var(--ui-muted); font-size: 11px; }
+.frontier-tier-blurb { flex-basis: 100%; color: var(--ui-muted); font-size: 12px; line-height: 1.6; }
+.tier-easy { --tier: #9fe0a8; }
+.tier-medium { --tier: #f0c878; }
+.tier-hard { --tier: #f59d89; }
+.level-chapter.frontier-tier { padding: 3px 7px; border-radius: 5px; background: #0e171ccc; color: var(--tier); }
+.frontier-card:not(.locked):hover { border-color: color-mix(in srgb, var(--tier) 60%, transparent); }
+
 /* Dialogs share the same surfaces and selection language as the battle HUD. */
 .help-overlay, .pause-overlay { background: #060c12b8; backdrop-filter: blur(8px); }
 .help-card, .pause-card, .build-menu, .tower-panel, .end-card, .menu-screen .coop-card { color: var(--ui-text); border: 1px solid var(--panel-edge); border-radius: 16px; background: var(--panel-surface); box-shadow: var(--shadow); }
@@ -340,6 +357,10 @@ input, select, textarea { color: var(--ui-text); accent-color: var(--ui-gold); }
   .levels-collection { gap: 6px; }
   .levels-collection .btn { padding: 8px 10px; font-size: 11px; }
   .levels-nav-label { display: none; }
+  .levels-tab { padding: 7px 10px; font-size: 11px; }
+  .frontier-tier-head { padding: 18px 0 10px; }
+  .frontier-tier-name { font-size: 16px; }
+  .frontier-tier-blurb { font-size: 11px; }
   .nav-count { padding: 2px 4px; }
   .campaign-heading { padding: 24px 0; }
   .campaign-description { font-size: 12px; margin-top: 9px; }

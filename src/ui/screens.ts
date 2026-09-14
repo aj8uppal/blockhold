@@ -6,7 +6,8 @@ import { heroPath } from '../game/heroPaths.ts'
 // the field guide and the cards are reading rooms, opened on demand: lazy chunks
 import type { CoopSession, CoopSetup } from '../core/coop.ts'
 import { coopEnabled } from '../core/coopLink.ts'
-import { levels, levelById } from '../game/levels.ts'
+import { levels, allLevels, levelById, loadFrontier } from '../game/levels.ts'
+import { FRONTIER_BOARDS, FRONTIER_TIERS, frontierBoard, isFrontierId, type FrontierBoard } from '../game/frontierIndex.ts'
 import { Difficulty, HeroId } from '../game/types.ts'
 import { difficultyMods } from '../game/difficulty.ts'
 import { HERO_DEFS } from '../game/hero.ts'
@@ -23,7 +24,7 @@ import { isUnlocked, levelProgress, nextUnlock, unlockLevel, xpForLevel, MAX_LEV
 import { cloud } from '../core/cloud.ts'
 import { dailyShareText, challengeUrl, runChallengeUrl, runShareText, type DailyResult } from '../game/share.ts'
 
-export type ScreenName = 'menu' | 'hold' | 'sandbox' | 'levels' | 'victory' | 'defeat' | 'coop' | 'hunts' | 'none'
+export type ScreenName = 'menu' | 'hold' | 'sandbox' | 'levels' | 'frontier' | 'victory' | 'defeat' | 'coop' | 'hunts' | 'none'
 
 const THEME_ART: Record<string, string> = {
   forest: 'linear-gradient(160deg, #79c057 0%, #4e9a3d 55%, #2e7a52 100%)',
@@ -34,14 +35,29 @@ const THEME_ART: Record<string, string> = {
   highland: 'linear-gradient(160deg, #a8c8e4 0%, #6f8f5e 55%, #3d4a3a 100%)',
   ashfall: 'linear-gradient(160deg, #ffb070 0%, #b0502a 55%, #3f1c14 100%)',
   tidal: 'linear-gradient(160deg, #9fd0cf 0%, #3f97a8 55%, #1d3f4e 100%)',
+  blossom: 'linear-gradient(160deg, #ffd9e6 0%, #e8a0bf 55%, #7a5a8a 100%)',
+  desert: 'linear-gradient(160deg, #f7e2b6 0%, #d9a86a 55%, #8a5a30 100%)',
+  skyreach: 'linear-gradient(160deg, #e6f4ff 0%, #8fc4f0 55%, #3f7fd0 100%)',
+  reef: 'linear-gradient(160deg, #ffe2bf 0%, #5fd8d0 55%, #0f5e7a 100%)',
+  cavern: 'linear-gradient(160deg, #3a5a7a 0%, #1c2438 55%, #0b0a18 100%)',
+  cosmos: 'linear-gradient(160deg, #6a2fbf 0%, #1f2a6f 55%, #05040c 100%)',
+  jungle: 'linear-gradient(160deg, #d8e8c4 0%, #6f9a72 55%, #2f5a38 100%)',
+  aurora: 'linear-gradient(160deg, #3fffb0 0%, #2a5f8f 55%, #06122a 100%)',
+  storm: 'linear-gradient(160deg, #8a9ab8 0%, #3a4658 55%, #1a2230 100%)',
+  eclipse: 'linear-gradient(160deg, #ffc36a 0%, #6a2f4a 50%, #0d0a1f 100%)',
 }
 
 // Later battlefields use an illustrated theme treatment until they have key art.
 // Never request a missing image: a gradient is a deliberate fallback, not a 404.
-const PAINTED_MAPS = new Set(['greenhollow', 'frostmere', 'emberwastes', 'mistfen', 'shatteredcrown', 'cinderwake', 'veilscar'])
-const THEME_ICONS: Record<string, string> = { forest: 'tree', winter: 'frost', ember: 'volcano', swamp: 'mushroom', void: 'rune', highland: 'castle', ashfall: 'flame', tidal: 'wave' }
+const PAINTED_MAPS = new Set(['greenhollow', 'frostmere', 'emberwastes', 'mistfen', 'shatteredcrown', 'cinderwake', 'veilscar',
+  // the Frontier's cards are renders of the boards themselves, sky and all
+  ...FRONTIER_BOARDS.map(b => b.id)])
+const THEME_ICONS: Record<string, string> = { forest: 'tree', winter: 'frost', ember: 'volcano', swamp: 'mushroom', void: 'rune', highland: 'castle', ashfall: 'flame', tidal: 'wave',
+  blossom: 'sparkle', desert: 'hourglass', skyreach: 'feather', reef: 'drop', cavern: 'orb', cosmos: 'meteor', jungle: 'tree', aurora: 'frost', storm: 'lightning', eclipse: 'moon' }
+const TIER_NAMES = Object.fromEntries(FRONTIER_TIERS.map(t => [t.tier, t.name])) as Record<string, string>
+const isFrontier = isFrontierId
 
-function mapArt(level: typeof levels[number]): string {
+function mapArt(level: { id: string, theme: string }): string {
   const gradient = THEME_ART[level.theme]
   return PAINTED_MAPS.has(level.id) ? `url(art/card-${level.id}.webp) center / cover, ${gradient}` : gradient
 }
@@ -104,6 +120,7 @@ export interface BattleStats {
 export interface Objective { text: string, action: 'retry' | 'next' | 'replay' | 'veteran' | 'trial' | 'hold' | 'levels', levelId: string, trial?: TrialKind }
 
 export function nextObjective(save: SaveData, ctx: { won: boolean, levelId: string, stars: number, leak?: { name: string, wave: number } | null, livesShort?: number, firstClear?: boolean }): Objective {
+  if (isFrontier(ctx.levelId)) return frontierObjective(save, ctx)
   const idx = levels.findIndex(l => l.id === ctx.levelId)
   const lvl = levels[idx]
   const name = lvl?.name ?? 'the map'
@@ -136,6 +153,26 @@ export function nextObjective(save: SaveData, ctx: { won: boolean, levelId: stri
   const held = Math.max(...(['casual', 'normal', 'veteran'] as const).map(d => save.bestFreeplay?.[`${ctx.levelId}:${d}`] ?? 0))
   const nextBoss = (Math.floor(held / 10) + 1) * 10
   return { text: `Hold the line past +${nextBoss} on ${name} - a boss waits there`, action: 'hold', levelId: ctx.levelId }
+}
+
+/**
+ * The Frontier's version of the one next thing. Its boards have no chapter
+ * order and no trials, so the ladder is shorter: win, three stars, Veteran,
+ * then the next board on the list nobody has beaten yet.
+ */
+function frontierObjective(save: SaveData, ctx: { won: boolean, levelId: string, stars: number, leak?: { name: string, wave: number } | null, livesShort?: number }): Objective {
+  const lvl = frontierBoard(ctx.levelId)!
+  if (!ctx.won) {
+    return { text: ctx.leak ? `Retry ${lvl.name} - a ${ctx.leak.name} broke through on wave ${ctx.leak.wave}` : `Retry ${lvl.name}`, action: 'retry', levelId: ctx.levelId }
+  }
+  if (ctx.stars < 3) {
+    const short = ctx.livesShort ?? 0
+    return { text: short > 0 ? `Three stars on ${lvl.name}: keep ${short} more ${short === 1 ? 'life' : 'lives'}` : `Three stars on ${lvl.name}`, action: 'replay', levelId: ctx.levelId }
+  }
+  if (!(save.medals[ctx.levelId] ?? []).includes('veteran')) return { text: `Conquer ${lvl.name} on Veteran`, action: 'veteran', levelId: ctx.levelId }
+  const unbeaten = FRONTIER_BOARDS.find(b => (save.stars[b.id] ?? 0) === 0)
+  if (unbeaten) return { text: `Next on the Frontier: ${unbeaten.name} (${TIER_NAMES[unbeaten.tier]})`, action: 'next', levelId: unbeaten.id }
+  return { text: `Hold the line on ${lvl.name} - see how far past the end it stands`, action: 'hold', levelId: ctx.levelId }
 }
 
 /** 12,400 reads as 12.4k: the number is a badge, not a ledger */
@@ -202,6 +239,7 @@ export class Screens {
       case 'menu': this.renderMenu(); break
       case 'hold': this.onOpenHold(opts.visit); break
       case 'levels': this.renderLevels(); break
+      case 'frontier': this.renderFrontier(); break
       case 'sandbox': this.renderLevels(true); break
       case 'hunts': void import('./endgame.ts').then(({ renderEndgame }) => { if (this.current === 'hunts') renderEndgame(this.root, this.save(), this.onPlayHunt, () => this.show('menu')) }); break
       case 'coop': this.renderCoop(opts.coopCode); break
@@ -247,7 +285,9 @@ export class Screens {
     }
     // a battle interrupted mid-campaign is worth more than a fresh one
     const session = readSession()
-    const sessionLevel = session ? (session.hunt ? huntById(session.hunt)?.name : levels.find(l => l.id === session.levelId)?.name) : null
+    // a saved Frontier battle is named from the index: its board has not been fetched yet
+    const sessionLevel = session ? (session.hunt ? huntById(session.hunt)?.name
+      : allLevels.find(l => l.id === session.levelId)?.name ?? frontierBoard(session.levelId)?.name) : null
     if (session && sessionLevel) {
       play.classList.replace('primary', 'ghost')
       play.textContent = 'New battle'
@@ -261,9 +301,11 @@ export class Screens {
     const cp = readCheckpoint()
     // a checkpoint whose level no longer exists (an older build saved one for
     // the Daily, or a map was renamed) must not offer a button that cannot open
-    const cpLevel = cp ? levels.find(l => l.id === cp.levelId) : undefined
+    const cpBoard = cp ? allLevels.find(l => l.id === cp.levelId) : undefined
+    const cpIndexed = cp ? frontierBoard(cp.levelId) : undefined
+    const cpLevel = cpBoard ? { name: cpBoard.name, waves: cpBoard.waves.length } : cpIndexed
     if (!session && cp && cpLevel) {
-      const depth = cp.waveIndex + 1 - cpLevel.waves.length
+      const depth = cp.waveIndex + 1 - cpLevel.waves
       const resume = el('button', 'btn primary menu-resume', actions, cp.freeplay
         ? `${icon('castle')} Hold the line on ${cpLevel.name} · +${Math.max(1, depth)}`
         : `${icon('respawn')} Resume ${cpLevel.name} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
@@ -274,6 +316,9 @@ export class Screens {
     const navigation = el('div', 'menu-navigation', card)
     const campaign = el('button', 'btn ghost', navigation, `${icon('flag')} Campaign`)
     campaign.onclick = () => this.show('levels')
+    const frontier = el('button', 'btn ghost', navigation, `${icon('compass')} Frontier`)
+    frontier.setAttribute('aria-label', 'Frontier maps')
+    frontier.onclick = () => this.show('frontier')
     if (coopEnabled()) {
       const coop = el('button', 'btn ghost', navigation, `${icon('helmPlume')} Co-op`) as HTMLButtonElement
       coop.onclick = () => this.show('coop')
@@ -418,7 +463,8 @@ export class Screens {
     const head = el('div', 'levels-head', wrap)
     const back = el('button', 'btn ghost small', head, '← Back') as HTMLButtonElement
     back.onclick = () => this.show('menu')
-    el('div', 'levels-nav-label', head, `${icon(sandbox ? 'castle' : 'flag')} ${sandbox ? 'Sandbox' : 'Campaign'}`)
+    if (sandbox) el('div', 'levels-nav-label', head, `${icon('castle')} Sandbox`)
+    else this.renderLevelTabs(head, 'levels')
     const collection = el('div', 'levels-collection', head)
     const armoryBtn = el('button', 'btn ghost small', collection, `${icon('swords')} Armory <span class="nav-count">${starsAvailable(save)}★</span>`) as HTMLButtonElement
     armoryBtn.onclick = () => this.renderArmory()
@@ -470,6 +516,102 @@ export class Screens {
       else el('div', 'level-goal locked-goal', body, `Complete ${levels[i - 1].name} ${icon('lock')}`)
       if (!locked) card.onclick = () => this.showDifficultyPicker(lvl.id, lvl.name, sandbox)
     })
+    // the sandbox opens every board, the Frontier's included
+    if (sandbox) {
+      el('div', 'frontier-tier-head', wrap, `<span class="eyebrow">The Frontier</span><span class="frontier-tier-blurb">Ten boards beyond the campaign, rated by how hard they bite.</span>`)
+      const more = el('div', 'levels-grid', wrap)
+      for (const board of FRONTIER_BOARDS) this.frontierCard(more, board, true)
+    }
+  }
+
+  /** Campaign and Frontier are two shelves of the same map room */
+  private renderLevelTabs(head: HTMLElement, current: 'levels' | 'frontier'): void {
+    const tabs = el('div', 'levels-tabs', head)
+    tabs.setAttribute('role', 'group')
+    tabs.setAttribute('aria-label', 'Map collection')
+    for (const [name, label, ico] of [['levels', 'Campaign', 'flag'], ['frontier', 'Frontier', 'compass']] as const) {
+      const tab = el('button', `levels-tab${name === current ? ' picked' : ''}`, tabs, `${icon(ico)} ${label}`) as HTMLButtonElement
+      tab.setAttribute('aria-pressed', String(name === current))
+      tab.onclick = () => { if (name !== current) this.show(name) }
+    }
+  }
+
+  /**
+   * The Frontier: every board open, grouped by how hard it is.
+   *
+   * No locks and no chapter numbers - the tier is the only order these boards
+   * have, so it is what the screen is organised by. The summary counts its own
+   * stars, because they are not campaign stars and do not buy Armory tiers.
+   */
+  private renderFrontier(): void {
+    const save = this.save()
+    const wrap = el('div', 'screen levels-screen frontier-screen', this.root)
+    const head = el('div', 'levels-head', wrap)
+    const back = el('button', 'btn ghost small', head, '← Back') as HTMLButtonElement
+    back.onclick = () => this.show('menu')
+    this.renderLevelTabs(head, 'frontier')
+    const intro = el('div', 'campaign-heading', wrap)
+    const titles = el('div', '', intro)
+    el('div', 'eyebrow', titles, 'The Frontier')
+    el('h2', 'levels-title', titles, 'Beyond the campaign road')
+    el('p', 'campaign-description', titles, 'Ten strange battlefields, open from the start. Pick one by how hard you want to be pushed.')
+    // the boards themselves arrive in their own chunk; start it now, so the
+    // setup sheet is ready by the time a card is chosen
+    void loadFrontier()
+    const cleared = FRONTIER_BOARDS.filter(b => (save.stars[b.id] ?? 0) > 0).length
+    const stars = FRONTIER_BOARDS.reduce((n, b) => n + (save.stars[b.id] ?? 0), 0)
+    el('div', 'campaign-summary', intro, `${icon('compass')}<span><b>${cleared} / ${FRONTIER_BOARDS.length}</b> conquered</span><span><b>${stars}</b> frontier stars</span>`)
+    for (const tier of FRONTIER_TIERS) {
+      const boards = FRONTIER_BOARDS.filter(b => b.tier === tier.tier)
+      if (!boards.length) continue
+      el('div', `frontier-tier-head tier-${tier.tier}`, wrap,
+        `<span class="frontier-tier-name">${tier.name}</span><span class="frontier-tier-count">${boards.length} ${boards.length === 1 ? 'board' : 'boards'}</span><span class="frontier-tier-blurb">${tier.blurb}</span>`)
+      const grid = el('div', 'levels-grid', wrap)
+      for (const board of boards) this.frontierCard(grid, board, false)
+    }
+  }
+
+  private frontierCard(grid: HTMLElement, lvl: FrontierBoard, sandbox: boolean): void {
+    const save = this.save()
+    const tier = lvl.tier
+    const stars = save.stars[lvl.id] ?? 0
+    const medals = save.medals[lvl.id] ?? []
+    const card = el('button', `level-card frontier-card tier-${tier}`, grid) as HTMLButtonElement
+    card.setAttribute('aria-label', `${lvl.name}, ${TIER_NAMES[tier]}${sandbox ? ', open sandbox' : `, ${stars} of 3 stars`}`)
+    const art = el('div', `level-art${PAINTED_MAPS.has(lvl.id) ? '' : ' theme-art'}`, card)
+    art.style.background = mapArt(lvl)
+    if (!PAINTED_MAPS.has(lvl.id)) el('span', 'theme-emblem', art, icon(THEME_ICONS[lvl.theme]))
+    el('span', `level-chapter frontier-tier tier-${tier}`, art, TIER_NAMES[tier].toUpperCase())
+    el('span', `level-status${stars > 0 ? '' : ' available'}`, art, stars > 0 ? `${icon('check')} Conquered` : sandbox ? 'Free build' : 'Open')
+    const body = el('div', 'level-card-body', card)
+    el('div', 'level-name', body, lvl.name)
+    el('div', 'level-sub', body, lvl.feature)
+    el('div', 'level-meta', body, `${icon('wave')} ${sandbox ? 'Free building' : `${lvl.waves} waves`} <span>·</span> ${lvl.roads === 1 ? 'Single road' : `${lvl.roads} roads`}`)
+    const held = Math.max(...(['casual', 'normal', 'veteran'] as const).map(d => save.bestFreeplay?.[`${lvl.id}:${d}`] ?? 0))
+    const best = save.bestEndless[lvl.id] ?? 0
+    if (!sandbox) {
+      el('div', 'level-stars', body, '★'.repeat(stars) + '<span class="dim">' + '★'.repeat(3 - stars) + '</span>' +
+        (medals.includes('noleak') ? `<span class="level-medal" title="Flawless: won without a single leak"> ${icon('medal')}</span>` : '') +
+        (medals.includes('veteran') ? `<span class="level-medal" title="Conquered on Veteran"> ${icon('medal', 'vet')}</span>` : '') +
+        (best > 0 ? `<span class="level-endless"> ${icon('moon')}${best}</span>` : '') +
+        (held > 0 ? `<span class="level-endless" title="Waves held past the end"> ${icon('castle')}+${held}</span>` : ''))
+      const goal = stars === 0 ? 'Clear the map' : stars < 3 ? 'Earn three stars'
+        : !medals.includes('noleak') ? 'Win without a single leak'
+        : !medals.includes('veteran') ? 'Conquer it on Veteran' : best === 0 ? 'Enter the Long Night' : `Survive past wave ${best} in the Long Night`
+      el('div', 'level-goal', body, `${goal} ${icon('arrowRight')}`)
+    } else {
+      el('div', 'level-goal', body, `Open sandbox ${icon('arrowRight')}`)
+    }
+    card.onclick = () => {
+      card.disabled = true
+      void loadFrontier().then(() => {
+        card.disabled = false
+        if (card.isConnected) this.showDifficultyPicker(lvl.id, lvl.name, sandbox)
+      }, () => {
+        card.disabled = false
+        el('div', 'level-goal locked-goal', body, 'Could not load this board. Check your connection and try again.')
+      })
+    }
   }
 
   /**
@@ -660,7 +802,7 @@ export class Screens {
     const title = el('div', 'setup-title', heading)
     el('div', 'eyebrow', title, sandbox ? 'Sandbox setup' : 'Prepare your defense')
     el('h2', '', title, levelName)
-    el('p', '', title, sandbox ? 'All towers and heroes · No account rewards' : `${level.waves.length} waves · ${level.lanes.length === 1 ? 'Single road' : `${level.lanes.length} roads`} · ${level.subtitle}`)
+    el('p', '', title, sandbox ? 'All towers and heroes · No account rewards' : `${level.frontier ? `${TIER_NAMES[level.frontier.tier]} · ` : ''}${level.waves.length} waves · ${level.lanes.length === 1 ? 'Single road' : `${level.lanes.length} roads`} · ${level.subtitle}`)
     const close = el('button', 'tp-close', heading, '×')
     close.setAttribute('aria-label', 'Close battle setup')
     close.onclick = () => overlay.remove()
@@ -683,7 +825,8 @@ export class Screens {
       mkMode('endless', `${icon('moon')} The Long Night${best > 0 ? ` · best ${best}` : ''}`)
     }
 
-    if (beaten) {
+    // Trials pay Armory stars, and the Armory is priced against the campaign
+    if (beaten && !level.frontier) {
       // Two more stars per map, each behind a short test. Shown where the map
       // is chosen, so the pursuit is visible every time the player comes back.
       const won = trialsWon(save.trials, levelId)
@@ -771,9 +914,12 @@ export class Screens {
   }
 
   private renderEnd(won: boolean, stars: number, levelId: string, stats?: BattleStats): void {
-    const idx = levels.findIndex(l => l.id === levelId)
+    // the shelf this board sits on decides what "next" and "level select" mean
+    const shelf: { id: string, name: string }[] = isFrontier(levelId) ? FRONTIER_BOARDS : levels
+    const idx = shelf.findIndex(l => l.id === levelId)
+    const boardName = shelf[idx]?.name
     const endless = stats?.endless ?? false
-    const hasNext = won && !endless && idx >= 0 && idx < levels.length - 1
+    const hasNext = won && !endless && idx >= 0 && idx < shelf.length - 1
     const daily = stats?.daily
     const hunt = stats?.hunt
     const wrap = el('div', 'screen end-screen', this.root)
@@ -808,7 +954,7 @@ export class Screens {
       // how far past the map's end the line held, which is the whole score
       const held = Math.max(0, stats.freeplayDepth - 1)
       el('div', 'end-sub', card,
-        `You held the line <b>${held}</b> wave${held === 1 ? '' : 's'} past the end of ${levels[idx]?.name ?? 'the map'}` +
+        `You held the line <b>${held}</b> wave${held === 1 ? '' : 's'} past the end of ${boardName ?? 'the map'}` +
         (stats.newWaveRecord ? ` — a new record! ${icon('medal')}` : ''))
     } else if (endless && stats) {
       // held and fell-on are different numbers, and reporting only one of them
@@ -879,9 +1025,12 @@ export class Screens {
       hold.title = 'Keep your defense and keep fighting: harder waves, bigger bosses, a record to set'
       hold.onclick = () => this.onHoldTheLine()
     }
-    if (hasNext && !trial) {
+    // on the Frontier there is no chapter order: "next" is the board the objective names
+    const nextId = shelf === FRONTIER_BOARDS ? (objective?.action === 'next' ? objective.levelId : null)
+      : hasNext ? shelf[idx + 1].id : null
+    if (nextId && !trial && won && !endless) {
       const next = el('button', `btn${won && !endless && !freeplay ? '' : ' primary'}`, row, 'Next battle →') as HTMLButtonElement
-      next.onclick = () => this.onPlayLevel(levels[idx + 1].id)
+      next.onclick = () => this.onPlayLevel(nextId)
     }
     const retry = el('button', `btn ${won && !endless ? '' : 'primary'}`, row, endless ? 'Descend again' : won ? 'Replay' : 'Try again') as HTMLButtonElement
     retry.onclick = () => this.onRetry()
@@ -891,7 +1040,7 @@ export class Screens {
       nextWatch.onclick = () => this.onNextWatch()
     }
     const menu = el('button', 'btn ghost', row, 'Level select') as HTMLButtonElement
-    menu.onclick = () => { this.onMenu(); this.show('levels') }
+    menu.onclick = () => { this.onMenu(); this.show(shelf === FRONTIER_BOARDS ? 'frontier' : 'levels') }
 
     // Every finished run is worth handing on, not only the Daily's. The Long
     // Night record in particular is the number players most want to argue
@@ -904,7 +1053,7 @@ export class Screens {
       share.onclick = () => {
         const url = runChallengeUrl(this.runSeedForShare, levelId, endless)
         const text = runShareText({
-          levelName: levels[idx]?.name ?? 'Blockhold',
+          levelName: boardName ?? 'Blockhold',
           endless,
           won,
           wave: stats.wavesReached,

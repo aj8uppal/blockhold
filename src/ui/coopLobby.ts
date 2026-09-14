@@ -4,7 +4,8 @@ import { readSession } from '../game/session.ts'
 import { HUNTS, huntAccess } from '../game/hunts.ts'
 import type { SaveData } from '../core/save.ts'
 import type { Difficulty, HeroId } from '../game/types.ts'
-import { levels } from '../game/levels.ts'
+import { levels, allLevels } from '../game/levels.ts'
+import { FRONTIER_BOARDS, frontierBoard, tierName } from '../game/frontierIndex.ts'
 import { HERO_DEFS } from '../game/hero.ts'
 import { isUnlocked } from '../game/progress.ts'
 import { difficultyMods } from '../game/difficulty.ts'
@@ -158,7 +159,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
     }
     const st = session.setup
     if (st) {
-      const lvl = levels.find(l => l.id === st.levelId) ?? HUNTS.find(h => `hunt-${h.id}` === st.levelId)
+      const lvl = allLevels.find(l => l.id === st.levelId) ?? frontierBoard(st.levelId) ?? HUNTS.find(h => `hunt-${h.id}` === st.levelId)
       plan.textContent = `${st.mode === 'sandbox' ? 'Sandbox · ' : ''}${lvl?.name ?? st.levelId} · ${difficultyMods(st.levelId, st.difficulty).name} · ${HERO_DEFS[st.hero]?.name ?? st.hero}`
     } else plan.textContent = 'The host is choosing the battle…'
   }
@@ -191,6 +192,14 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
       if (setup.mode !== 'sandbox' && i >= save.unlocked) return
       const o = document.createElement('option'); o.value = lvl.id; o.textContent = lvl.name; o.selected = lvl.id === setup.levelId; sel.append(o)
     })
+    // the Frontier is open to everyone, so it is open in a room too
+    const frontier = document.createElement('optgroup'); frontier.label = 'The Frontier'
+    for (const lvl of FRONTIER_BOARDS) {
+      const o = document.createElement('option'); o.value = lvl.id
+      o.textContent = `${lvl.name} · ${tierName(lvl.tier)}`
+      o.selected = lvl.id === setup.levelId; frontier.append(o)
+    }
+    sel.append(frontier)
     if (setup.mode !== 'sandbox' && huntAccess(save)) for (const hunt of HUNTS) {
       const o = document.createElement('option'); o.value = `hunt-${hunt.id}`; o.textContent = hunt.name; o.selected = o.value === setup.levelId; sel.append(o)
     }

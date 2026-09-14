@@ -871,7 +871,7 @@ export class Tower {
       const d = lane.closestDistance(this.pos.x, this.pos.z)
       const s = lane.sample(d)
       const dist = Math.hypot(s.x - this.pos.x, s.z - this.pos.z)
-      if (dist < bestD) { bestD = dist; best = new THREE.Vector3(s.x, 0, s.z) }
+      if (dist < bestD) { bestD = dist; best = new THREE.Vector3(s.x, s.y, s.z) }
     }
     this.rallyPoint.copy(best ?? this.pos)
   }
@@ -883,7 +883,13 @@ export class Tower {
   }
 
   setRally(x: number, z: number, world: World): void {
-    this.rallyPoint.set(x, 0, z)
+    // a rally on a causeway stands on the causeway; the road is always within reach of one
+    let y = 0, nearest = Infinity
+    for (const lane of world.lanes) {
+      const d = lane.distanceToPath(x, z)
+      if (d < nearest) { nearest = d; y = lane.heightAt(lane.closestDistance(x, z)) }
+    }
+    this.rallyPoint.set(x, y, z)
     this.soldiers.forEach((s, i) => {
       s.home.copy(this.soldierHome(i))
       if (s.target && s.target.pos.distanceTo(s.home) > 1.9) {
@@ -900,7 +906,7 @@ export class Tower {
     const angle = (i / this.squadSize) * Math.PI * 2 + 0.6
     return new THREE.Vector3(
       this.rallyPoint.x + Math.sin(angle) * 0.3,
-      0,
+      this.rallyPoint.y,
       this.rallyPoint.z + Math.cos(angle) * 0.3,
     )
   }
@@ -946,7 +952,7 @@ export class Tower {
       this.rallyFlag = buildModel(rallyFlagModel(), 'rallyflag', { castShadow: false })
       world.dynamic.add(this.rallyFlag)
     }
-    this.rallyFlag.position.set(this.rallyPoint.x, 0.02, this.rallyPoint.z)
+    this.rallyFlag.position.set(this.rallyPoint.x, this.rallyPoint.y + 0.02, this.rallyPoint.z)
   }
 
   // ---------------- combat ----------------
@@ -1507,7 +1513,7 @@ export class Tower {
           Math.min(target.lane.length - 0.01, target.dist + target.def.speed * flightTime * 0.85),
           target.offset,
         )
-        const at = new THREE.Vector3(predicted.x, 0.02, predicted.z)
+        const at = new THREE.Vector3(predicted.x, predicted.y + 0.02, predicted.z)
         // Emberthrone: a second shell lands a stride further down the lane, so
         // the pair leaves one long burning scar instead of a single crater
         if (def.signature === 'twinShells') {
@@ -1515,7 +1521,7 @@ export class Tower {
             Math.max(0, Math.min(target.lane.length - 0.01, target.dist - 0.9)),
             target.offset,
           )
-          this.pendingTwin = new THREE.Vector3(second.x, 0.02, second.z)
+          this.pendingTwin = new THREE.Vector3(second.x, second.y + 0.02, second.z)
         }
         const cluster = def.special?.kind === 'cluster' ? def.special : undefined
         const burn = def.special?.kind === 'burnGround' ? def.special : undefined
@@ -1588,7 +1594,7 @@ export class Tower {
     for (let i = 0; i < 2; i++) {
       const spawn = this.doorPos().add(new THREE.Vector3(randRange(-0.25, 0.25), 0, randRange(0, 0.2)))
       const home = new THREE.Vector3(
-        this.rallyPoint.x + randRange(-0.3, 0.3), 0, this.rallyPoint.z + randRange(-0.3, 0.3))
+        this.rallyPoint.x + randRange(-0.3, 0.3), this.rallyPoint.y, this.rallyPoint.z + randRange(-0.3, 0.3))
       const r = new Soldier(def, spawn, home)
       r.expiresAt = world.time + MUSTER_LIFETIME
       r.credit = this

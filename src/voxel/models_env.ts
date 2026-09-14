@@ -95,6 +95,25 @@ export function flowers(rng: () => number): VoxModel {
  * monumental while its footprint stays well inside the 2.6-cell clearance the
  * placement rules keep between a landmark and the nearest road.
  */
+/** stone, accent and great-tree canopy for the Frontier themes' shared set-pieces */
+/**
+ * The Frontier's own set-pieces and gate palettes, installed when its boards
+ * load (frontierScenery.ts), so the campaign never downloads their models.
+ */
+export const frontierHooks: {
+  landmark?: (kind: string, rng: () => number) => VoxModel | null
+  heights: Record<string, number>
+  portal: Record<string, [number, number]>
+  castle: Record<string, [number, number, number]>
+} = { heights: {}, portal: {}, castle: {} }
+
+const FRONTIER_STONE: Record<string, [number, number, number]> = {
+  blossom: [0xcfc6b4, 0xff9fc0, 0xf2a8c6], desert: [0xd9b477, 0xffb347, 0x6a9a4a], skyreach: [0xc8ccd4, 0x7fd4ff, 0x4f9a45],
+  reef: [0xf0e6d2, 0x4fe8d8, 0x4f9a55], cavern: [0x6f6a86, 0x6ff6ff, 0x5f7a8f], cosmos: [0x9a96ae, 0x7fe8ff, 0x6a5aa8],
+  jungle: [0xa8a88a, 0x7fff6a, 0x2f7a38], aurora: [0xbcc6d4, 0x6fffc8, 0xdfe9f2], storm: [0x8a8e96, 0x9fdcff, 0x4a5a4a],
+  eclipse: [0x8a80a8, 0xffc36a, 0x5a4a7a],
+}
+
 const LANDMARK_SCALE: Record<string, number> = {
   spire: 0.2, monolith: 0.2, greatTree: 0.18, arch: 0.16, ruin: 0.16,
 }
@@ -107,18 +126,20 @@ export const LANDMARK_HEIGHT: Record<string, number> = {
 
 /** the tallest set-piece a board carries, in world units */
 export function tallestLandmark(kinds: string[]): number {
-  return kinds.reduce((m, k) => Math.max(m, LANDMARK_HEIGHT[k] ?? 0), 0)
+  return kinds.reduce((m, k) => Math.max(m, LANDMARK_HEIGHT[k] ?? frontierHooks.heights[k] ?? 0), 0)
 }
 
 export function landmark(kind: string, rng: () => number, theme: string): VoxModel {
+  const frontier = frontierHooks.landmark?.(kind, rng)
+  if (frontier) return frontier
   // These sit against the map's own ambient grade, and the ember and void
   // themes are dark enough that an unlit stone reads as a black cut-out. The
   // palette is deliberately lighter than the ground it stands on.
-  const stone = theme === 'ember' ? 0xa8776a : theme === 'void' ? 0x8d7fc4
-    : theme === 'winter' ? 0xbcc6d4 : 0xa9abb2
+  const stone = FRONTIER_STONE[theme]?.[0] ?? (theme === 'ember' ? 0xa8776a : theme === 'void' ? 0x8d7fc4
+    : theme === 'winter' ? 0xbcc6d4 : 0xa9abb2)
   const dark = shuffleColor(stone, 0.12, rng)
-  const accent = theme === 'ember' ? 0xff6a2a : theme === 'void' ? 0xb37aff
-    : theme === 'winter' ? 0x8fdfff : 0x7fd44a
+  const accent = FRONTIER_STONE[theme]?.[1] ?? (theme === 'ember' ? 0xff6a2a : theme === 'void' ? 0xb37aff
+    : theme === 'winter' ? 0x8fdfff : 0x7fd44a)
 
   switch (kind) {
     case 'spire': {
@@ -165,8 +186,8 @@ export function landmark(kind: string, rng: () => number, theme: string): VoxMod
     }
     default: {
       // a great tree: trunk plus stacked canopy, three times a normal one
-      const leaf = theme === 'winter' ? 0xdfe9f2 : theme === 'ember' ? 0x7a5a3a
-        : theme === 'void' ? 0x5f4a8f : 0x3f7a35
+      const leaf = FRONTIER_STONE[theme]?.[2] ?? (theme === 'winter' ? 0xdfe9f2 : theme === 'ember' ? 0x7a5a3a
+        : theme === 'void' ? 0x5f4a8f : 0x3f7a35)
       const body: VoxBox[] = [
         box(0, 7, 0, 3.4, 14, 3.4, 0x6b4a2a),
         box(0, 15, 0, 13, 4.4, 13, leaf),
@@ -220,9 +241,10 @@ export function stump(rng: () => number): VoxModel {
 
 /** Where enemies come from: a dark cave arch with an ominous glow. */
 export function spawnPortal(theme: string): VoxModel {
-  const stoneC = theme === 'ember' ? 0x4a3535 : theme === 'winter' ? 0x6a7285
-    : theme === 'swamp' ? 0x4f5a42 : theme === 'void' ? 0x3a3350 : 0x5d5f52
-  const glowC = theme === 'ember' ? 0xff5a3c : theme === 'void' ? 0xdd6bff : 0x9f5aff
+  const custom = frontierHooks.portal[theme]
+  const stoneC = custom?.[0] ?? (theme === 'ember' ? 0x4a3535 : theme === 'winter' ? 0x6a7285
+    : theme === 'swamp' ? 0x4f5a42 : theme === 'void' ? 0x3a3350 : 0x5d5f52)
+  const glowC = custom?.[1] ?? (theme === 'ember' ? 0xff5a3c : theme === 'void' ? 0xdd6bff : 0x9f5aff)
   const base: VoxBox[] = [
     box(-3.2, 2.6, 0, 2.2, 5.2, 3.6, stoneC),
     box(3.2, 2.6, 0, 2.2, 5.2, 3.6, stoneC),
@@ -243,10 +265,11 @@ export function spawnPortal(theme: string): VoxModel {
 
 /** What you defend: a small keep with banners. */
 export function exitCastle(theme: string): VoxModel {
-  const wallC = theme === 'ember' ? 0x8f8378 : theme === 'void' ? 0x9a92b5 : 0xb8bfc9
-  const wallD = theme === 'ember' ? 0x6b6055 : theme === 'void' ? 0x6f688a : 0x8f96a3
-  const roofC = theme === 'winter' ? 0x37548f : theme === 'ember' ? 0x8f2f2f
-    : theme === 'swamp' ? 0x4a7a3f : theme === 'void' ? 0x6f3aaf : 0x3d6fb8
+  const custom = frontierHooks.castle[theme]
+  const wallC = custom?.[0] ?? (theme === 'ember' ? 0x8f8378 : theme === 'void' ? 0x9a92b5 : 0xb8bfc9)
+  const wallD = custom?.[1] ?? (theme === 'ember' ? 0x6b6055 : theme === 'void' ? 0x6f688a : 0x8f96a3)
+  const roofC = custom?.[2] ?? (theme === 'winter' ? 0x37548f : theme === 'ember' ? 0x8f2f2f
+    : theme === 'swamp' ? 0x4a7a3f : theme === 'void' ? 0x6f3aaf : 0x3d6fb8)
   const base: VoxBox[] = [
     // gatehouse
     box(0, 3.4, 0, 9, 6.8, 5, wallC),

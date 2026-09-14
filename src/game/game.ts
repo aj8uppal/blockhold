@@ -32,7 +32,9 @@ import { battleXp, isUnlocked, levelForXp, unlocksBetween, type UnlockDef } from
 import { campaignScale } from './balanceModel.ts'
 import { OnboardingDirector } from './onboarding.ts'
 import { heroRankCost, heroRankGold, heroRankLevel } from './hero.ts'
-import { levels, generateEndlessWaves, generateFreeplayChunk, ladderRung } from './levels.ts'
+import { levels, allLevels, generateEndlessWaves, generateFreeplayChunk, ladderRung, loadFrontier } from './levels.ts'
+import { isFrontierId } from './frontierIndex.ts'
+import { frontierWeather } from './frontierWeather.ts'
 import { trialLevel, type TrialDef, type TrialKind } from './trials.ts'
 import { stateHash, type CoopCommand } from './coopCommands.ts'
 import type { CoopSession, CoopEvent, CoopSetup } from '../core/coop.ts'
@@ -63,6 +65,9 @@ import { telemetry } from '../core/telemetry.ts'
 import type { DailyResult } from './share.ts'
 
 export type GamePhase = 'idle' | 'playing' | 'victory' | 'defeat'
+/** a selection ring sits just above a road spot, which on a raised road is not the floor */
+const ringLift = (y: number): number => y > 0.1 ? y + 0.08 : 0.1
+
 export type TargetMode = 'meteor' | 'reinforce' | 'rally' | 'holdline' | 'expand' | null
 
 export interface AbilityState { cooldown: number, max: number }
@@ -155,7 +160,10 @@ export class Game implements World {
     if (this.recovering || this.coop) return false
     const session = parseSession(input)
     if (!session) return false
-    const level = session.hunt ? huntLevel(session.hunt) : levels.find(l => l.id === session.levelId)
+    if (isFrontierId(session.levelId)) {
+      try { await loadFrontier() } catch { return false }
+    }
+    const level = session.hunt ? huntLevel(session.hunt) : allLevels.find(l => l.id === session.levelId)
     if (!level || level.id !== session.levelId) return false
     const liveHud = this.hud
     let succeeded = false
@@ -1400,7 +1408,10 @@ export class Game implements World {
     const pending: CoopEvent[] = []
     const unbuffer = session.on(event => pending.push(event))
     const hunt = setup.levelId.startsWith('hunt-') ? huntById(setup.levelId.slice(5)) : undefined
-    const level = hunt ? huntLevel(hunt.id) : levels.find(l => l.id === setup.levelId)
+    if (isFrontierId(setup.levelId)) {
+      try { await loadFrontier() } catch { unbuffer(); return false }
+    }
+    const level = hunt ? huntLevel(hunt.id) : allLevels.find(l => l.id === setup.levelId)
     if (!level) { unbuffer(); return false }
     if (setup.battle) {
       if (setup.battle.levelId !== setup.levelId || !(await this.resumeSession(setup.battle, { forCoop: true }))) { unbuffer(); return false }
@@ -1821,7 +1832,7 @@ export class Game implements World {
       }).finally(() => { this.retryPending = false })
       return
     }
-    const level = levels.find(l => l.id === this.level!.id) ?? this.level
+    const level = allLevels.find(l => l.id === this.level!.id) ?? this.level
     this.startLevel(level, this.difficulty, this.hero?.heroDef.id ?? 'aldric',
       this.isSandbox ? 'sandbox' : this.isEndless ? 'endless' : 'campaign', {
         seed: this.runSeed, watches: this.isWatches, bellfoundry: this.isBellfoundry,
@@ -1999,7 +2010,7 @@ export class Game implements World {
       for (let d = 0.6; d < lane.length - 0.5; d += 0.85) {
         const p = lane.sample(d)
         const m = new THREE.Mesh(dashGeo, dashMat)
-        m.position.set(p.x, 0.06, p.z)
+        m.position.set(p.x, p.y + 0.06, p.z)
         m.renderOrder = 2
         group.add(m)
       }
@@ -2030,7 +2041,7 @@ export class Game implements World {
         r.phase += dt * 2.4
         const lane = this.lanes[r.lane]
         const p = lane.sample(r.phase % lane.length)
-        r.mesh.position.set(p.x, 0.08, p.z)
+        r.mesh.position.set(p.x, p.y + 0.08, p.z)
       }
       if (this.terrain) {
         // the gates the coming wave will use breathe hard; the others barely
@@ -2469,6 +2480,14 @@ export class Game implements World {
 
   groundPoint(sx: number, sy: number): THREE.Vector3 | null {
     this.rayFromScreen(sx, sy)
+    // where roads climb, a tap belongs to the ground it lands on: aiming at a
+    // causeway through the floor plane would put a rally or a move order a
+    // cell short of it. Every flat board keeps the plane it always used.
+    const ground = this.terrain?.paths.elevated ? this.terrain.groundMesh : null
+    if (ground) {
+      const hit = this.raycaster.intersectObject(ground, false)[0]
+      if (hit) return hit.point.clone()
+    }
     const out = new THREE.Vector3()
     return this.raycaster.ray.intersectPlane(this.groundPlane, out) ? out : null
   }
@@ -2589,7 +2608,7 @@ export class Game implements World {
       this.clearSelection()
       this.hud.openTrapPanel(trap)
       this.selectRing.visible = true
-      this.selectRing.position.set(trap.group.position.x, 0.1, trap.group.position.z)
+      this.selectRing.position.set(trap.group.position.x, ringLift(trap.group.position.y), trap.group.position.z)
       this.sfx('click')
       return
     }
@@ -2755,7 +2774,7 @@ export class Game implements World {
         const count = METEOR_COUNT + (armoryTier(this.loadout, 'comet') > 0 ? 1 : 0)
         for (let i = 0; i < count; i++) {
           const at = g.clone().add(new THREE.Vector3(randRange(-0.8, 0.8), 0, randRange(-0.8, 0.8)))
-          at.y = 0
+          at.y = this.terrain?.paths.elevated ? this.groundY(at.x, at.z) : 0
           this.pendingCasts.push({
             at: this.time + i * 0.45,
             spec: { kind: 'meteor', at, damage: randRange(...METEOR_DAMAGE), world: this },
@@ -2769,7 +2788,7 @@ export class Game implements World {
         const def = towerTrees.barracks.levels[0].soldier!
         for (let i = 0; i < 2; i++) {
           const pos = g.clone().add(new THREE.Vector3(randRange(-0.25, 0.25), 0, randRange(-0.25, 0.25)))
-          pos.y = 0
+          pos.y = this.terrain?.paths.elevated ? this.groundY(pos.x, pos.z) : 0
           const s = new Soldier(
             { ...def, name: 'Reinforcement', hp: Math.round(70 * this.soldierHpMult()), damage: [3, 6], model: 'reinforcement' },
             pos, pos,
@@ -3067,7 +3086,7 @@ export class Game implements World {
     const screen = this.projectToScreen(spot.pos.x, spot.pos.y + 0.15, spot.pos.z)
     this.hud.openTrapMenu(spot, screen?.x ?? sx, screen?.y ?? sy)
     this.selectRing.visible = true
-    this.selectRing.position.set(spot.pos.x, 0.1, spot.pos.z)
+    this.selectRing.position.set(spot.pos.x, ringLift(spot.pos.y), spot.pos.z)
     this.sfx('click')
   }
 
@@ -3087,7 +3106,7 @@ export class Game implements World {
     const screen = this.projectToScreen(spot.pos.x, spot.pos.y + 0.15, spot.pos.z)
     this.hud.openEarthworkMenu(spot, screen?.x ?? sx, screen?.y ?? sy)
     this.selectRing.visible = true
-    this.selectRing.position.set(spot.pos.x, 0.1, spot.pos.z)
+    this.selectRing.position.set(spot.pos.x, ringLift(spot.pos.y), spot.pos.z)
     this.sfx('click')
   }
 
@@ -3198,7 +3217,7 @@ export class Game implements World {
     this.selectedEarthwork = work
     work.showReach(true)
     this.selectRing.visible = true
-    this.selectRing.position.set(work.group.position.x, 0.1, work.group.position.z)
+    this.selectRing.position.set(work.group.position.x, ringLift(work.group.position.y), work.group.position.z)
     this.hud.openEarthworkPanel(work)
     this.sfx('click')
   }
@@ -3252,6 +3271,8 @@ export class Game implements World {
     const w = this.level.width, h = this.level.height
     const rx = () => (Math.random() - 0.5) * w * 0.9
     const rz = () => (Math.random() - 0.5) * h * 0.9
+    const frontier = frontierWeather[this.level.theme]
+    if (frontier) { frontier(this.particles, dt, rx, rz); return }
     switch (this.level.theme) {
       case 'winter':
         if (Math.random() < dt * 26) {

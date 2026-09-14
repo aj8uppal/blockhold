@@ -178,6 +178,8 @@ export interface WaveDef {
 }
 
 export type ThemeId = 'forest' | 'winter' | 'ember' | 'swamp' | 'void' | 'highland' | 'ashfall' | 'tidal'
+  // the Frontier boards
+  | 'blossom' | 'desert' | 'skyreach' | 'reef' | 'cavern' | 'cosmos' | 'jungle' | 'aurora' | 'storm' | 'eclipse'
 
 /** large scenery that breaks the horizon and gives a board its character */
 export type LandmarkKind =
@@ -186,6 +188,9 @@ export type LandmarkKind =
   | 'monolith'   // a standing veil-stone
   | 'ruin'       // a collapsed wall
   | 'greatTree'
+  // Frontier set-pieces, one voice per theme
+  | 'pagoda' | 'pyramid' | 'windmill' | 'coralSpire' | 'crystalSpire'
+  | 'observatory' | 'serpentIdol' | 'iceSpire' | 'stormSpire' | 'eclipseAltar'
 
 /** map signature mechanics — opportunity windows, never chores */
 export type HazardId = 'deepchill' | 'eruption' | 'witchlights' | 'riftlight' | 'emberwind' | 'shiftingroads'
@@ -321,6 +326,13 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyMods> = {
 /** inclusive cell rect: [c0, r0, c1, r1] */
 export type Rect = [number, number, number, number]
 
+/**
+ * A lane waypoint: [col, row] on the ground, or [col, row, height] for a road
+ * that climbs. Between two waypoints of different height the road ramps; see
+ * `rampHeight` in path.ts for exactly where.
+ */
+export type LaneWaypoint = [number, number] | [number, number, number]
+
 export interface LevelDef {
   /** Optional liquid override for themed encounters with freshwater reservoirs. */
   liquid?: 'water' | 'lava'
@@ -351,7 +363,8 @@ export interface LevelDef {
   voids: Rect[]
   /** the map's signature mechanic (see src/game/hazards.ts) */
   hazard?: HazardId
-  lanes: [number, number][][]  // waypoint polylines in grid coords (col,row)
+  /** waypoint polylines in grid coords (col,row), optionally with the road's height there */
+  lanes: LaneWaypoint[][]
   waves: WaveDef[]
   startGold: number
   startLives: number
@@ -359,4 +372,12 @@ export interface LevelDef {
   intro?: string
   /** the waves carry their own health scaling (per-group hpMult); no campaign ramp is applied */
   flatScale?: boolean
+  /**
+   * A Frontier board. These stand outside the campaign's chapter order, so
+   * instead of a place in a sequence each one carries how hard it bites and
+   * the one thing about its ground that sets it apart.
+   */
+  frontier?: { tier: FrontierTier, feature: string }
 }
+
+export type FrontierTier = 'easy' | 'medium' | 'hard'

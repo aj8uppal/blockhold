@@ -39,6 +39,16 @@ Ten maps, each with its own theme, roster, and shape of pressure:
 
 Three difficulties per map, three stars per victory, and progress that is kept locally, backed up as a code you own, and optionally synced across devices. The last three are post-finale: their median wave pressure runs roughly twice the first seven's.
 
+## The Frontier
+
+Ten more boards outside the campaign's order, all open from the start and sorted by how hard they are. Each has its own theme and painted sky, and most use ground the campaign never does: round and ringed islands, bridges over open sky, and roads that climb.
+
+- **Gentle** — *Lanternbloom Terraces* (a spiral up three blossom terraces), *Cloudstep Isles* (four floating islands joined by ramped bridges), *Dunewake Oasis* (over a dune and round the water).
+- **Testing** — *The Serpent Stair* (both roads climb a jungle temple), *Glimmerdeep Hollow* (a crystal bridge between cavern shelves), *Starfall Drift* (asteroids in deep space, light bridges between four heights), *Coralspire Atoll* (two roads round a reef, one causeway home).
+- **Brutal** — *Rimeveil Glacier* (three gates, two crevasses, the aurora), *Stormcrown Citadel* (three roads storm two walls in a thunderstorm), *Duskwreath Ring* (four gates round a chasm under an eclipse).
+
+Frontier boards are drawn as text in `src/game/frontier.ts` (see `src/game/mapGrid.ts`) and load in their own chunk. Their stars are their own and do not buy Armory tiers.
+
 ## What makes it Blockhold
 
 - **Road traps.** Rune circles on the road itself hold a second build system: Spike Snares (burst + pin), Frost Runes (permanent slow zone), and Blast Charges (huge, slow to re-arm).

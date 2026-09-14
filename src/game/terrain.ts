@@ -1,12 +1,14 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { LevelDef, ThemeId, Rect } from './types.ts'
-import { PathsInfo, gridToWorld } from './path.ts'
+import { PathsInfo, gridToWorld, surfaceHeight, type RoadSurface } from './path.ts'
 import { seededRandom, shuffleColor } from '../core/utils.ts'
 import { buildModel, box, type VoxBox, type VoxModel } from '../voxel/builder.ts'
 import * as env from '../voxel/models_env.ts'
+import type { DecorEntry } from '../voxel/models_frontier.ts'
 import { TrapSpotInfo, trapSpotModel } from './traps.ts'
 import { deriveEarthworkSpots, type EarthworkSpot, type EarthworkKind, RAISE_HEIGHT, raisedGroundModel } from './earthworks.ts'
+import type { SkyDef } from '../core/sky.ts'
 
 export interface ThemeColors {
   grass: number
@@ -25,9 +27,37 @@ export interface ThemeColors {
   hemiSky: number
   hemiGround: number
   ambient: number
+  /** the face of a raised road (causeway) */
+  roadWall?: number
+  /** what a bridge over open sky is built from */
+  bridge?: 'wood' | 'stone' | 'energy' | 'crystal'
+  bridgeRail?: number
+  /** the bed under shallow water */
+  waterBed?: number
+  /** what surrounds the island; absent, a plain two-colour dome */
+  sky?: SkyDef
+  /** the rock hanging under the island's rim */
+  bedrock?: number
+  /** what drifts around the island: white cloud by default, a colour for tinted cloud, or none */
+  clouds?: number | 'none' | 'asteroids'
+  /** raised ground built rather than grown: temple steps, fortress walls */
+  raised?: { top: number, alt: number, wall: number }
+  /** crenellate the lip of raised ground, in this colour */
+  battlements?: number
 }
 
-export const THEMES: Record<ThemeId, ThemeColors> = {
+/**
+ * Scenery per Frontier theme: how thickly it grows (beside a road, elsewhere)
+ * and what grows, weighted. Filled in by frontierScenery.ts when the Frontier
+ * loads; the campaign's themes keep their hand-tuned chains in buildDecorations.
+ */
+export const FRONTIER_DECOR: Partial<Record<ThemeId, { near: number, far: number, props: DecorEntry[] }>> = {}
+
+/** what a board in space tumbles past its island; installed with the Frontier */
+export const sceneryHooks: { asteroid?: (rng: () => number) => VoxModel } = {}
+
+/** every theme; the Frontier's ten are added by frontierScenery.ts when those boards load */
+export const THEMES = {
   forest: {
     grass: 0x71b04b, grassAlt: 0x63a041, dirt: 0x7a5c3d, road: 0xc9ad74, roadAlt: 0xbfa066,
     waterDeep: 0x2e6f9e, waterShallow: 0x54aacd, waterGlow: 0,
@@ -83,10 +113,13 @@ export const THEMES: Record<ThemeId, ThemeColors> = {
     skyTop: 0x2c5f74, skyBottom: 0xbfe0e0, fog: 0x9cc4c4,
     sunColor: 0xe8f4e0, sunIntensity: 2.1, hemiSky: 0x9fd0cf, hemiGround: 0x445048, ambient: 0.34,
   },
-}
+} as Record<ThemeId, ThemeColors>
 
 /** how far above its own footing a tower can still shoot over */
 export const SIGHT_CLEARANCE = 0.55
+
+/** the tallest ledge a walker steps up or down without a ramp */
+const STEP_HEIGHT = 0.3
 
 export interface PlotInfo {
   index: number
@@ -114,7 +147,9 @@ export class Terrain {
   castle!: THREE.Group
   theme: ThemeColors
   private waterMat: THREE.ShaderMaterial | null = null
-  private clouds: { mesh: THREE.Group, speed: number }[] = []
+  /** the merged ground, so a tap can land on a causeway or a shelf rather than the plane under it */
+  groundMesh: THREE.Mesh | null = null
+  private clouds: { mesh: THREE.Group, speed: number, spin?: number }[] = []
   private flags: THREE.Object3D[] = []
   private crystals: THREE.Object3D[] = []
   private worldW: number
@@ -138,10 +173,11 @@ export class Terrain {
     for (const [c, r] of level.waterPlots ?? []) this.waterPlot(c, r, true)
   }
 
-  private cellKind(c: number, r: number): 'void' | 'water' | 'hill' | 'road' | 'grass' | 'plot' {
+  private cellKind(c: number, r: number): 'void' | 'bridge' | 'water' | 'hill' | 'road' | 'grass' | 'plot' {
     const { level } = this
     if (c < 0 || r < 0 || c >= level.width || r >= level.height) return 'void'
-    if (inRects(c, r, level.voids)) return 'void'
+    // a road carried over open sky is a bridge: walked like a road, drawn as a deck
+    if (inRects(c, r, level.voids)) return this.paths.roadCells.has(`${c},${r}`) ? 'bridge' : 'void'
     if (this.paths.roadCells.has(`${c},${r}`)) return 'road'
     if (level.plots.some(([pc, pr]) => pc === c && pr === r)
       || this.plots.some(p => p.expanded && p.cell[0] === c && p.cell[1] === r)) return 'plot'
@@ -157,7 +193,7 @@ export class Terrain {
       // a set-piece dropped on the road or a foundation reads as a bug, so an
       // authoring mistake is skipped loudly rather than rendered
       const on = this.cellKind(c, r)
-      if (on === 'road' || on === 'plot' || on === 'void' || on === 'water') {
+      if (on === 'road' || on === 'bridge' || on === 'plot' || on === 'void' || on === 'water') {
         console.warn(`level ${level.id}: landmark ${kind} at [${c},${r}] sits on ${on}`)
         continue
       }
@@ -208,7 +244,14 @@ export class Terrain {
     const p = this.plateauAt(c, r)
     if (p > 0) return p + raised
     const k = this.cellKind(c, r)
+    if (k === 'road' || k === 'bridge') return this.roadHeight(c, r, 0.5, 0.5)
     return (k === 'hill' ? 0.5 : k === 'water' ? -0.4 : 0) + raised
+  }
+
+  /** the road surface at a point inside a road cell, `fx`/`fz` across it; 0 off the road */
+  roadHeight(c: number, r: number, fx: number, fz: number): number {
+    const s = this.paths.surfaces?.get(`${c},${r}`)
+    return s ? surfaceHeight(s, fx, fz) : 0
   }
 
   /**
@@ -275,6 +318,26 @@ export class Terrain {
   /** height of the ground a unit standing at this world point rests on */
   groundTopAt(x: number, z: number): number {
     const [c, r] = this.worldToCell(x, z)
+    // a ramp is a slope, not a staircase: read it where the unit actually stands
+    if (this.paths.elevated && this.paths.roadCells.has(`${c},${r}`)) {
+      const [cx, cz] = gridToWorld(c, r, this.level.width, this.level.height)
+      return Math.max(0, this.roadHeight(c, r, x - cx + 0.5, z - cz + 0.5))
+    }
+    // Over open sky beside a bridge, a soldier stepping to the side of the deck
+    // stands on the deck, not on the nothing below it.
+    if (this.paths.elevated && this.cellKind(c, r) === 'void') {
+      let best = -1, bestGap = Infinity
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nc = c + dc, nr = r + dr
+        if (!this.paths.roadCells.has(`${nc},${nr}`)) continue
+        const [nx, nz] = gridToWorld(nc, nr, this.level.width, this.level.height)
+        const gap = Math.hypot(Math.max(0, Math.abs(x - nx) - 0.5), Math.max(0, Math.abs(z - nz) - 0.5))
+        if (gap >= bestGap) continue
+        bestGap = gap
+        best = this.roadHeight(nc, nr, Math.min(1, Math.max(0, x - nx + 0.5)), Math.min(1, Math.max(0, z - nz + 0.5)))
+      }
+      if (best >= 0) return best
+    }
     return Math.max(0, this.cellTop(c, r))
   }
 
@@ -282,7 +345,7 @@ export class Terrain {
   isWalkable(x: number, z: number): boolean {
     const [c, r] = this.worldToCell(x, z)
     const k = this.cellKind(c, r)
-    return k === 'grass' || k === 'road'
+    return k === 'grass' || k === 'road' || k === 'bridge'
   }
 
   worldToCell(x: number, z: number): [number, number] {
@@ -291,7 +354,26 @@ export class Terrain {
 
   private cellWalkable(c: number, r: number): boolean {
     const k = this.cellKind(c, r)
-    return k === 'grass' || k === 'road'
+    return k === 'grass' || k === 'road' || k === 'bridge'
+  }
+
+  /**
+   * Can a walker step from one cell straight into its neighbour?
+   *
+   * Only asked on maps whose roads leave the ground, so every older board
+   * paths exactly as it always has. There a raised causeway is a wall to
+   * anyone standing beside it: the hero climbs the ramp, not the embankment.
+   * Heights are compared at the shared edge, so a ramp joins its landings.
+   */
+  private stepOpen(c: number, r: number, nc: number, nr: number): boolean {
+    if (!this.paths.elevated) return true
+    const edge = (cc: number, rr: number, towardC: number, towardR: number) => {
+      if (this.paths.roadCells.has(`${cc},${rr}`)) {
+        return this.roadHeight(cc, rr, 0.5 + towardC * 0.5, 0.5 + towardR * 0.5)
+      }
+      return Math.max(0, this.cellTop(cc, rr))
+    }
+    return Math.abs(edge(c, r, nc - c, nr - r) - edge(nc, nr, c - nc, r - nr)) <= STEP_HEIGHT
   }
 
   /** nearest walkable cell to a point (small BFS ring search) */
@@ -334,7 +416,7 @@ export class Terrain {
       if (cur.c === goal[0] && cur.r === goal[1]) { found = true; break }
       for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
         const nc = cur.c + dc, nr = cur.r + dr
-        if (!this.cellWalkable(nc, nr)) continue
+        if (!this.cellWalkable(nc, nr) || !this.stepOpen(cur.c, cur.r, nc, nr)) continue
         const nk = key(nc, nr)
         if (closed.has(nk)) continue
         const g = (gScore.get(ck) ?? 0) + 1
@@ -380,9 +462,19 @@ export class Terrain {
   private lineWalkable(a: THREE.Vector3, b: THREE.Vector3): boolean {
     const dist = Math.hypot(b.x - a.x, b.z - a.z)
     const steps = Math.max(2, Math.ceil(dist / 0.22))
+    let [pc, pr] = this.worldToCell(a.x, a.z)
     for (let i = 0; i <= steps; i++) {
       const t = i / steps
-      if (!this.isWalkable(a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t)) return false
+      const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t
+      if (!this.isWalkable(x, z)) return false
+      if (this.paths.elevated) {
+        // a straight line may not shortcut off a causeway the grid path had to ramp down
+        const [c, r] = this.worldToCell(x, z)
+        if (c !== pc || r !== pr) {
+          if (Math.abs(c - pc) + Math.abs(r - pr) > 1 || !this.stepOpen(pc, pr, c, r)) return false
+          pc = c; pr = r
+        }
+      }
     }
     return true
   }
@@ -395,13 +487,29 @@ export class Terrain {
     const dirtC = new THREE.Color(t.dirt)
     const deepC = new THREE.Color(t.dirt).multiplyScalar(0.55)
 
-    const addBox = (x: number, z: number, y0: number, y1: number, sx: number, sz: number, topColor: number) => {
+    /**
+     * One column of ground. `slope` tilts it to follow a road surface: the top
+     * (and, for a bridge deck, the bottom) is re-read at every corner from the
+     * cell's own surface, so a ramp is a true plane rather than a staircase and
+     * matches the height a walker on it is given.
+     */
+    const addBox = (x: number, z: number, y0: number, y1: number, sx: number, sz: number, topColor: number,
+      slope?: { surface?: RoadSurface, cellX?: number, cellZ?: number, lift?: number, deck?: number, wall?: number }) => {
       const h = y1 - y0
       const geo = new THREE.BoxGeometry(sx, h, sz)
       geo.translate(x, y0 + h / 2, z)
       const count = geo.attributes.position.count
       const colors = new Float32Array(count * 3)
       const pos = geo.attributes.position
+      const tops = new Float32Array(count)
+      for (let i = 0; i < count; i++) {
+        if (!slope?.surface) { tops[i] = y1; continue }
+        const top = surfaceHeight(slope.surface, pos.getX(i) - (slope.cellX ?? 0) + 0.5, pos.getZ(i) - (slope.cellZ ?? 0) + 0.5) + (slope.lift ?? 0)
+        tops[i] = top
+        if (pos.getY(i) > y0 + h / 2) pos.setY(i, top)
+        else if (slope.deck !== undefined) pos.setY(i, top - slope.deck)
+      }
+      if (slope?.surface) geo.computeVertexNormals()
       const nor = geo.attributes.normal
       for (let i = 0; i < count; i++) {
         const ny = nor.getY(i)
@@ -412,8 +520,9 @@ export class Terrain {
         } else {
           // side: grass lip near top, dirt fading darker downward
           const py = pos.getY(i)
-          const depth = (y1 - py) / Math.max(0.4, y1 - y0)
-          if (py > y1 - 0.16) color.set(topColor).multiplyScalar(0.82)
+          const depth = (tops[i] - py) / Math.max(0.4, tops[i] - y0)
+          if (py > tops[i] - 0.16) color.set(topColor).multiplyScalar(0.82)
+          else if (slope?.wall !== undefined) color.set(slope.wall).lerp(deepC, Math.min(1, depth * 0.7))
           else color.copy(dirtC).lerp(deepC, Math.min(1, depth * 0.9))
         }
         colors[i * 3] = color.r; colors[i * 3 + 1] = color.g; colors[i * 3 + 2] = color.b
@@ -423,29 +532,41 @@ export class Terrain {
     }
 
     const waterCells: [number, number][] = []
+    const bridgeCells: [number, number][] = []
+    // open sky, whether or not a bridge crosses it
+    const skyAt = (c: number, r: number) => c < 0 || r < 0 || c >= level.width || r >= level.height || inRects(c, r, level.voids)
     for (let r = 0; r < level.height; r++) {
       for (let c = 0; c < level.width; c++) {
         const kind = this.cellKind(c, r)
         if (kind === 'void') continue
+        if (kind === 'bridge') { bridgeCells.push([c, r]); continue }
         const [x, z] = gridToWorld(c, r, level.width, level.height)
         // edge cells hang deeper for the floating-island silhouette
-        const edge = ['void'].includes(this.cellKind(c + 1, r)) || ['void'].includes(this.cellKind(c - 1, r))
-          || ['void'].includes(this.cellKind(c, r + 1)) || ['void'].includes(this.cellKind(c, r - 1))
+        const edge = skyAt(c + 1, r) || skyAt(c - 1, r) || skyAt(c, r + 1) || skyAt(c, r - 1)
           || c === 0 || r === 0 || c === level.width - 1 || r === level.height - 1
         const bottom = edge ? -1.6 - rng() * 0.9 : -1.2
         // an authored plateau lifts the ground itself, not just what stands on it
         const plateau = this.plateauAt(c, r)
         if (plateau > 0 && kind !== 'water') {
+          const raised = t.raised
           addBox(x, z, bottom, plateau, 1, 1,
-            shuffleColor(rng() < 0.5 ? t.grass : t.grassAlt, 0.07, rng))
+            shuffleColor(rng() < 0.5 ? raised?.top ?? t.grass : raised?.alt ?? t.grassAlt, 0.07, rng),
+            raised ? { wall: raised.wall } : undefined)
+          if (t.battlements !== undefined && kind !== 'plot') this.battlements(c, r, plateau, x, z, t.battlements, addBox)
           continue
         }
         switch (kind) {
-          case 'road':
-            addBox(x, z, bottom, 0.02, 1, 1, shuffleColor(rng() < 0.5 ? t.road : t.roadAlt, 0.06, rng))
+          case 'road': {
+            const top = shuffleColor(rng() < 0.5 ? t.road : t.roadAlt, 0.06, rng)
+            const surface = this.paths.surfaces?.get(`${c},${r}`)
+            if (!surface || (surface.lo === 0 && surface.hi === 0)) addBox(x, z, bottom, 0.02, 1, 1, top)
+            // a raised road is a causeway: a built embankment, faced in the theme's stone
+            else addBox(x, z, bottom, Math.max(surface.lo, surface.hi) + 0.02, 1, 1, top,
+              { surface, cellX: x, cellZ: z, lift: 0.02, wall: t.roadWall ?? 0x8a8478 })
             break
+          }
           case 'water':
-            addBox(x, z, bottom, -0.4, 1, 1, shuffleColor(0xcbba8a, 0.08, rng)) // sandy bed
+            addBox(x, z, bottom, -0.4, 1, 1, shuffleColor(t.waterBed ?? 0xcbba8a, 0.08, rng)) // sandy bed
             waterCells.push([x, z])
             break
           case 'hill':
@@ -457,10 +578,11 @@ export class Terrain {
         // hanging bedrock chunks under some edge cells
         if (edge && rng() < 0.4) {
           const s = 0.4 + rng() * 0.35
-          addBox(x + (rng() - 0.5) * 0.3, z + (rng() - 0.5) * 0.3, bottom - 0.9 - rng() * 0.7, bottom, s, s, 0x6b6155)
+          addBox(x + (rng() - 0.5) * 0.3, z + (rng() - 0.5) * 0.3, bottom - 0.9 - rng() * 0.7, bottom, s, s, t.bedrock ?? 0x6b6155)
         }
       }
     }
+    this.buildBridges(bridgeCells, addBox, skyAt)
     const merged = mergeGeometries(geos)
     geos.forEach(g => g.dispose())
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 })
@@ -468,6 +590,7 @@ export class Terrain {
     mesh.receiveShadow = true
     mesh.castShadow = true
     this.group.add(mesh)
+    this.groundMesh = mesh
     this.owned.push(merged, mat)
 
     // water surface: merged quads with an animated shader
@@ -518,6 +641,101 @@ export class Terrain {
       wmesh.renderOrder = 1
       this.group.add(wmesh)
       this.owned.push(wmerged, this.waterMat)
+    }
+  }
+
+  /**
+   * Roads over open sky. The deck is part of the ground mesh, tilted with the
+   * road, and rails stand only along the sides that face the drop - so a
+   * bridge that turns or lands on an island is railed where it needs to be.
+   * Bridges draw from their own seeded stream: a board without one consumes
+   * nothing, and scenery elsewhere is unchanged by adding one.
+   */
+  private buildBridges(cells: [number, number][], addBox: (x: number, z: number, y0: number, y1: number, sx: number, sz: number, topColor: number,
+    slope?: { surface?: RoadSurface, cellX?: number, cellZ?: number, lift?: number, deck?: number, wall?: number }) => void,
+  skyAt: (c: number, r: number) => boolean): void {
+    if (!cells.length) return
+    const { level } = this
+    const t = this.theme
+    const style = t.bridge ?? 'wood'
+    const rng = seededRandom(level.seed ^ 0x5bd1e995)
+    const deck = style === 'wood' ? 0x9a6a3c : style === 'energy' ? 0x3a3f6a : style === 'crystal' ? 0x5a6fa0 : 0x8f8a80
+    const rail = t.bridgeRail ?? (style === 'wood' ? 0x6b4526 : style === 'energy' ? 0x7fe8ff : style === 'crystal' ? 0xb9f2ff : 0x6f6a62)
+    const glowRails = style === 'energy' || style === 'crystal'
+    const glow: THREE.BufferGeometry[] = []
+    /** a glowing box; given a surface, it rides the slope like the deck under it */
+    const glowBox = (x: number, y: number, z: number, sx: number, sy: number, sz: number, c: number,
+      slope?: { surface: RoadSurface, cellX: number, cellZ: number, lift: number }) => {
+      const g = new THREE.BoxGeometry(sx, sy, sz)
+      g.translate(x, y, z)
+      if (slope) {
+        const pos = g.attributes.position
+        for (let i = 0; i < pos.count; i++) {
+          const base = surfaceHeight(slope.surface, pos.getX(i) - slope.cellX + 0.5, pos.getZ(i) - slope.cellZ + 0.5) + slope.lift
+          pos.setY(i, base + (pos.getY(i) > y ? sy / 2 : -sy / 2))
+        }
+      }
+      const col = new THREE.Color(c)
+      const colors = new Float32Array(g.attributes.position.count * 3)
+      for (let i = 0; i < colors.length; i += 3) { colors[i] = col.r; colors[i + 1] = col.g; colors[i + 2] = col.b }
+      g.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+      glow.push(g)
+    }
+    for (const [c, r] of cells) {
+      const surface = this.paths.surfaces.get(`${c},${r}`)
+      if (!surface) continue
+      const [x, z] = gridToWorld(c, r, level.width, level.height)
+      const top = Math.max(surface.lo, surface.hi)
+      const plank = shuffleColor(deck, style === 'wood' ? 0.1 : 0.05, rng)
+      addBox(x, z, top - 0.22, top + 0.02, 1, 1, plank, { surface, cellX: x, cellZ: z, lift: 0.02, deck: 0.24, wall: deck })
+      // rails along every side that looks down into the sky
+      const sides: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+      for (const [dc, dr] of sides) {
+        const n = [c + dc, r + dr] as const
+        if (!skyAt(n[0], n[1]) || this.paths.roadCells.has(`${n[0]},${n[1]}`)) continue
+        const along = dc === 0 // the rail runs along x when the drop is north or south
+        const rx = x + dc * 0.46, rz = z + dr * 0.46
+        const h = surfaceHeight(surface, 0.5 + dc * 0.46, 0.5 + dr * 0.46)
+        if (glowRails) {
+          glowBox(rx, h + 0.2, rz, along ? 1 : 0.06, 0.05, along ? 0.06 : 1, rail, { surface, cellX: x, cellZ: z, lift: 0.2 })
+          if (style === 'crystal' && rng() < 0.5) glowBox(rx, h + 0.12, rz, 0.1, 0.22 + rng() * 0.18, 0.1, 0xe9fbff)
+        } else {
+          addBox(rx, rz, h, h + 0.3, along ? 0.1 : 0.08, along ? 0.08 : 0.1, rail)
+          addBox(rx, rz, h + 0.22, h + 0.28, along ? 1 : 0.06, along ? 0.06 : 1, rail,
+            { surface, cellX: x, cellZ: z, lift: 0.28, deck: 0.06 })
+        }
+      }
+      // what holds it up: timber struts, stone piers, or nothing at all
+      if (style === 'wood') addBox(x, z, top - 0.9 - rng() * 0.3, top - 0.2, 0.12, 0.12, 0x5a3a20)
+      else if (style === 'stone' && (c + r) % 2 === 0) addBox(x, z, top - 1.4 - rng() * 0.5, top - 0.2, 0.34, 0.34, t.bedrock ?? 0x6b6155)
+      else if (style === 'energy') glowBox(x, top - 0.25, z, 0.5, 0.03, 0.5, t.bridgeRail ?? 0x7fe8ff)
+    }
+    if (glow.length) {
+      const merged = mergeGeometries(glow)
+      glow.forEach(g => g.dispose())
+      const mat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })
+      this.group.add(new THREE.Mesh(merged, mat))
+      this.owned.push(merged, mat)
+    }
+  }
+
+  /**
+   * Merlons along every edge of a raised cell that drops to lower ground, so a
+   * terrace reads as a wall built for defending. Never on a road's edge (the
+   * road climbs through a gate there) and never on a foundation, whose tower
+   * stands where a merlon would.
+   */
+  private battlements(c: number, r: number, top: number, x: number, z: number, color: number,
+    addBox: (x: number, z: number, y0: number, y1: number, sx: number, sz: number, topColor: number) => void): void {
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nc = c + dc, nr = r + dr
+      if (this.paths.roadCells.has(`${nc},${nr}`)) continue
+      if (this.cellKind(nc, nr) !== 'void' && this.cellTop(nc, nr) > top - 0.3) continue
+      for (const along of [-0.25, 0.25]) {
+        const mx = x + dc * 0.42 + (dc === 0 ? along : 0)
+        const mz = z + dr * 0.42 + (dr === 0 ? along : 0)
+        addBox(mx, mz, top, top + 0.2, dc === 0 ? 0.24 : 0.16, dr === 0 ? 0.24 : 0.16, color)
+      }
     }
   }
 
@@ -630,9 +848,10 @@ export class Terrain {
       }
       const [x, z] = gridToWorld(c, r, level.width, level.height)
       const mesh = buildModel(trapSpotModel(), 'trapspot', { castShadow: false, receiveShadow: true })
-      mesh.position.set(x, 0.01, z)
+      const road = this.roadHeight(c, r, 0.5, 0.5)
+      mesh.position.set(x, road + 0.01, z)
       this.group.add(mesh)
-      this.trapSpots.push({ index: i, cell: [c, r], pos: new THREE.Vector3(x, 0.03, z), occupied: false, mesh })
+      this.trapSpots.push({ index: i, cell: [c, r], pos: new THREE.Vector3(x, road + 0.03, z), occupied: false, mesh })
     })
     // earthworks are derived from the map's own shape, so the seven existing
     // levels get them without being re-authored
@@ -640,11 +859,12 @@ export class Terrain {
     deriveEarthworkSpots(level, (c, r) => this.cellKind(c, r), isTrap).forEach((e, i) => {
       const [x, z] = gridToWorld(e.cell[0], e.cell[1], level.width, level.height)
       const mesh = buildModel(earthMarkerModel(e.kind), `earthmark:${e.kind}`, { castShadow: false, receiveShadow: true })
-      mesh.position.set(x, 0.012, z)
+      const road = this.roadHeight(e.cell[0], e.cell[1], 0.5, 0.5)
+      mesh.position.set(x, road + 0.012, z)
       this.group.add(mesh)
       this.earthworkSpots.push({
         index: i, kind: e.kind, cell: e.cell,
-        pos: new THREE.Vector3(x, 0.02, z), occupied: false, mesh,
+        pos: new THREE.Vector3(x, road + 0.02, z), occupied: false, mesh,
       })
     })
   }
@@ -661,13 +881,22 @@ export class Terrain {
           || this.paths.roadCells.has(`${c - 1},${r}`) || this.paths.roadCells.has(`${c + 1},${r}`)
         const roll = rng()
         const lateBiome = theme === 'highland' || theme === 'ashfall' || theme === 'tidal'
-        const density = lateBiome ? (nearRoad ? 0.04 : 0.20) : (nearRoad ? 0.10 : 0.34)
+        const frontier = FRONTIER_DECOR[theme]
+        const density = frontier ? (nearRoad ? frontier.near : frontier.far)
+          : lateBiome ? (nearRoad ? 0.04 : 0.20) : (nearRoad ? 0.10 : 0.34)
         if (roll > density) continue
         const [x, z] = gridToWorld(c, r, level.width, level.height)
         const y = this.cellTop(c, r)
         const pickRoll = rng()
         let model
-        if (theme === 'ashfall') {
+        let animated = false
+        if (frontier) {
+          const total = frontier.props.reduce((n, p) => n + p.weight, 0)
+          let at = pickRoll * total
+          const prop = frontier.props.find(p => (at -= p.weight) < 0) ?? frontier.props[frontier.props.length - 1]
+          model = prop.make(rng)
+          animated = !!prop.animated
+        } else if (theme === 'ashfall') {
           model = pickRoll < 0.3 ? env.deadTree(rng) : pickRoll < 0.7 ? env.rock(rng)
             : pickRoll < 0.9 ? env.crystalShard(rng) : env.stump(rng)
         } else if (theme === 'tidal') {
@@ -696,7 +925,7 @@ export class Terrain {
         const s = 0.8 + rng() * 0.4
         mesh.scale.setScalar(s)
         this.group.add(mesh)
-        const rotates = (theme === 'ashfall' && pickRoll >= 0.7 && pickRoll < 0.9) ||
+        const rotates = animated || (theme === 'ashfall' && pickRoll >= 0.7 && pickRoll < 0.9) ||
           (theme === 'ember' && pickRoll >= 0.55 && pickRoll < 0.72) || (theme === 'void' && pickRoll < 0.34)
         this.recordExpansionObstacle(mesh, rotates)
         if (rotates) this.crystals.push(mesh)
@@ -712,10 +941,13 @@ export class Terrain {
       const spots: [number, number][] = [[c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1]]
       const spot = spots.find(([cc, rr]) => this.cellKind(cc, rr) === 'grass')
       if (!spot) continue
+      // where the road climbs past a shelf, a lamp at the shelf's edge would hang over the ramp
+      if (this.paths.elevated && Math.abs(this.cellTop(spot[0], spot[1]) - this.roadHeight(c, r, 0.5, 0.5)) > 0.15) continue
       const [x, z] = gridToWorld(spot[0], spot[1], level.width, level.height)
-      const lamp = buildModel(env.lampPost(), 'lamp')
+      const lamp = buildModel(env.lampPost(), `lamp:${level.theme}`)
       const [rx, rz] = gridToWorld(c, r, level.width, level.height)
-      lamp.position.set(x + (rx - x) * 0.45, 0, z + (rz - z) * 0.45)
+      // stand on the ground it is planted in, which on a shelf is not the floor
+      lamp.position.set(x + (rx - x) * 0.45, this.paths.elevated ? this.cellTop(spot[0], spot[1]) : 0, z + (rz - z) * 0.45)
       this.group.add(lamp)
       this.recordExpansionObstacle(lamp)
     }
@@ -727,7 +959,7 @@ export class Terrain {
       const start = paths.lanes[i].sample(0)
       const next = paths.lanes[i].sample(0.6)
       const portal = buildModel(env.spawnPortal(level.theme), `portal:${level.theme}`)
-      portal.position.set(start.x, 0, start.z)
+      portal.position.set(start.x, start.y, start.z)
       portal.rotation.y = Math.atan2(next.x - start.x, next.z - start.z)
       portal.scale.setScalar(1.35)
       this.group.add(portal)
@@ -740,7 +972,7 @@ export class Terrain {
     const before = lane0.sample(lane0.length - 0.8)
     const castle = buildModel(env.exitCastle(level.theme), `castle:${level.theme}`)
     const inward = new THREE.Vector2(end.x - before.x, end.z - before.z).normalize()
-    castle.position.set(end.x + inward.x * 0.15, 0, end.z + inward.y * 0.15)
+    castle.position.set(end.x + inward.x * 0.15, end.y, end.z + inward.y * 0.15)
     castle.rotation.y = Math.atan2(before.x - end.x, before.z - end.z)
     this.group.add(castle)
     this.castle = castle
@@ -752,6 +984,9 @@ export class Terrain {
   private buildClouds(rng: () => number): void {
     // clouds drift in the sky-sea AROUND the island, never over the battlefield
     const w = this.level.width, h = this.level.height
+    const kind = this.theme.clouds
+    if (kind === 'none') return
+    if (kind === 'asteroids') { this.buildAsteroids(rng); return }
     for (let i = 0; i < 6; i++) {
       const mesh = buildModel(env.cloud(rng), `cloud:${this.level.id}:${i}`, { castShadow: false })
       const side = i % 2 === 0 ? -1 : 1
@@ -763,13 +998,31 @@ export class Terrain {
       mesh.scale.set(1.5, 0.7, 1.5)
       mesh.traverse(o => {
         if (o instanceof THREE.Mesh) {
-          o.material = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, roughness: 1, depthWrite: false })
+          o.material = new THREE.MeshStandardMaterial({ color: typeof kind === 'number' ? kind : 0xffffff, transparent: true, opacity: 0.8, roughness: 1, depthWrite: false })
           o.castShadow = false
           this.owned.push(o.material)
         }
       })
       this.group.add(mesh)
       this.clouds.push({ mesh, speed: 0.12 + rng() * 0.15 })
+    }
+  }
+
+  /** rocks tumbling slowly past the island, above and below it */
+  private buildAsteroids(rng: () => number): void {
+    const w = this.level.width, h = this.level.height
+    for (let i = 0; i < 9; i++) {
+      const mesh = buildModel(sceneryHooks.asteroid?.(rng) ?? env.rock(rng), `asteroid:${this.level.id}:${i}`, { castShadow: false })
+      const side = i % 2 === 0 ? -1 : 1
+      mesh.position.set(
+        (rng() - 0.5) * w * 1.7,
+        side < 0 ? -2.5 - rng() * 4 : 1.5 + rng() * 4,
+        side * (h * 0.6 + 1.5 + rng() * 6),
+      )
+      mesh.scale.setScalar(2.5 + rng() * 4)
+      mesh.rotation.set(rng() * 6, rng() * 6, rng() * 6)
+      this.group.add(mesh)
+      this.clouds.push({ mesh, speed: 0.05 + rng() * 0.1, spin: 0.08 + rng() * 0.2 })
     }
   }
 
@@ -784,6 +1037,7 @@ export class Terrain {
     if (this.waterMat) this.waterMat.uniforms.uTime.value = this.time
     for (const c of this.clouds) {
       c.mesh.position.x += c.speed * dt
+      if (c.spin) { c.mesh.rotation.x += c.spin * dt; c.mesh.rotation.y += c.spin * 0.6 * dt }
       if (c.mesh.position.x > this.worldW * 0.75) c.mesh.position.x = -this.worldW * 0.75
     }
     for (const f of this.flags) {

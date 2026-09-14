@@ -4,9 +4,39 @@ import { prefersReducedMotion } from './platform.ts'
 import { clamp, lerp } from './utils.ts'
 import { ThemeColors } from '../game/terrain.ts'
 import { readQuality, writeQuality, qualityTierFor, type QualityPreference } from './quality.ts'
+import { skyRegistry } from './skyRegistry.ts'
 
 const panRaycaster = new THREE.Raycaster()
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+
+/** the campaign's dome: two colours, written straight to the screen as it always was */
+function plainSky(top: number, bottom: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {
+      uTop: { value: new THREE.Color(top) },
+      uBottom: { value: new THREE.Color(bottom) },
+      uTime: { value: 0 },
+      uFlash: { value: 0 },
+    },
+    vertexShader: /* glsl */`
+      varying vec3 vPos;
+      void main() {
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: /* glsl */`
+      uniform vec3 uTop;
+      uniform vec3 uBottom;
+      varying vec3 vPos;
+      void main() {
+        float h = normalize(vPos).y * 0.5 + 0.5;
+        vec3 col = mix(uBottom, uTop, smoothstep(0.42, 0.75, h));
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  })
+}
 
 export class Engine {
   renderer: THREE.WebGLRenderer
@@ -151,7 +181,7 @@ export class Engine {
   applyTheme(t: ThemeColors, mapW: number, mapH: number): void {
     this.baseTheme = t
     this.sun.color.set(t.sunColor)
-    this.sun.intensity = t.sunIntensity
+    this.sun.intensity = this.sunLevel = t.sunIntensity
     this.hemi.color.set(t.hemiSky)
     this.hemi.groundColor.set(t.hemiGround)
     this.ambient.intensity = t.ambient
@@ -205,7 +235,7 @@ export class Engine {
     const mix = (base: number, surge: number, chill: number) =>
       new THREE.Color(base).lerp(new THREE.Color(surge), s).lerp(new THREE.Color(chill), c)
     this.sun.color.copy(mix(t.sunColor, 0xb98fd8, 0xcfe8ff))
-    this.sun.intensity = t.sunIntensity * (1 - s * 0.35) * (1 - c * 0.15)
+    this.sun.intensity = this.sunLevel = t.sunIntensity * (1 - s * 0.35) * (1 - c * 0.15)
     this.hemi.color.copy(mix(t.hemiSky, 0x7a5aa8, 0x9fd0f0))
     if (this.scene.fog instanceof THREE.Fog) this.scene.fog.color.copy(mix(t.fog, 0x584a78, 0xb8d8ea))
     if (this.skyMat) {
@@ -220,32 +250,42 @@ export class Engine {
       this.sky.geometry.dispose()
       ;(this.sky.material as THREE.Material).dispose()
     }
-    this.skyMat = new THREE.ShaderMaterial({
-      side: THREE.BackSide,
-      depthWrite: false,
-      uniforms: {
-        uTop: { value: new THREE.Color(t.skyTop) },
-        uBottom: { value: new THREE.Color(t.skyBottom) },
-      },
-      vertexShader: /* glsl */`
-        varying vec3 vPos;
-        void main() {
-          vPos = position;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: /* glsl */`
-        uniform vec3 uTop;
-        uniform vec3 uBottom;
-        varying vec3 vPos;
-        void main() {
-          float h = normalize(vPos).y * 0.5 + 0.5;
-          vec3 col = mix(uBottom, uTop, smoothstep(0.42, 0.75, h));
-          gl_FragColor = vec4(col, 1.0);
-        }`,
-    })
+    this.skyMat = t.sky && skyRegistry.paint ? skyRegistry.paint(t.skyTop, t.skyBottom, t.sky) : plainSky(t.skyTop, t.skyBottom)
+    this.lightningIn = t.sky?.lightning ? 3 + Math.random() * 4 : Infinity
+    this.flash = 0
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(100, 24, 16), this.skyMat)
     this.scene.add(this.sky)
   }
+
+  /** seconds until the storm next lights up; Infinity under a quiet sky */
+  private lightningIn = Infinity
+  private flash = 0
+
+  /**
+   * Animate the dome and, under a storm, throw the odd lightning flash. A
+   * flash lifts the key light for a moment so the board itself is lit by it.
+   * Presentation only (Math.random, never the sim stream), and never for a
+   * player who asked their system for less motion - a strobing sky is exactly
+   * what that setting exists to prevent.
+   */
+  private updateSky(dt: number): void {
+    if (!this.skyMat) return
+    this.skyMat.uniforms.uTime.value += dt
+    if (this.lightningIn === Infinity || this.reducedMotion) return
+    this.lightningIn -= dt
+    if (this.lightningIn <= 0) {
+      this.flash = 1
+      this.lightningIn = (Math.random() < 0.3 ? 0.18 : 4 + Math.random() * 7)
+    }
+    if (this.flash <= 0 && this.skyMat.uniforms.uFlash.value === 0) return
+    this.flash = Math.max(0, this.flash - dt * 4.5)
+    const f = this.flash * this.flash
+    this.skyMat.uniforms.uFlash.value = f
+    this.sun.intensity = this.sunLevel * (1 + f * 0.9)
+  }
+
+  /** the key light's intensity before any lightning flash */
+  private sunLevel = 2.6
 
   resize(): void {
     const w = window.innerWidth, h = window.innerHeight
@@ -521,6 +561,7 @@ export class Engine {
 
   updateCamera(dt: number): void {
     this.updateChillBlend(dt)
+    this.updateSky(dt)
     if (this.cineT > 0) {
       this.cineT -= dt
       if (this.cineT <= 0) this.releaseCinematic()
