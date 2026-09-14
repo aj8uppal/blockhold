@@ -2104,6 +2104,9 @@ export class Game implements World {
     for (const t of this.towers) { t.dismantle(this, true); this.dynamic.remove(t.group) }
     for (const tr of this.traps) { this.dynamic.remove(tr.group); tr.dispose() }
     this.traps = []
+    // The dynamic group is reused by the next battle; clearing the list alone
+    // leaves old cuttings rendered at coordinates that may now be open sky.
+    for (const work of this.earthworks) work.dispose()
     this.earthworks = []
     this.particles.clear()
     this.enemies = []
@@ -2115,6 +2118,8 @@ export class Game implements World {
     this.selectedTower = null
     this.selectedPlot = null
     this.selectedTrapSpot = null
+    this.selectedEarthSpot = null
+    this.selectedEarthwork = null
     this.hero = null
     this.heroSelected = false
     this.targetMode = null
