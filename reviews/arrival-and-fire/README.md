@@ -5,7 +5,8 @@ flames and three low flickers share one geometry; four stepped heat regions rema
 self-lit. Narrow, offset cores rise inside the faceted orange bodies. Uneven
 shoulders and asymmetrical offsets keep the silhouettes varied. Each tongue holds
 a short pose before flicking upward into the next, with its own cadence and a
-stable base. The primary flames are roughly 20% smaller, with a further 18%
+stable base. The primary flames are 30% smaller than the initial faceted pass (another 10%
+smaller than the previous review), with an 18%
 reduction in spacing and slimmer foreground tongues. Foreground size eases down
 relative to the camera.
 
@@ -56,7 +57,7 @@ patches. Omit `BLOCKHOLD_CAPTURE` to regenerate the earlier merge clip too.
 - Raw WebGL checks cover glow on/off, normal zoom, camera orbit, pause, a phone
   viewport in battery mode, sale cleanup and 12 simultaneous patches. Two lights
   remain allocated; patches reuse shaders. No browser or shader errors.
-- Build, typecheck and lint pass. Measured gzip is 184.9 KiB app / 338.6 KiB total.
+- Build, typecheck and lint pass. Measured gzip is 184.9 KiB app / 338.5 KiB total.
   This pass adds about 1.7 KiB including ~0.4 KiB for Three's point-light support.
   Explicit bundle caps move from 184/337 to 185/339 KiB for that implementation.
 - The two-browser co-op check covers shared combat, rejoin and solo recovery.
@@ -65,4 +66,5 @@ patches. Omit `BLOCKHOLD_CAPTURE` to regenerate the earlier merge clip too.
 The latest clustering/smoke/flicker refinement reran the fire lifecycle tests,
 raw WebGL checks, build, lint and bundle budget. It adds no draw calls or lights.
 
-Production is unchanged by this pass.
+Approved for production together with the Cathedral Seraph sprites and Crimson
+fusion/awakening. Both client and sync service must run ruleset 18.

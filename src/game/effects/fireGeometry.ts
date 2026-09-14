@@ -5,7 +5,7 @@ export const fireBases = [
   [-.55,.16,.63,.66],[.46,.23,.66,.68],[-.29,.46,.55,.50],
   [.24,.52,.50,.48],[-.04,.06,.58,.55],
   [-.24,-.06,.28,.40],[.24,-.05,.32,.40],[-.05,.31,.26,.40],
-].map(([x,z,h,w])=>[x*.70,z*.70,h*.78,w*.78])
+].map(([x,z,h,w])=>[x*.70,z*.70,h*.70,w*.70])
 // Lofted, irregular octagonal sections form a continuous solid. Offsets and
 // one extended shoulder break the symmetry; faces share edges throughout.
 const profile=[
