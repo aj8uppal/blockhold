@@ -35,8 +35,9 @@
  *  16  Late-tier roster balance, Ballista range ascension and expanded room speeds.
  *  17  Mythic battlefield powers, hero mastery and authored weapon origins.
  *  18  Opposite Mythic Seraphs fuse into the Crimson Sovereign.
+ *  19  Rally-facing barracks, fully aiming Seraphs and automatic Legion Standards.
  */
-export const RULESET_VERSION = 18
+export const RULESET_VERSION = 19
 
 /** identifies a reproducible run */
 export interface RunStamp {

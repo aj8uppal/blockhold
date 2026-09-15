@@ -1,0 +1,65 @@
+/** Two real browser seats: automatic Legion Standards, Seraph aiming/fusion, rejoin and solo recovery.
+ * Run with BLOCKHOLD_CHECK_URL pointing to a frontend connected to a matching sync server.
+ */
+import { chromium } from '@playwright/test'
+import assert from 'node:assert/strict'
+const base = (process.env.BLOCKHOLD_CHECK_URL ?? 'http://127.0.0.1:5178/').replace(/\/?$/, '/')
+const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
+const errors = []
+try {
+  const pages = []
+  for (let i = 0; i < 2; i++) {
+    const context = await browser.newContext({ viewport: { width: 960, height: 600 } })
+    await context.addInitScript(guest => {
+      if (!localStorage.getItem('blockhold.save.v1')) localStorage.setItem('blockhold.save.v1', JSON.stringify({
+        xp: 20000, taughtBasics: true, sfxMuted: true, musicMuted: true,
+        honors: guest ? ['mastery:seraph:ossuary', 'mastery:seraph:empress'] : [],
+      }))
+      localStorage.setItem('blockhold.quality', 'low')
+    }, i === 1)
+    const page = await context.newPage()
+    page.on('pageerror', e => errors.push(e.message))
+    pages.push(page)
+  }
+  const [host, guest] = pages
+  await host.goto(base)
+  await host.waitForFunction(() => window.vg?.game)
+  await host.evaluate(() => window.vg.screens.onPlayLevel('greenhollow', 'normal', 'aldric', 'sandbox'))
+  await host.waitForFunction(() => window.vg.game.sessionTick > 30)
+  await host.evaluate(() => {
+    const g=window.vg.game
+    for(const branch of[0,1]){g.buildTower('seraph',g.terrain.plots[6+branch]);for(let i=0;i<5;i++)g.upgradeTower(g.towers[branch],i===2?branch:0)}
+    g.buildTower('barracks',g.terrain.plots[0]);for(let i=0;i<5;i++)g.upgradeTower(g.towers[2],0)
+  })
+  await host.evaluate(() => window.vg.game.togglePause())
+  await host.getByRole('button', { name: 'Invite a friend to this battle' }).click()
+  await host.waitForFunction(() => window.vg.game.coop && !window.vg.game.isRecovering)
+  const code = await host.evaluate(() => window.vg.game.coop.code)
+  await guest.goto(`${base}?coop=${code}`)
+  await Promise.all(pages.map(p => p.waitForFunction(() => window.vg?.game?.coop && !window.vg.game.isRecovering && window.vg.game.hasSharedMythic('seraph'))))
+  await host.evaluate(() => window.vg.game.togglePause())
+  await Promise.all(pages.map(p => p.waitForFunction(() => !window.vg.game.paused)))
+  await Promise.all([host.evaluate(()=>{const g=window.vg.game;g.fuseSeraph(g.towers[0],g.towers[1])}),guest.evaluate(()=>{const g=window.vg.game;g.fuseSeraph(g.towers[1],g.towers[0])})])
+  await Promise.all(pages.map(p=>p.waitForFunction(()=>window.vg.game.towers.length===2&&window.vg.game.towers[0].isFused)))
+  await guest.evaluate(() => window.vg.game.sandboxOrder({kind:'sandboxSpawn',enemy:'gargoyle',count:20,hp:100,lane:0}))
+  await guest.evaluate(() => window.vg.game.sandboxOrder({kind:'sandboxSpawn',enemy:'juggernaut',count:8,hp:100,lane:0}))
+  await Promise.all(pages.map(p => p.waitForFunction(() => window.vg.game.towers[0].damage>1000 && window.vg.game.towers[1].mythicReadyAt>0, undefined, {timeout:60000})))
+  await host.evaluate(() => window.vg.game.togglePause())
+  await Promise.all(pages.map(p => p.waitForFunction(() => {
+    const g=window.vg.game
+    return g.paused && g.coopBudget===0 && g.coopMarkers.every(m=>m.ticks===0)
+  })))
+  const hash = await host.evaluate(() => window.vg.game.sessionStateHash())
+  assert.equal(hash,await guest.evaluate(() => window.vg.game.sessionStateHash()))
+  await guest.reload()
+  await guest.getByRole('button',{name:'Co-op',exact:true}).click()
+  await guest.getByRole('button',{name:'Rejoin your room'}).click()
+  await guest.waitForFunction(() => window.vg.game.towers.length===2 && !window.vg.game.isRecovering)
+  assert.equal(hash,await guest.evaluate(() => window.vg.game.sessionStateHash()))
+  assert.equal(await guest.evaluate(() => window.vg.game.continueSolo()),true)
+  assert.equal(await guest.evaluate(async () => await window.vg.game.resumeSession(JSON.parse(localStorage.getItem('blockhold.session.v1')))),true)
+  assert.equal(hash,await guest.evaluate(() => window.vg.game.sessionStateHash()))
+  assert.equal(await guest.evaluate(() => window.vg.game.towers[0].def.model),'seraphCrimson')
+  assert.deepEqual(errors,[])
+  console.log('PASS: automatic Legion Standard, Crimson combat, rejoin and solo recovery match state hashes across both real browsers.')
+} finally { await browser.close() }

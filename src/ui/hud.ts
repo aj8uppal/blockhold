@@ -1378,11 +1378,6 @@ export class HUD {
       this.confirmOnTouch(oc, `Spend ${OVERCHARGE_SHARD_COST} shards? Tap again`, () => this.game.overchargeTower(tower))
       oc.disabled = !tower.canOvercharge(this.game)
     }
-    if (tower.def.signature === 'legionStandard') {
-      const standard = el('button', 'btn small', row, 'Plant Legion Standard') as HTMLButtonElement
-      standard.title = 'At the rally point: restore and relocate your legion, then heal its formation for seven seconds. 24-second recharge.'
-      standard.onclick = this.menuGuard(() => this.game.activateMythic(tower))
-    }
     if (tower.isBarracks) {
       const rally = el('button', 'btn small', row, `${icon('flag')} Rally point`) as HTMLButtonElement
       rally.onclick = this.menuGuard(() => this.game.setTargetMode('rally'))

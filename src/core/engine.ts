@@ -62,6 +62,7 @@ export class Engine {
   readonly reducedMotion = prefersReducedMotion()
   private shakeAmp = 0
   private shakeT = 0
+  readonly shakeOffset = new THREE.Vector3()
   /**
    * Directed camera. Reserved for moments the player is watching rather than
    * playing - a level opening, a boss arriving, the gate falling. It never
@@ -573,18 +574,22 @@ export class Engine {
     this.camTarget.lerp(this.camTargetGoal, k)
 
     this.shakeT += dt * 30
-    const shake = this.shakeAmp
+    // Compensate for perspective magnification: close inspection should be
+    // slightly calmer than the normal gameplay view, not more violent.
+    const shake = this.shakeAmp * Math.min(1, Math.pow(this.dist / 13, 1.35))
     this.shakeAmp = Math.max(0, this.shakeAmp - dt * 1.6)
 
     const cx = this.camTarget.x + Math.sin(this.yaw) * Math.cos(this.pitch) * this.dist
     const cz = this.camTarget.z + Math.cos(this.yaw) * Math.cos(this.pitch) * this.dist
     const cy = this.camTarget.y + Math.sin(this.pitch) * this.dist
-    this.camera.position.set(
-      cx + Math.sin(this.shakeT * 1.3) * shake * 0.3,
-      cy + Math.sin(this.shakeT * 1.7) * shake * 0.2,
-      cz + Math.cos(this.shakeT * 1.1) * shake * 0.3,
-    )
+    this.camera.position.set(cx, cy, cz)
     this.camera.lookAt(this.camTarget.x, this.camTarget.y, this.camTarget.z)
+    // Translate after aiming. Turning back toward the unshifted target used
+    // to shake the entire painted sky; translation moves the nearby board
+    // while the camera-centered sky keeps its exact orientation.
+    this.shakeOffset.set(Math.sin(this.shakeT * 1.3) * shake * .3,
+      Math.sin(this.shakeT * 1.7) * shake * .2, Math.cos(this.shakeT * 1.1) * shake * .3)
+    this.camera.position.add(this.shakeOffset)
     if (this.sky) this.sky.position.copy(this.camera.position)
   }
 

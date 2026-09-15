@@ -235,6 +235,7 @@ export class Tower {
   private static readonly DAWNFALL_EVERY = 8
   private static readonly ECLIPSE_EVERY = 10
   private seraphShotAt = -100
+  private legacyGazeYaw = 0
   isFused = false
   private mythicCharge = 0
   private mythicReadyAt = 0
@@ -281,7 +282,7 @@ export class Tower {
       }
       case 'legionStandard': {
         const left = Math.max(0, this.mythicReadyAt - time)
-        return { text: this.mythicAt ? 'Legion formation active' : left > 0 ? `Legion Standard in ${Math.ceil(left)}s` : 'Legion Standard ready · plant at rally', next: left <= 0 }
+        return { text: this.mythicAt ? 'Legion formation active' : left > 0 ? `Legion Standard in ${Math.ceil(left)}s` : 'Legion Standard ready · automatic', next: left <= 0 }
       }
       case 'dawnfall':
       case 'eclipse': {
@@ -294,16 +295,24 @@ export class Tower {
     }
   }
 
-  /** Stone stays planted; wings and forearms articulate with each volley.
-   * The Sovereign's eye and crown turn together to follow its target. */
+  /** The whole upper silhouette aims together; the pedestal stays planted. */
   private animateSeraph(dt: number, world: World): void {
     const interval = (this.effectiveInterval() ?? .5) / (this.isOvercharged(world) ? 1 + OVERCHARGE_RATE_BONUS : 1)
     poseStoneSeraph(this.model, world.time, world.time - this.seraphShotAt, Math.min(.48, interval * .88))
-    const gaze = getPart(this.model, 'gaze')
+    const targetYaw = this.target ? Math.atan2(this.target.pos.x - this.pos.x, this.target.pos.z - this.pos.z) : 0
+    this.legacyGazeYaw = lerpAngle(this.legacyGazeYaw, targetYaw, 1 - Math.exp(-dt * 7))
+    const gaze = getPart(this.model, 'aim') ?? getPart(this.model, 'gaze')
     if (gaze) {
-      const aim = this.target ? Math.atan2(this.target.pos.x - this.pos.x, this.target.pos.z - this.pos.z) : 0
+      const aim = this.target ? targetYaw : gaze.rotation.y
       gaze.rotation.y = lerpAngle(gaze.rotation.y, aim, 1 - Math.exp(-dt * 7))
     }
+  }
+
+  /** Do not spend a ready standard on an idle, healthy formation. */
+  needsLegionStandard(world: World): boolean {
+    return this.def.signature === 'legionStandard' && !this.isGhost && world.time >= this.mythicReadyAt
+      && (this.soldiers.some(s => !s.alive || s.hp < s.maxHp * .8)
+        || world.enemies.some(e => e.alive && Math.hypot(e.pos.x - this.rallyPoint.x, e.pos.z - this.rallyPoint.z) <= LEGION_RADIUS + e.radius))
   }
 
   private updateSeraphSignature(world: World): void {
@@ -367,6 +376,7 @@ export class Tower {
 
   private updateMythic(dt: number, world: World): void {
     const signature = this.def.signature
+    if (this.worldBalance >= 19 && this.needsLegionStandard(world)) this.activateMythic(world)
     if (signature === 'eventHorizon' && !this.mythicAt) {
       if (this.mythicReadyAt === 0) this.mythicReadyAt = world.time + RIFT_COOLDOWN
       if (world.time >= this.mythicReadyAt) {
@@ -748,7 +758,17 @@ export class Tower {
     // per-tower effects, and writing either onto a cached shared material
     // would change every tower built from the same model.
     const shape = towerModel(def.model)
+    const previousAim = this.model?.getObjectByName('aim')?.rotation.y ?? 0
     this.model = buildModel(shape, `tower:${def.model}`, { cloneMaterials: true })
+    this.legacyGazeYaw = 0
+    if (this.isSeraph) {
+      const aim = new THREE.Group()
+      aim.name = 'aim'
+      aim.rotation.y = previousAim
+      // Existing pivots and sockets remain local to their articulated parts.
+      for (const part of [...this.model.children]) if (part.name !== 'base') aim.add(part)
+      this.model.add(aim)
+    }
     // Crown placement follows the art; sight height keeps saved combat unchanged.
     this.visualCrownHeight = this.isSeraph ? Math.max(...Object.values(shape.parts).flat().map(b => b.y + b.sy / 2)) * (shape.scale ?? .1) + .14 : towerCrownHeight(def.model)
     if (this.isGhost) applyGhostLook(this.model)
@@ -761,6 +781,7 @@ export class Tower {
     if (this.isSeraph) this.animateSeraph(0, world)
     if (this.isBarracks) {
       if (initial) this.pickDefaultRally(world)
+      this.model.rotation.y = Math.atan2(this.rallyPoint.x - this.pos.x, this.rallyPoint.z - this.pos.z)
       this.respawnAllSoldiers(world)
       this.updateRallyFlag(world)
     }
@@ -912,7 +933,8 @@ export class Tower {
   }
 
   private doorPos(): THREE.Vector3 {
-    return this.pos.clone().add(new THREE.Vector3(0, 0, 0.55))
+    const yaw = this.worldBalance >= 19 ? this.model.rotation.y : 0
+    return this.pos.clone().add(new THREE.Vector3(Math.sin(yaw) * .55, 0, Math.cos(yaw) * .55))
   }
 
   private respawnAllSoldiers(world: World): void {
@@ -960,13 +982,27 @@ export class Tower {
   private muzzle(second = false): THREE.Vector3 {
     if ((this.world.balanceRuleset ?? RULESET_VERSION) >= 17) {
       const socket = this.model.getObjectByName(second ? 'muzzle2' : 'muzzle')
-      if (socket) return socket.getWorldPosition(new THREE.Vector3())
+      if (socket) return this.combatSocket(socket)
     }
     if (this.isSeraph) {
-      const heart = getPart(this.model, 'heart')
-      if (heart) return heart.getWorldPosition(new THREE.Vector3())
+      const heart = this.model.getObjectByName('heart')
+      if (heart) return this.combatSocket(heart)
     }
     return this.pos.clone().add(new THREE.Vector3(0, muzzleHeights[this.def.model] * this.sizeMult, 0))
+  }
+
+  /** Old saves keep their original flight origins while the visible beams
+   * follow the newly turning statue. No historical replay is rebalanced. */
+  private combatSocket(socket: THREE.Object3D): THREE.Vector3 {
+    const aim = this.model.getObjectByName('aim')
+    if (!aim || this.worldBalance >= 19) return socket.getWorldPosition(new THREE.Vector3())
+    const gaze = this.model.getObjectByName('gaze'), yaw = aim.rotation.y
+    aim.rotation.y = 0
+    if (gaze) gaze.rotation.y = this.legacyGazeYaw
+    const position = socket.getWorldPosition(new THREE.Vector3())
+    aim.rotation.y = yaw
+    if (gaze) gaze.rotation.y = 0
+    return position
   }
 
   /** A presentation origin for every model, independent of old combat rules. */
@@ -1140,6 +1176,12 @@ export class Tower {
     }
 
     if (this.isBarracks) {
+      {
+        const aim = Math.atan2(this.rallyPoint.x - this.pos.x, this.rallyPoint.z - this.pos.z)
+        this.model.rotation.y = lerpAngle(this.model.rotation.y, aim, 1 - Math.exp(-dt * 7))
+        const sentry = this.model.getObjectByName('sentry')
+        if (sentry && this.target) sentry.rotation.y = Math.atan2(this.target.pos.x - this.pos.x, this.target.pos.z - this.pos.z) - this.model.rotation.y
+      }
       this.reserveThrow = Math.max(0, this.reserveThrow - dt * 3.2)
       const arm = this.model.getObjectByName('sentryArm')
       if (arm) arm.rotation.x = -1.35 * this.reserveThrow * this.reserveThrow * (3 - 2 * this.reserveThrow)
@@ -1431,7 +1473,7 @@ export class Tower {
         if (!actor) {
           this.reserveThrow = 1
           const sentry = this.model.getObjectByName('sentry'), arm = this.model.getObjectByName('sentryArm')
-          if (sentry) sentry.rotation.y = Math.atan2(target.pos.x - this.pos.x, target.pos.z - this.pos.z)
+          if (sentry) sentry.rotation.y = Math.atan2(target.pos.x - this.pos.x, target.pos.z - this.pos.z) - this.model.rotation.y
           if (arm) arm.rotation.x = -1.35
         }
         if (actor) this.visualThrower = (this.soldiers.indexOf(actor) + 1) % this.soldiers.length

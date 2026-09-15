@@ -2,7 +2,8 @@ import * as THREE from 'three'
 import type { LevelDef } from './types.ts'
 
 type Point = [number, number]
-type Surface = { level: Pick<LevelDef, 'width' | 'height' | 'voids'>, cellTop(c: number, r: number): number }
+type Surface = { level: Pick<LevelDef, 'width' | 'height' | 'voids'>, cellTop(c: number, r: number): number,
+  paths?: { roadCells: Set<string> } }
 
 /** Clip a ring sector to one cell before lifting it: no triangle bridges a cliff. */
 function clip(points: Point[], axis: 0 | 1, bound: number, sign: number): Point[] {
@@ -21,25 +22,29 @@ function clip(points: Point[], axis: 0 | 1, bound: number, sign: number): Point[
 
 /** The XZ attack footprint projected onto actual terrain, including water.
  * Each cell gets its own flat triangles; cliffs produce a step, never a
- * sloping ribbon or a circle suspended at the tower's elevation.
+ * sloping ribbon or a circle suspended at the tower's elevation. Over open
+ * sky, short dashes continue the footprint at the board's baseline.
  */
 export function projectedRangeGeometry(surface: Surface, center: { x: number, z: number }, radius: number): THREE.BufferGeometry {
   const { width: w, height: h, voids } = surface.level
   const vertices: number[] = [], steps = radius > 0 ? 128 : 0
+  const inner = 1 - Math.min(.09, Math.max(.05, radius * .018)) / radius
   const point = (angle: number, scale: number): Point => [center.x + Math.cos(angle) * radius * scale, center.z + Math.sin(angle) * radius * scale]
   for (let i = 0; i < steps; i++) {
     const a = i / steps * Math.PI * 2, b = (i + 1) / steps * Math.PI * 2
-    const sector = [point(a, 0.97), point(a, 1), point(b, 1), point(b, 0.97)]
+    const sector = [point(a, inner), point(a, 1), point(b, 1), point(b, inner)]
     const xs = sector.map(p => p[0] + w / 2), zs = sector.map(p => p[1] + h / 2)
-    for (let c = Math.max(0, Math.floor(Math.min(...xs))); c <= Math.min(w - 1, Math.floor(Math.max(...xs))); c++) {
-      for (let r = Math.max(0, Math.floor(Math.min(...zs))); r <= Math.min(h - 1, Math.floor(Math.max(...zs))); r++) {
-        if (voids.some(([x0, z0, x1, z1]) => c >= x0 && c <= x1 && r >= z0 && r <= z1)) continue
+    for (let c = Math.floor(Math.min(...xs)); c <= Math.floor(Math.max(...xs)); c++) {
+      for (let r = Math.floor(Math.min(...zs)); r <= Math.floor(Math.max(...zs)); r++) {
+        const sky = c < 0 || r < 0 || c >= w || r >= h
+          || voids.some(([x0, z0, x1, z1]) => c >= x0 && c <= x1 && r >= z0 && r <= z1) && !surface.paths?.roadCells.has(`${c},${r}`)
+        if (sky && i % 4 >= 2) continue
         const x = c - w / 2, z = r - h / 2
         let poly = clip(sector, 0, x, 1)
         poly = clip(poly, 0, x + 1, -1)
         poly = clip(poly, 1, z, 1)
         poly = clip(poly, 1, z + 1, -1)
-        const top = surface.cellTop(c, r), y = (top < 0 ? -0.18 : top) + 0.035
+        const top = sky ? 0 : surface.cellTop(c, r), y = (top < 0 ? -0.18 : top) + 0.035
         for (let j = 1; j + 1 < poly.length; j++) {
           for (const p of [poly[0], poly[j], poly[j + 1]]) vertices.push(p[0], y, p[1])
         }

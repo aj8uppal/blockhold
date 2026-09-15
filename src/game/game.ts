@@ -390,8 +390,8 @@ export class Game implements World {
     audio.setMuted(this.save.sfxMuted)
     audio.setMusicMuted(this.save.musicMuted)
 
-    this.rangeRing = makeRing(1, 0x7fd4ff, 0.24)
-    this.upgradeRing = makeRing(1, 0x8fff9f, 0.42)
+    this.rangeRing = makeRing(1, 0xa2e6ff, 0.8)
+    this.upgradeRing = makeRing(1, 0x8fff9f, 0.65)
     this.selectRing = makeRing(1, 0xffe89f, 0.5)
     this.selectRing.scale.setScalar(0.62)
     this.targetRing = makeRing(1.15, 0xff8c42, 0.5)
@@ -3429,6 +3429,20 @@ export class Game implements World {
     if (!tower.activateMythic(this)) this.sfx('error')
   }
 
+  private legacyStandardRetryAt = 0
+
+  /** Older journals retain their simulation. Automatic planting is recorded
+   * as the existing player command, so those saves benefit without rewriting
+   * their past. One connected co-op player submits it for the whole room. */
+  private autoPlantLegacyStandards(): void {
+    if (this.balanceRuleset >= 19 || this.phase !== 'playing' || this.paused || this.recovering) return
+    if (this.coop && this.coop.seat !== Math.min(...this.coop.connected)) return
+    const now = performance.now() / 1000
+    if (now < this.legacyStandardRetryAt) return
+    this.legacyStandardRetryAt = now + 1
+    for (const tower of this.towers) if (tower.needsLegionStandard(this)) this.activateMythic(tower)
+  }
+
   upgradeTower(tower: Tower, optionIndex: number): void {
     if (this.paused) return
     const opt = tower.upgradeOptions[optionIndex]
@@ -3673,6 +3687,7 @@ export class Game implements World {
 
   update(dtRaw: number): void {
     if (this.recovering) return
+    this.autoPlantLegacyStandards()
     this.particles.normal.density = this.particles.add.density = this.engine.qualityTier >= 2 ? 0.3 : 1
     if (this.canSaveSession) {
       this.sessionSaveT += dtRaw
@@ -3768,6 +3783,7 @@ export class Game implements World {
     }
     updateBurnVisuals(this)
     this.hazard?.updateVisuals?.(this)
+    this.terrain?.offsetBackdrop(this.engine.shakeOffset)
     this.engine.render(false)
   }
 

@@ -150,6 +150,7 @@ export class Terrain {
   /** the merged ground, so a tap can land on a causeway or a shelf rather than the plane under it */
   groundMesh: THREE.Mesh | null = null
   private clouds: { mesh: THREE.Group, speed: number, spin?: number }[] = []
+  private backdropOffset = new THREE.Vector3()
   private flags: THREE.Object3D[] = []
   private crystals: THREE.Object3D[] = []
   private worldW: number
@@ -1046,6 +1047,12 @@ export class Terrain {
     for (const c of this.crystals) {
       c.scale.y = 1 + Math.sin(this.time * 1.8 + c.position.x) * 0.05
     }
+  }
+
+  /** Distant clouds and asteroids drift normally but do not inherit impacts. */
+  offsetBackdrop(offset: THREE.Vector3): void {
+    for (const { mesh } of this.clouds) mesh.position.sub(this.backdropOffset).add(offset)
+    this.backdropOffset.copy(offset)
   }
 }
 

@@ -35,6 +35,7 @@ vi.mock('../src/core/engine.ts', () => ({ Engine: class {
   camera = new THREE.PerspectiveCamera()
   camTarget = new THREE.Vector3()
   camTargetGoal = new THREE.Vector3()
+  shakeOffset = new THREE.Vector3()
   constructor() {
     return new Proxy(this, { get(target, key) { return Reflect.has(target, key) ? Reflect.get(target, key) : vi.fn() } })
   }
@@ -108,6 +109,26 @@ function setupFor(battle: BattleSession): CoopSetup {
 }
 
 describe('actual Game session recovery', () => {
+  it('logs automatic Standards as replayable player commands for an existing battle', async () => {
+    const game = makeGame()
+    game.startLevel(levels[0], 'normal', 'aldric', 'sandbox', { seed: 19191, balanceRuleset: 18 })
+    game.buildTower('barracks', game.terrain!.plots[0])
+    const tower = game.towers[0]
+    for (let i = 0; i < 5; i++) game.upgradeTower(tower, 0)
+    issue(game, { kind: 'sandboxSpawn', enemy: 'juggernaut', count: 1, lane: 0, hp: 100 })
+    for (let i = 0; i < 1200 && !tower.needsLegionStandard(game); i++) ticks(game, 1)
+    expect(tower.needsLegionStandard(game)).toBe(true)
+    ;(game as unknown as { autoPlantLegacyStandards(): void }).autoPlantLegacyStandards()
+    expect(tower.signatureReadout(game.time)?.text).toBe('Legion formation active')
+    ticks(game, 30)
+    const before = snapshot(game), journal = game.exportBattleSession()!
+    expect(journal.commands.filter(c => c.cmd.kind === 'mythic')).toHaveLength(1)
+    expect(await game.resumeSession(journal)).toBe(true)
+    expect(snapshot(game)).toEqual(before)
+    expect(game.towers[0].signatureReadout(game.time)?.text).toBe('Legion formation active')
+    game.disposeLevel()
+  })
+
   it('replays a live Mythic battlefield with its powers, poison, weapon sockets and hero orders intact', async () => {
     const game = makeGame()
     game.startLevel(levels[0], 'normal', 'zephyra', 'sandbox', { seed: 17017 })

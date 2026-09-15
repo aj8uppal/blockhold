@@ -77,7 +77,7 @@ const transformations: Partial<Record<TowerKind, Partial<Record<0 | 1, Partial<T
       description: 'Six lifestealing guards hold the road while the hall throws heavy axes at flyers. An aggressive alternative to the Last Legion.' },
     0: {
       name: 'Last Legion', cost: 14000, model: 'barracks6a', signature: 'legionStandard', range: 4.5,
-      description: 'Plant the Legion Standard at the rally point every 24s: recall and fully restore the elite squad, then heal nearby allies for 12% max health per second for 7s. Reposition the rally before planting.',
+      description: 'Automatically plants at the rally when enemies approach or the squad needs restoring. Recalls and fully restores the legion, then heals nearby allies for 12% max health per second for 7s. 24s recharge.',
     },
   },
 }

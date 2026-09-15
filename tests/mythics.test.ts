@@ -18,10 +18,10 @@ function enemy(x: number): Enemy {
   e.hp = e.maxHp = 10000
   return e
 }
-function fixture(kind: TowerKind = 'seraph', branch: 0 | 1 = 0, enemies: Enemy[] = []) {
+function fixture(kind: TowerKind = 'seraph', branch: 0 | 1 = 0, enemies: Enemy[] = [], balanceRuleset = 19) {
   const specs: ProjectileSpec[] = []
   const world = {
-    time: 1, dynamic: new THREE.Group(), lanes: [lane], enemies, soldiers: [], towers: [],
+    time: 1, balanceRuleset, dynamic: new THREE.Group(), lanes: [lane], enemies, soldiers: [], towers: [],
     cameraQuat: new THREE.Quaternion(), isBellfoundry: false, sellRefund: 0.7,
     towerDamageMult: () => 1, armoryTier: () => 0, soldierHpMult: () => 1,
     sightBlocked: () => false, groundY: () => 0,
@@ -87,6 +87,44 @@ describe('all-family Mythic roster', () => {
 })
 
 describe('Mythic combat identities', () => {
+  it('turns every Seraph upper assembly, including Crimson wings, while leaving the pedestal fixed', () => {
+    const { world, tower: existing } = fixture()
+    const target = enemy(2)
+    for (const branch of [0, 1] as const) {
+      const tower = new Tower('seraph', existing.plot, world)
+      for (let tier = 1; tier <= 7; tier++) {
+        if (tier === 7) tower.fuse(world)
+        tower.target = target
+        const animate = tower as unknown as { animateSeraph(dt: number, world: World): void }
+        animate.animateSeraph(2, world)
+        for (const name of ['figure', 'heart', 'wingL', 'wingR', tier === 7 ? 'crown' : 'halo']) {
+          const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(tower.model.getObjectByName(name)!.getWorldQuaternion(new THREE.Quaternion()))
+          expect(Math.atan2(forward.x, forward.z), `${tier}/${branch} ${name}`).toBeCloseTo(Math.PI / 2, 4)
+        }
+        expect(tower.model.getObjectByName('base')!.getWorldQuaternion(new THREE.Quaternion()).angleTo(new THREE.Quaternion())).toBe(0)
+        const muzzle = tower.model.getObjectByName('muzzle')!.getWorldPosition(new THREE.Vector3())
+        expect(muzzle.x).toBeGreaterThan(tower.pos.x)
+        if (tier < 6) tower.upgrade(tier === 3 ? branch : 0, world)
+      }
+    }
+  })
+
+  it('faces barracks doors and spawning soldiers toward the rally through every upgrade', () => {
+    const { world, tower: existing } = fixture('barracks')
+    for (const branch of [0, 1] as const) {
+      const tower = new Tower('barracks', existing.plot, world)
+      tower.setRally(2, 0, world)
+      for (let tier = 1; tier <= 6; tier++) {
+        for (let i = 0; i < 30; i++) tower.update(.1, world)
+        expect(tower.model.rotation.y).toBeCloseTo(Math.PI / 2, 4)
+        const door = (tower as unknown as { doorPos(): THREE.Vector3 }).doorPos()
+        expect(door.x).toBeCloseTo(tower.pos.x + .55)
+        expect(door.z).toBeCloseTo(tower.pos.z)
+        if (tier < 6) tower.upgrade(tier === 3 ? branch : 0, world)
+      }
+    }
+  })
+
   it('keeps seven separate beams and charges a ground strike with an escape window', () => {
     const enemies = Array.from({ length: 7 }, (_, i) => enemy(1 + i * 0.1))
     const { world, tower, specs } = fixture('seraph', 0, enemies)
@@ -165,5 +203,35 @@ describe('Mythic combat identities', () => {
     const { tower, world } = fixture('barracks', 0)
     tower.isGhost = true
     expect(tower.activateMythic(world)).toBe(false)
+  })
+
+  it('automatically restores a wounded formation and replants at the current rally after recharge', () => {
+    const { tower, world } = fixture('barracks')
+    const state = mechanics(tower)
+    state.updateMythic(.1, world)
+    expect(state.mythicAt).toBeNull() // healthy, quiet formation does not waste it
+    tower.soldiers[0].hp = 1
+    state.updateMythic(.1, world)
+    expect(tower.soldiers[0].hp).toBe(tower.soldiers[0].maxHp)
+    expect(state.mythicAt).not.toBeNull()
+    world.time += LEGION_DURATION
+    state.updateMythic(.1, world)
+    tower.setRally(2, 0, world)
+    tower.soldiers[0].hp = 1
+    state.updateMythic(.1, world)
+    expect(state.mythicAt).toBeNull()
+    world.time = state.mythicReadyAt
+    state.updateMythic(.1, world)
+    expect(state.mythicAt?.x).toBe(2)
+    expect(tower.soldiers[0].hp).toBe(tower.soldiers[0].maxHp)
+  })
+
+  it('plants for approaching enemies but preserves manual activation in historical simulations', () => {
+    for (const rules of [18, 19]) {
+      const { tower, world } = fixture('barracks', 0, [], rules)
+      world.enemies.push(enemy(.4))
+      mechanics(tower).updateMythic(.1, world)
+      expect(!!mechanics(tower).mythicAt).toBe(rules >= 19)
+    }
   })
 })

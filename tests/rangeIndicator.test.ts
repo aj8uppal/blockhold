@@ -25,16 +25,33 @@ describe('range projected onto terrain', () => {
     geo.dispose()
   })
 
-  it('clips the footprint to the board and leaves void cells empty', () => {
+  it('continues the footprint as separated dashes over voids and outside the board', () => {
     const s = { ...surface, level: { ...surface.level, voids: [[0, 0, 2, 11] as [number, number, number, number]] } }
     const geo = projectedRangeGeometry(s, { x: -5.5, z: 0 }, 4)
     const p = geo.getAttribute('position')
     expect(p.count).toBeGreaterThan(0)
-    for (let i = 0; i < p.count; i++) {
-      expect(p.getX(i)).toBeGreaterThanOrEqual(-4)
-      expect(p.getX(i)).toBeLessThanOrEqual(7)
-      expect(Math.abs(p.getZ(i))).toBeLessThanOrEqual(6)
+    const occupied = new Set<number>()
+    for (let i = 0; i < p.count; i += 3) {
+      const x = (p.getX(i) + p.getX(i + 1) + p.getX(i + 2)) / 3
+      const z = (p.getZ(i) + p.getZ(i + 1) + p.getZ(i + 2)) / 3
+      if (x >= -4) continue
+      expect(p.getY(i)).toBeCloseTo(.035)
+      const angle = (Math.atan2(z, x + 5.5) + Math.PI * 2) % (Math.PI * 2)
+      occupied.add(Math.floor(angle / (Math.PI * 2) * 128))
     }
+    expect(occupied.size).toBeGreaterThan(10)
+    expect([...occupied].every(i => i % 4 < 2)).toBe(true)
+    expect(Array.from({ length: p.count }, (_, i) => p.getX(i)).some(x => x < -7)).toBe(true)
+    geo.dispose()
+  })
+
+  it('keeps bridge decks solid and lifted even though the cells are over void', () => {
+    const s = { level: { width: 2, height: 2, voids: [[0, 0, 1, 1] as [number, number, number, number]] },
+      paths: { roadCells: new Set(['0,0', '0,1', '1,0', '1,1']) }, cellTop: () => 1 }
+    const geo = projectedRangeGeometry(s, { x: 0, z: 0 }, .8)
+    const p = geo.getAttribute('position')
+    expect(p.count).toBeGreaterThanOrEqual(128 * 6)
+    for (let i = 0; i < p.count; i++) expect(p.getY(i)).toBeCloseTo(1.035)
     geo.dispose()
   })
 
