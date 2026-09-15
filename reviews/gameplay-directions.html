@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blockhold · What makes the next battle different?</title>
+<style>
+*{box-sizing:border-box}html{background:#0e171c;color:#f3f1ea;scroll-behavior:smooth;color-scheme:dark}body{margin:0;font:16px/1.65 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main,header,footer{max-width:1180px;margin:auto;padding:28px 36px}a{color:#9cd6e4;text-underline-offset:4px}a:hover{color:#fff}p{margin:12px 0;color:#bec8cb}h1,h2,h3{line-height:1.13;letter-spacing:-.035em;margin:0;color:#f3f1ea}h1{font-size:clamp(38px,6vw,70px);max-width:850px}h2{font-size:clamp(28px,4vw,40px)}h3{font-size:25px}small,.small{font-size:13px;line-height:1.6}.eyebrow{font-size:11px;font-weight:700;color:#e9c078;text-transform:uppercase;letter-spacing:.14em;margin-bottom:14px}.mast{display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid #ffffff1a;font-size:12px;letter-spacing:.12em}.mast span:last-child{color:#a5b2b8;letter-spacing:0}.hero{padding:40px 0 28px}.lead{font-size:21px;max-width:820px;line-height:1.55}.tag{display:inline-block;font-size:12px;color:#c6d5d8;border:1px solid #ffffff24;border-radius:6px;padding:3px 9px;letter-spacing:0}.tag.gold{color:#f0cf97;border-color:#e9c07860;background:#e9c0780a}.callout{border-left:3px solid #e9c078;background:#e9c07809;padding:20px 24px;margin:24px 0}.callout b{color:#f0cf97}.callout p{margin:5px 0 0}.jump{display:flex;gap:10px;flex-wrap:wrap;margin:24px 0}.jump a{display:inline-flex;align-items:center;min-height:44px;padding:8px 14px;border:1px solid #ffffff24;border-radius:8px;text-decoration:none;font-size:14px}section{padding:40px 0;border-top:1px solid #ffffff1a;scroll-margin-top:15px}.intro{max-width:860px;margin-bottom:25px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.grid>*{min-width:0}.card{border:1px solid #ffffff1a;background:#172228;border-radius:14px;padding:26px}.card p:last-child{margin-bottom:0}.card strong{color:#f3f1ea}.card.recommended{border-color:#e9c07870}.option{margin-bottom:20px}.option-head{display:flex;justify-content:space-between;align-items:start;gap:24px;margin-bottom:22px}.option-head>div{min-width:0}.cost{text-align:right;min-width:135px;font-size:14px;color:#a5b2b8}.cost b{display:block;color:#f3f1ea;font-size:19px}.option .grid{gap:30px}.label{display:block;color:#e9c078;font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin:17px 0 4px;font-weight:700}.option p{margin:3px 0 12px}.moment{font-size:20px;color:#f3f1ea;line-height:1.5}.risk{color:#edb2a4!important}.mock{background:#0e171c;border:1px solid #ffffff26;border-radius:11px;padding:20px;margin-top:15px}.mocktop{display:flex;justify-content:space-between;gap:12px;color:#a5b2b8;font-size:12px;margin-bottom:15px}.mockrow{display:flex;align-items:center;gap:14px;padding:14px 0;border-top:1px solid #ffffff18}.mockrow>span:first-child{font-size:22px;color:#e9c078;width:28px;flex-shrink:0}.mockrow strong{font-size:15px}.mockrow p{font-size:13px;margin:3px 0}.chip{font-size:12px;padding:4px 8px;border-radius:5px;background:#ffffff09;color:#b9c9cc;display:inline-block}.sample-action{display:block;background:#e9c078;color:#24251f;border-radius:8px;padding:11px 16px;font-size:14px;font-weight:650;margin-top:14px}.sample-secondary{display:block;border:1px solid #ffffff24;color:#cbd3d4;border-radius:8px;padding:10px 16px;font-size:14px;margin-top:8px}.mock figcaption{margin:0}.mock-note{font-size:11px;color:#94a5ac;margin-top:10px!important}.sequence{counter-reset:steps;padding:0;list-style:none}.sequence li{counter-increment:steps;position:relative;padding:0 0 25px 48px}.sequence li:before{content:counter(steps);position:absolute;left:0;top:0;background:#202e35;color:#e9c078;width:30px;height:30px;display:grid;place-items:center;border-radius:8px}.sequence p{margin-top:4px}.review-item{padding:20px 0;border-bottom:1px solid #ffffff13}.review-item:last-child{border:0}.review-item b{font-size:17px}.review-item p{margin:5px 0}.resolution{color:#a4d0b8!important}details{border:1px solid #ffffff20;padding:0 20px;border-radius:10px;margin:16px 0}summary{cursor:pointer;min-height:52px;padding:14px 0;font-weight:600}ul{padding-left:22px}li{margin-bottom:9px;color:#bec8cb}figure{margin:0}svg{display:block;width:100%;height:auto}figcaption{font-size:13px;color:#a5b2b8;margin-top:12px}form{margin-top:25px}fieldset{padding:0;border:0;margin:0 0 20px}legend{font-weight:650;margin-bottom:12px}.choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.choices label{display:flex;gap:12px;align-items:center;min-height:56px;border:1px solid #ffffff26;border-radius:9px;padding:12px 16px;cursor:pointer;background:#172228}.choices label:has(input:checked){border-color:#e9c078;background:#e9c0780d}.choices input{accent-color:#e9c078;width:18px;height:18px;flex-shrink:0}.field{display:block;margin:18px 0 7px;font-weight:600}textarea{display:block;width:100%;font:inherit;background:#172228;color:#f3f1ea;border:1px solid #ffffff35;border-radius:9px;padding:14px;resize:vertical;min-height:110px}button{font:inherit;font-weight:600;cursor:pointer;min-height:48px;padding:11px 20px;border-radius:8px;border:1px solid #ffffff30;background:#202e35;color:#f3f1ea}.primary{background:#e9c078;color:#23251e;border-color:#e9c078}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #9cd6e4;outline-offset:4px}#feedback-status{min-height:24px;color:#a4d0b8}footer{border-top:1px solid #ffffff1a;color:#a5b2b8;font-size:12px;padding-bottom:45px}footer p{margin:4px 0}p,h1,h2,h3,li,dd{overflow-wrap:anywhere}code{font-size:12px;color:#c8dbdf}::selection{background:#e9c078;color:#10191d}
+@media(max-width:760px){main,header,footer{padding-left:20px;padding-right:20px}.grid,.grid.three,.choices{grid-template-columns:1fr}.hero{padding-top:24px}.lead{font-size:18px}.card{padding:21px}.option-head{gap:14px}.cost{min-width:100px;font-size:12px}.cost b{font-size:16px}.option .grid{gap:10px}.mast{font-size:10px}.jump{gap:7px}.jump a{padding:8px 10px;font-size:13px}.moment{font-size:18px}section{padding:30px 0}.mock{padding:16px}h3{font-size:23px}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{html,body{background:white;color:#172228}p,li,figcaption{color:#333}h1,h2,h3,.card strong{color:#111}.card,.mock{background:#f7f8f8;border-color:#bbb;break-inside:avoid}.jump,form,.actions{display:none}section{border-color:#bbb}.grid{display:block}.card{margin-bottom:15px}.callout{background:#eee}a{color:#21566a}}
+</style>
+</head>
+<body>
+<header><div class="mast"><strong>▟ BLOCKHOLD</strong><span>Design review · 15 September 2026</span></div></header>
+<main>
+<div class="hero">
+<div class="eyebrow">Five directions for the next chapter</div>
+<h1>What makes the next battle different?</h1>
+<p class="lead">Give players a reason to rethink a defense, a moment worth remembering, and something meaningful to bring home.</p>
+<span class="tag gold">Proposal for discussion</span> <span class="tag">Gameplay ideas below are not implemented</span>
+<div class="callout"><b>Start with enemy encounter design.</b><p>Then test one optional battlefield objective. We already have a large toy box; the first opportunity is to make more of those toys useful together.</p></div>
+<nav class="jump" aria-label="Review sections"><a href="#why">Why this direction</a><a href="#options">Compare five options</a><a href="#first">First playable slice</a><a href="#review">Adversarial review</a><a href="#decision">Choose a direction</a></nav>
+</div>
+<section id="why">
+<div class="eyebrow">What exists today</div><h2>The foundation is already substantial.</h2>
+<p class="intro">Blockhold has eight tower families, Mythics and Seraph fusion; campaign and Frontier maps; boss hunts; daily battles; the Three Watches; and an editable, shareable Hold. Adding another menu or another damage tier is unlikely to address every source of repetition.</p>
+<div class="grid three">
+<article class="card"><h3>During a battle</h3><p>The current endless generator draws groups from enemy pools, varies lanes and timing, and inserts bosses. It offers variety, but does not explicitly author every wave around a particular tactical question.</p><a class="small" href="https://github.com/aj8uppal/blockhold/blob/88065c9/src/game/levels.ts#L702">Wave generation in the current code ↗</a></article>
+<article class="card"><h3>At the endgame</h3><p>Support mechanics already exist: wards, healing, summons, silence, vulnerability, grounding and crowd control. Better encounters could make those interactions easier to notice and more valuable.</p><a class="small" href="https://github.com/aj8uppal/blockhold/blob/88065c9/src/game/mythicPowers.ts">Existing Mythic powers ↗</a></article>
+<article class="card"><h3>Between battles</h3><p>Your Hold already displays earned buildings, trophies and banners, supports customization, and shares visit links. Its next opportunity is helping a player choose a satisfying goal.</p><a class="small" href="https://github.com/aj8uppal/blockhold/blob/88065c9/src/hold/catalog.ts">Existing rewards and requirements ↗</a></article>
+</div>
+<p class="small">These are code observations, not a measured retention diagnosis. Your reports suggest repetition and late-game tower dominance; fresh playtests need to distinguish balance problems from a lack of decisions.</p>
+<details><summary>What we can borrow from other tower defense games</summary><p>Ninja Kiwi presents boss events, linked-map Odysseys, quests, cosmetic trophies and player-created challenges as distinct parts of Bloons TD 6. Each offers a different reason to return. <a href="https://store.steampowered.com/app/960090/Bloons_TD_6/">Ninja Kiwi’s official game page ↗</a></p><p>My design inference: Blockhold should vary the <em>question a battle asks</em> before greatly increasing the number of systems a player must learn. This comparison is inspiration, not evidence that copying a feature will improve retention here.</p></details>
+</section>
+<section id="options">
+<div class="eyebrow">Compare the directions</div><h2>Five different kinds of replay value.</h2>
+<p class="intro">Each option below can stand on its own. The effort ranges are preliminary estimates for one developer covering implementation, mobile/co-op checks and initial tuning; they are not delivery commitments. Unknowns grow sharply for expeditions.</p>
+
+<article class="card option recommended" id="direction-a">
+<div class="option-head"><div><div class="eyebrow">A · Recommended first</div><h3>Encounters with a point</h3></div><div class="cost"><b>1–2 weeks</b>small initial slice</div></div>
+<div class="grid"><div>
+<p class="moment">“The Wardbearer is protecting that pack. I can burst the bearer, suppress the ward, or stall the front while another tower gets a clean shot.”</p>
+<span class="label">The playable change</span><p>Replace selected random waves with authored formations: a protected advance, a fast follow-up behind a slow vanguard, and a staggered attack on two roads. Existing enemy behaviors do the work.</p>
+<span class="label">Why come back?</span><p>The same map supports different placements, target priorities and support combinations. The challenge is readable before it arrives.</p>
+<span class="label">Initial scope</span><p>Three formations on two existing maps in an optional encounter trial. Reuse current enemies and effects. One compact threat sentence in the incoming-wave preview.</p>
+<span class="label">Cost / failure mode</span><p class="risk">A formation can become a puzzle with one compulsory answer, or disappear instantly against Crimson. If it only adds health or forces constant target switching, it has failed.</p>
+</div><div>
+<div class="mock"><div class="mocktop"><span>INCOMING · illustrative UI</span><span>Wave 8</span></div><div class="mockrow"><span>⚑</span><div><strong>Protected advance</strong><p>Wardbearer shields the front. Break the banner or separate the pack.</p></div></div><span class="chip">North road</span> <span class="chip">Wards + armor</span><div class="mockrow"><span>↳</span><div><strong>Watch the follow-up</strong><p>Ashhounds enter after the vanguard.</p></div></div><p class="mock-note">Preview replaces existing wave detail; it does not add a permanent panel or interrupt combat.</p></div>
+<span class="label">Mobile & co-op</span><p>No new action button. Both players see the same telegraph. Encounters are seeded and recorded; the game never secretly selects a counter based on your towers.</p>
+<span class="label">What would change my recommendation?</span><p>If fair-budget tests show support builds cannot keep up at all, fix their economics and boss contribution before expanding the encounter library.</p>
+</div></div></article>
+
+<article class="card option" id="direction-b">
+<div class="option-head"><div><div class="eyebrow">B · Best companion experiment</div><h3>Optional battlefield contracts</h3></div><div class="cost"><b>2–3 weeks</b>one objective type</div></div>
+<div class="grid"><div>
+<p class="moment">“We can defend the supply cache for two waves and afford the upgrade earlier—or let it go and keep our defense concentrated.”</p>
+<span class="label">The playable change</span><p>Occasionally offer an extra objective at a pre-authored location. Accepting adds a clearly shown pressure; success earns a modest battle reward and progress toward a cosmetic commemoration.</p>
+<span class="label">Why come back?</span><p>A familiar map offers a voluntary gamble and a shared co-op story.</p>
+<span class="label">Initial scope</span><p>One supply-cache contract on two eligible maps, at most once per battle. The player can skip it without penalty. A visible zone has a simple survival condition.</p>
+<span class="label">Cost / failure mode</span><p class="risk">Extra income can snowball into “always accept.” An objective in poor tower coverage can feel unfair. Use authored sites and cap rewards; do not generate arbitrary escort routes.</p>
+</div><div>
+<div class="mock"><div class="mocktop"><span>OPTIONAL · illustrative UI</span><span>2 waves</span></div><h3>Secure the supplies</h3><p>Keep the marked cache intact through waves 8 and 9. Extra Ashhounds will approach it.</p><div class="chip">Example reward: 120 battle gold</div><span class="sample-action">Defend the cache</span><span class="sample-secondary">Keep our current plan</span><p class="mock-note">Illustrative controls and reward. Gold needs tuning against actual upgrade timing.</p></div>
+<span class="label">Mobile & co-op</span><p>Offer only between waves. Both active players must agree to add the risk; no answer means skip. One decision, no repeated planting or collection taps. Resume records the accepted objective and its remaining waves.</p>
+<span class="label">Stop rule</span><p>Rework it if players feel punished for declining, or accept every time without reconsidering placement or spending.</p>
+</div></div></article>
+
+<article class="card option" id="direction-c">
+<div class="option-head"><div><div class="eyebrow">C · More build experimentation</div><h3>Doctrines for this battle</h3></div><div class="cost"><b>3–5 weeks</b>small curated draft</div></div>
+<div class="grid"><div>
+<p class="moment">“This run, we’ll turn the road into a chokepoint. Next time we’ll spread our archers across the ridges.”</p>
+<span class="label">The playable change</span><p>Offer a few run-only tradeoffs at planned breaks: longer-lasting control with less raw damage, or isolated towers trading fire rate for coverage. Each changes how a defense is arranged.</p>
+<span class="label">Why come back?</span><p>The same unlocked towers can support a different plan each run, without requiring another account grind.</p>
+<span class="label">Initial scope</span><p>Six authored doctrines, two offers in one optional mode, no stacking duplicates and no paid rerolls. Offer only effects the current map and loadout can actually use.</p>
+<span class="label">Cost / failure mode</span><p class="risk">Balance combinations multiply. Generic attack bonuses become automatic picks, especially on Seraphs. Sidegrades must change a decision and show their drawback plainly.</p>
+</div><div>
+<div class="mock"><div class="mocktop"><span>ILLUSTRATIVE CHOICE</span><span>This battle only</span></div><div class="mockrow"><span>⌖</span><div><strong>Wide watch</strong><p>Isolated attacking towers reach farther, but fire more slowly.</p></div></div><div class="mockrow"><span>▥</span><div><strong>Hold the crossing</strong><p>Soldiers hold enemies longer, but deal less damage.</p></div></div><span class="sample-secondary">Keep the standard doctrine</span><p class="mock-note">Names and tradeoffs are concepts, not balanced statistics.</p></div>
+<span class="label">Mobile & co-op</span><p>One shared choice at a break, readable benefit and cost, no modal over a live attack. Disagreement keeps the standard rules. Selections survive reload and co-op-to-solo conversion.</p>
+<span class="label">Stop rule</span><p>Stop expanding if offers feel like homework, or one doctrine dominates regardless of map and tower mix.</p>
+</div></div></article>
+
+<article class="card option" id="direction-d">
+<div class="option-head"><div><div class="eyebrow">D · Biggest new mode</div><h3>A short expedition</h3></div><div class="cost"><b>5–8+ weeks</b>highest uncertainty</div></div>
+<div class="grid"><div>
+<p class="moment">“Take the flooded road for a naval advantage, or the ridge road to preserve our supplies before the final siege?”</p>
+<span class="label">The playable change</span><p>Three short battles with a route choice, limited carryover supplies and a final encounter. Each battlefield ends at a clean save point.</p>
+<span class="label">Why come back?</span><p>A small campaign produces an arc: preparation, a setback, then a payoff.</p>
+<span class="label">Initial scope</span><p>One authored route using existing maps, one branch, a deterministic reward, no procedural map generator. Carry a defined supply allowance rather than entire tower placements between maps.</p>
+<span class="label">Cost / failure mode</span><p class="risk">Long sessions, cumulative failure and co-op transitions make this expensive. It must earn its complexity beyond the existing Three Watches, which already returns earlier defenses as echoes.</p>
+</div><div>
+<span class="label">Distinct from Three Watches</span><p>The new decision is which battlefield and resource tradeoff to take next. It should not simply repeat a siege three times with a new name.</p>
+<span class="label">Mobile & co-op</span><p>Design for approximately 5–8 minutes per leg, then validate the duration. Save after every wave as well as each leg. Rejoining restores the route, inventories and both players’ choices; a disconnected player must not trap the party.</p>
+<span class="label">Dependencies</span><p>Persistent multi-map session schema, atomic stage transitions, rewards that cannot be duplicated by retrying, a comprehensible route screen and robust solo conversion.</p>
+<span class="label">Stop rule</span><p>Pause expansion if players mostly quit between legs because the next fight feels like an obligation rather than a choice.</p>
+</div></div></article>
+
+<article class="card option" id="direction-e">
+<div class="option-head"><div><div class="eyebrow">E · A reason to bring victories home</div><h3>Your Hold, with a purpose</h3></div><div class="cost"><b>2–4 weeks</b>goals + challenge links</div></div>
+<div class="grid"><div>
+<p class="moment">“That empty plinth is for a battle we’re proud of. Let’s win the next hunt with our support-heavy defense and place it together.”</p>
+<span class="label">The playable change</span><p>Pin a goal from the existing collection, preview the reward in the courtyard, and launch the relevant battle directly. Add shareable challenge cards with a fixed seed and explicit conditions.</p>
+<span class="label">Why come back?</span><p>The courtyard tells the story of your play, and gives friends something specific to attempt together.</p>
+<span class="label">Initial scope</span><p>Three curated collection journeys, one pinned goal, reward previews, and private challenge links. Build on the current Hold editor, catalog and visits.</p>
+<span class="label">Cost / failure mode</span><p class="risk">A prettier checklist will not fix boring combat. Avoid permanent combat bonuses, material farming, expiring streaks or a second daily chore list.</p>
+</div><div>
+<div class="mock"><div class="mocktop"><span>YOUR HOLD · illustrative UI</span><span>Pinned goal</span></div><h3>The Unbroken</h3><p>Hold the line for 60 extra waves. See its place in your courtyard before you begin.</p><span class="chip">Cosmetic reward</span><span class="sample-action">Choose a battlefield</span><p class="mock-note">This milestone already exists in the collection. Pinning, placement preview and a focused launch flow are the proposed additions.</p></div>
+<span class="label">Mobile & co-op</span><p>Progress belongs to each account and awards once. Either friend can follow a challenge link; sandbox and incompatible versions are clearly separated from validated records. No public user-content feed in the initial slice.</p>
+<span class="label">Stop rule</span><p>If players chase rewards but say the battles still feel identical, return to encounter design before adding more collections.</p>
+</div></div></article>
+</section>
+<section id="first">
+<div class="eyebrow">Recommended sequence</div><h2>Prove the battle is more interesting first.</h2>
+<p class="intro">Start with A. Treat B as a separate follow-up experiment. This isolates what actually makes play better instead of shipping five interacting systems and guessing.</p>
+<div class="grid"><div>
+<ol class="sequence">
+<li><strong>Establish a fair comparison.</strong><p>Record representative campaign and +30/+60 Hold the Line situations. Compare equal-gold mixed defenses, a control/support defense and a Seraph-focused defense. Include low and high account progression separately.</p></li>
+<li><strong>Build three encounter templates.</strong><p>Protected advance, staggered pursuit, and two-road diversion. Author them on Greenhollow and Frostmere; only offer diversion where two usable roads and affordable coverage exist.</p></li>
+<li><strong>Introduce one clear telegraph.</strong><p>Show the enemy’s tactic and entry road before the wave. Keep the first trial at current power budgets; do not combine a new tactic with a hidden health spike.</p></li>
+<li><strong>Test, revise, then decide.</strong><p>Use the same seed with different defenses. Keep templates that produce multiple understandable solutions. Only then trial the supply-cache objective separately.</p></li>
+</ol>
+</div><div class="card">
+<h3>What “more interesting” means</h3>
+<figure aria-label="A battle decision cycle">
+<svg viewBox="0 0 460 198" role="img" aria-labelledby="cycle-title"><title id="cycle-title">See the threat, choose a response, and see the result</title>
+<g id="see-threat"><title>See the threat before it arrives</title><rect x="5" y="28" width="138" height="110" rx="10" fill="#202e35" stroke="#445963" /><text x="74" y="63" text-anchor="middle" fill="#e9c078" font-size="23">01</text><text x="74" y="94" text-anchor="middle" fill="#f3f1ea" font-size="16">Read</text><text x="74" y="119" text-anchor="middle" fill="#a5b2b8" font-size="12">the threat</text></g>
+<path id="read-to-choose" d="M148 83H157m-5-5 5 5-5 5" stroke="#e9c078" fill="none"><title>Plan a response</title></path>
+<g id="choose-response"><title>Choose among viable responses</title><rect x="162" y="28" width="137" height="110" rx="10" fill="#202e35" stroke="#445963" /><text x="230" y="63" text-anchor="middle" fill="#e9c078" font-size="23">02</text><text x="230" y="94" text-anchor="middle" fill="#f3f1ea" font-size="16">Choose</text><text x="230" y="119" text-anchor="middle" fill="#a5b2b8" font-size="12">a response</text></g>
+<path id="choose-to-result" d="M304 83H313m-5-5 5 5-5 5" stroke="#e9c078" fill="none"><title>Make the response visible</title></path>
+<g id="see-result"><title>Understand why the defense succeeded or failed</title><rect x="318" y="28" width="137" height="110" rx="10" fill="#202e35" stroke="#445963" /><text x="386" y="63" text-anchor="middle" fill="#e9c078" font-size="23">03</text><text x="386" y="94" text-anchor="middle" fill="#f3f1ea" font-size="16">Understand</text><text x="386" y="119" text-anchor="middle" fill="#a5b2b8" font-size="12">the outcome</text></g></svg>
+<figcaption>One meaningful adjustment can be enough. We are not optimizing for clicks per minute.</figcaption></figure>
+<p><strong>Prototype acceptance:</strong> at least two affordable counter approaches per encounter; cues understood without coaching; no need for constant ability tapping; support towers visibly affect the outcome.</p>
+<p><strong>Power fantasy:</strong> a well-earned Crimson should still overwhelm ordinary waves. Challenge its coverage on suitable maps, rather than making enemies secretly immune to it.</p>
+</div></div>
+<details><summary>Implementation boundaries and release gates</summary>
+<ul>
+<li><strong>Authoring:</strong> add a small encounter data module referenced by the existing wave generator. Store template ID/version, lane choice, seed and wave schedule in deterministic run state. Use no wall-clock randomness or adaptation to the player’s current towers.</li>
+<li><strong>Compatibility:</strong> old saves keep their original generation and balance rules. New encounter sessions pin their content version. Checkpoints and replay journals must reconstruct the same enemies, order and rewards.</li>
+<li><strong>Co-op:</strong> both seats receive identical schedules. Test pause, 1× through 4×, guest rejoin, both directions of solo/co-op conversion, simultaneous choices, retry, defeat and Hold the Line. Compare state hashes after transitions.</li>
+<li><strong>Difficulty:</strong> Casual introduces one pressure at a time; Normal overlaps already learned threats; Veteran tightens timing and coverage. Do not require an expensive late unlock to answer a tactic in early progression.</li>
+<li><strong>Balance matrix:</strong> three defense archetypes × two maps × three difficulties × two late-game depths = 36 core scenarios. Add campaign, low-account and naval-eligible cases separately. This is a planned test matrix, not completed evidence or exhaustive coverage.</li>
+<li><strong>Readability:</strong> real gameplay camera at 390px portrait and 844px landscape, desktop, low quality and reduced motion. Threat cues remain visible with no reliance on sound or subtle color alone.</li>
+<li><strong>Performance:</strong> preserve existing asset-size budgets and enemy caps; reuse current VFX. Compare frame-time and co-op catch-up behavior against the same baseline seed on representative phones.</li>
+<li><strong>Economy:</strong> test reward once-only behavior through retry/reload. New optional modes do not qualify for existing competitive scores or mastery until their conditions are explicitly validated.</li>
+<li><strong>Release:</strong> optional trial first; tune from observed play before adding templates to new endless sessions. Version a rollback so active sessions remain playable.</li>
+</ul></details>
+<details><summary>How we evaluate fun without pretending we have retention data</summary>
+<p>Begin with six observed testers spanning solo/co-op and newer/experienced players. Use a counterbalanced order: half try the current wave first, half the new encounter. This is qualitative discovery, not a statistically reliable retention study.</p>
+<p>Ask what threatened their defense, what they changed, whether another solution seemed possible, and whether they would choose another run. A useful initial target is five of six understanding the cue without explanation. Watch for more varied spending and positioning without more compulsory tapping.</p>
+<p>The current project has opt-in battle and wave telemetry. Proposed additions would be encounter exposure, contract acceptance/completion and doctrine choice—only under the same consent. Track quits, performance and return play as guardrails once there is enough real traffic; do not treat more time in a battle as automatically better.</p>
+</details>
+</section>
+<section id="review">
+<div class="eyebrow">Adversarial design review</div><h2>Reasons these ideas could fail.</h2>
+<p class="intro">I reviewed the proposal in a separate critical pass, taking the positions of an optimizer, a mobile player and a co-op maintainer. This is a same-assistant review, not an independent reviewer’s sign-off. The revisions below are incorporated above.</p>
+<div class="review-item"><b>R1 · “This just makes everything a Seraph check.”</b><p>More enemy health would reinforce the reported endgame dominance.</p><p class="resolution">Revision: equal-gold comparisons first; use timing, coverage and support interactions. Keep Crimson’s payoff. If other families fail economically, correct balance before growing content.</p></div>
+<div class="review-item"><b>R2 · “You removed a manual Standard button, then added five chores.”</b><p>Constant objectives and choices would conflict with the user’s desire for fluid mobile play.</p><p class="resolution">Revision: no new combat action for A; B occurs at most once and between waves; C has only two offers and an unchanged-rules choice.</p></div>
+<div class="review-item"><b>R3 · “An optional reward is mandatory if it is too efficient.”</b><p>Free gold can create a runaway lead or make declining feel wrong.</p><p class="resolution">Revision: contract reward tuning must account for the extra threat and spending. No missed permanent power. Reject the contract if experienced players always accept automatically.</p></div>
+<div class="review-item"><b>R4 · “My friend disconnected while the decision screen was open.”</b><p>New votes and stage transitions can recreate prior stuck-run and split-room bugs.</p><p class="resolution">Revision: choices are recorded run events; default disagreement to unchanged rules; define active voters; rejoin restores committed decisions. Transition and replay tests are release gates.</p></div>
+<div class="review-item"><b>R5 · “These are features we already have.”</b><p>Boss hunts, Mythic powers, linked Watches and the Hold collection already cover some of this territory.</p><p class="resolution">Revision: reuse existing enemy traits; make expeditions about route/resource decisions; make Hold work about guidance and challenge sharing. New boss count alone is not the proposal.</p></div>
+<div class="review-item"><b>R6 · “You are balancing for a maxed account.”</b><p>A counter is not viable if the player has not unlocked it or cannot afford it yet.</p><p class="resolution">Revision: account progression and battle gold are separate test dimensions. Offer low-tier answers. Restrict patterns to appropriate map geometry and progression.</p></div>
+<div class="review-item"><b>R7 · “Random counters feel like the game is cheating.”</b><p>Picking threats in response to a player’s purchases can invalidate their investment.</p><p class="resolution">Revision: generate encounters from fixed seed/map/depth, preview them, and pin the version. Do not inspect the current build to punish it.</p></div>
+<div class="review-item"><b>R8 · “Everything shipped at once—what actually helped?”</b><p>New modes, rewards and tuning would make it hard to diagnose fun or regressions.</p><p class="resolution">Revision: A first, B separately. C–E stay alternatives for discussion. No claim of improved retention until measured.</p></div>
+<div class="callout"><b>Unresolved until playtested</b><p>How much encounter structure survives extreme late-game power? Will players notice support contributions without another panel? Will optional objectives feel exciting rather than distracting? These uncertainties are why the first slice is intentionally small.</p></div>
+</section>
+<section id="decision">
+<div class="eyebrow">Your call</div><h2>Which kind of “one more game” do you want?</h2>
+<p>Choose the direction you want to explore and leave a preference. These controls queue discussion feedback; they do not authorize an automatic implementation or deployment.</p>
+<form id="direction-form" data-lavish-question="gameplay-direction">
+<fieldset><legend>Direction to refine next</legend><div class="choices">
+<label><input type="radio" name="direction" value="A: authored encounters" checked><span>A · Better encounters <small>(recommended)</small></span></label>
+<label><input type="radio" name="direction" value="B: battlefield contracts"><span>B · Optional objectives</span></label>
+<label><input type="radio" name="direction" value="C: battle doctrines"><span>C · Battle-specific upgrades</span></label>
+<label><input type="radio" name="direction" value="D: expeditions"><span>D · Short expeditions</span></label>
+<label><input type="radio" name="direction" value="E: Your Hold goals"><span>E · Your Hold goals</span></label>
+<label><input type="radio" name="direction" value="Another direction or combination"><span>A different direction or combination</span></label>
+</div></fieldset>
+<label class="field" for="notes">What sounds fun—or what would annoy you?</label><textarea id="notes" name="notes" placeholder="For example: A plus B, but keep objectives completely optional in Hold the Line."></textarea>
+<div class="actions"><button class="primary" type="submit">Queue direction for discussion</button><button id="download-feedback" type="button">Download my feedback</button></div>
+<p id="feedback-status" class="small" role="status">Selection is local until you queue it.</p>
+</form>
+</section>
+<section id="evidence">
+<div class="eyebrow">Evidence & status</div><h2>What this review is based on.</h2>
+<p>Current code at <a href="https://github.com/aj8uppal/blockhold/commit/88065c9">88065c9</a>, your gameplay reports, and the official BTD6 feature description linked above. No population-level balance or retention analysis was run for this proposal.</p>
+<p class="small">Code references: <a href="https://github.com/aj8uppal/blockhold/blob/88065c9/src/game/enemyDefs.ts">enemy traits</a> · <a href="https://github.com/aj8uppal/blockhold/blob/88065c9/src/game/hunts.ts">hunts</a> · <a href="https://github.com/aj8uppal/blockhold/blob/88065c9/src/game/frontier.ts">Frontier</a> · <a href="https://github.com/aj8uppal/blockhold/blob/88065c9/src/game/game.ts#L280">Three Watches</a> · <a href="https://github.com/aj8uppal/blockhold/blob/88065c9/src/hold/screen.ts">Hold editor</a> · <a href="https://github.com/aj8uppal/blockhold/blob/88065c9/src/core/telemetry.ts">opt-in telemetry</a>.</p>
+<p><strong>Already shipped:</strong> rally-facing barracks; fully aiming Seraph upper structures; automatic Legion Standards; clearer range with dotted off-map continuation; and zoom-adjusted map shake with a stable sky/cloud backdrop.</p>
+<p class="small">Release verification: 528 game tests, 56 server tests, four browser smoke tests, and production checks with two co-op players covering combat, automatic planting, fusion, guest rejoin and solo recovery. These validate the shipped fixes, not the unbuilt gameplay proposals.</p>
+</section>
+</main>
+<footer><p>Design source: Blockhold’s current UI, using the charcoal surfaces, warm gold, sans-serif typography and control spacing in <code>src/ui/theme.css</code>. This keeps the review and illustrative UI consistent with the game.</p><p>Self-contained HTML · Local review selections · No analytics on this page</p></footer>
+<script>
+const form=document.querySelector('#direction-form'),status=document.querySelector('#feedback-status');
+function feedback(){const d=new FormData(form);return{direction:d.get('direction'),notes:String(d.get('notes')||'').trim()}}
+function message(v){return 'Discuss and refine '+v.direction+' from the Blockhold gameplay review. Treat this as design feedback, not automatic implementation approval.'+(v.notes?' My feedback: '+v.notes:'')}
+form.addEventListener('input',()=>{status.textContent='Selection changed locally. Queue again to replace any unsent direction.'});
+form.addEventListener('submit',e=>{e.preventDefault();const v=feedback();if(window.lavish?.queuePrompt){window.lavish.queuePrompt(message(v),{tag:'choice',text:'Gameplay direction: '+v.direction,queueKey:'blockhold-gameplay-direction',element:form,data:v});status.textContent='Queued. Use Send to Agent in Lavish to send your feedback.'}else{status.textContent='This standalone copy cannot send to the agent. Download your feedback, or share your choice in the conversation.'}});
+document.querySelector('#download-feedback').addEventListener('click',()=>{const blob=new Blob([message(feedback())+'\n'],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='blockhold-gameplay-feedback.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status.textContent='Feedback downloaded. Your choice has not been sent.'});
+</script>
+</body></html>
