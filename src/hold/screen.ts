@@ -8,7 +8,6 @@ import { bindDialog } from '../ui/dialog.ts'
 import { icon } from '../ui/icons.ts'
 import { cloud } from '../core/cloud.ts'
 import { coopEnabled } from '../core/coopLink.ts'
-import './style.css'
 
 export interface HoldScreenApi {
   root: HTMLElement, engine: Engine, save: () => SaveData, restoreBackdrop: () => void,
@@ -32,7 +31,8 @@ export function mountHold(api: HoldScreenApi, code?: string): HoldControls {
   const snapshot = () => shared ?? holdSnapshot(api.save(), draft)
   const scene = new HoldScene(api.engine, snapshot(), api.restoreBackdrop)
   const dirty = () => editing && JSON.stringify(draft) !== baseline
-  const home = button(header, '← Home', () => leave('menu'))
+  const home = button(header, 'Home', () => leave('menu'))
+  home.innerHTML = `${icon('arrowLeft')} Home`
   const names = node('div', header, 'hold-heading')
   node('span', names, 'eyebrow', visitor ? 'Visiting a shared Hold' : 'Your kingdom, made yours')
   const title = node('h1', names, '', snapshot().name)
@@ -71,7 +71,7 @@ export function mountHold(api: HoldScreenApi, code?: string): HoldControls {
     dialog = overlay
     const top = node('header', card, 'hold-sheet-head'); node('h2', top, '', label)
     const close = () => { overlay.remove(); if (dialog === overlay) dialog = null; home.focus({ preventScroll: true }) }
-    button(top, '×', close).setAttribute('aria-label', 'Close')
+    const x = button(top, '', close); x.innerHTML = icon('close'); x.setAttribute('aria-label', 'Close')
     bindDialog(overlay, card, close)
     return { body: card, close }
   }
@@ -147,7 +147,7 @@ export function mountHold(api: HoldScreenApi, code?: string): HoldControls {
     const reward = holdCatalog(api.save()).find(r => r.id === selected)
     if (reward) {
       const head = node('div', panel, 'hold-sheet-head'); node('h2', head, '', reward.name)
-      button(head, '×', () => { selected = null; redraw() }).setAttribute('aria-label', 'Deselect piece')
+      const x = button(head, '', () => { selected = null; redraw() }); x.innerHTML = icon('close'); x.setAttribute('aria-label', 'Deselect piece')
       node('p', panel, '', reward.requirement)
       if (!visitor) node('small', panel, 'hold-hint', reward.progress)
       if (!visitor) {

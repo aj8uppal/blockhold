@@ -31,7 +31,7 @@ export class HoldScene {
   frame = (): void => {
     const e = this.engine, w = innerWidth, h = innerHeight, portrait = h > w
     e.resetView(18, 16, 3)
-    e.camera.clearViewOffset(); e.pitchGoal = e.pitch = .82; e.yawGoal = e.yaw = -.45
+    e.camera.zoom = 1; e.camera.clearViewOffset(); e.pitchGoal = e.pitch = .82; e.yawGoal = e.yaw = -.45
     e.camTargetGoal.set(0, .8, 0); e.camTarget.copy(e.camTargetGoal)
     const area = portrait ? { x: 12, y: 135, w: w - 24, h: h * (this.lobby ? .35 : .42) - 40 }
       : { x: this.lobby ? Math.min(400, w * .4) : 16, y: h < 580 ? 60 : 135, w: w - Math.min(400, w * .4) - 32, h: h < 580 ? h - 100 : h - 215 }
@@ -115,9 +115,10 @@ export class HoldScene {
     window.removeEventListener('resize', this.frame)
     this.highlight(); this.engine.scene.remove(this.group); this.group.clear()
     this.ring.geometry.dispose(); this.ring.material.dispose(); this.grid.geometry.dispose(); (this.grid.material as THREE.Material).dispose()
-    this.restoreBackdrop()
     const e = this.engine; e.camera.clearViewOffset(); e.resetView(16, 12); e.applyTheme(THEMES.forest, 16, 12)
     e.distGoal = e.dist = this.camera.dist; e.pitchGoal = e.pitch = this.camera.pitch; e.yawGoal = e.yaw = this.camera.yaw
     e.camTargetGoal.copy(this.camera.target); e.camTarget.copy(this.camera.target)
+    // last, so the menu's own light and framing win over the defaults above
+    this.restoreBackdrop()
   }
 }

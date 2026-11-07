@@ -64,13 +64,23 @@ const assets = join(root, 'dist', 'assets')
 // chunk gains ~5.7 KiB for what the engine itself learned - roads that climb,
 // bridges over open sky, crenellated terraces - plus the Frontier browser and
 // the small index the menus read. Measured 191.3 / 362.8 KiB.
-const APP_CHUNK_LIMIT = 192 * 1024
+// The interface overhaul and volumetric fire: shader-driven flames, a pooled
+// blast system (fireball, shockwave, voxel debris, scorch, muzzle flash) and
+// the pixel icon set and voxel wordmark replacing the old vector icons add
+// ~6.6 KiB gzip to the app chunk; no textures or fonts are bundled in JS.
+// Measured 198.6 / 369.4 KiB.
+// The condensed tower inspector (one stat strip carrying each upgrade's deltas,
+// hover/tap previews of branch choices) and the menu's framing beside its
+// banner add ~1.3 KiB to the app chunk. The floating island and the rebuilt
+// keep load in their own ~3.7 KiB of lazy chunks, and the lit cumulus cloud
+// sea grows the lazy sky chunk. Measured 200.5 / 376.2 KiB.
+const APP_CHUNK_LIMIT = 202 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 // Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.
 // The how-to sheet now loads on demand; the initial app budget stays unchanged.
 // Ruleset 18: the native Crimson model, atomic sacrifice and lazy confirmation
 // bring total JS to 336.1 KiB. Allow 1 KiB more; the initial app cap stays 184 KiB.
-const TOTAL_JS_LIMIT = 364 * 1024
+const TOTAL_JS_LIMIT = 378 * 1024
 
 const kb = bytes => `${(bytes / 1024).toFixed(1)} KB`
 

@@ -1,0 +1,176 @@
+/*
+ * Controls. A button is a block: a face, a lip below it, and a press that
+ * sinks the face into the lip. Corners are notched, not rounded.
+ */
+
+/* ---------- block buttons ---------- */
+.btn {
+  --face: var(--bone-100);
+  --lipc: var(--bone-400);
+  --txt: var(--ink-900);
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 42px;
+  padding: 9px 18px;
+  margin-bottom: var(--lip);
+  font-weight: 700; font-size: 14px; line-height: 1.2; letter-spacing: -.005em;
+  color: var(--txt);
+  background: var(--face);
+  box-shadow: 0 var(--lip) 0 var(--lipc), var(--hi), var(--edge);
+  clip-path: var(--notch-block);
+  transition: transform var(--press) ease-out, box-shadow var(--press) ease-out, background-color .15s, color .15s;
+  user-select: none; -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.btn .ico { font-size: 18px; }
+@media (hover: hover) { .btn:hover:not(:disabled) { --face: var(--bone-50); } }
+.btn:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 var(--lipc), var(--hi), var(--edge); }
+.btn:disabled { --face: var(--bone-200); --lipc: var(--bone-300); --txt: var(--ink-400); box-shadow: 0 var(--lip) 0 var(--lipc), var(--edge); }
+.btn:disabled .ico { opacity: .55; }
+
+.btn.primary { --face: var(--gold-500); --lipc: var(--gold-600); --txt: var(--gold-ink); }
+@media (hover: hover) { .btn.primary:hover:not(:disabled) { --face: #f8c050; } }
+.btn.primary .ico { color: var(--gold-ink); }
+.btn.danger, .btn.sell { --face: var(--bone-100); --txt: var(--ember-600); }
+.btn.confirming { --face: var(--ember-500); --lipc: var(--ember-600); --txt: #fff; }
+.btn.confirming .ico { color: #fff; }
+.btn.lit { --face: var(--gold-200); --lipc: var(--gold-600); }
+
+/* ghost: a flat slot for secondary actions on a bone surface */
+.btn.ghost {
+  --face: transparent;
+  margin-bottom: 0;
+  box-shadow: inset 0 0 0 2px rgba(23, 19, 15, .16);
+  clip-path: var(--notch-s);
+}
+@media (hover: hover) { .btn.ghost:hover:not(:disabled) { --face: rgba(23, 19, 15, .06); box-shadow: inset 0 0 0 2px rgba(23, 19, 15, .3); } }
+.btn.ghost:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 0 0 2px rgba(23, 19, 15, .3); }
+.btn.ghost:disabled { --face: transparent; box-shadow: inset 0 0 0 2px rgba(23, 19, 15, .08); }
+
+.btn.small { min-height: 34px; padding: 6px 12px; font-size: 13px; gap: 6px; }
+.btn.small .ico { font-size: 15px; }
+.btn.big {
+  min-height: 64px; padding: 12px 20px 12px 18px; gap: 14px;
+  font-family: var(--font-display); font-weight: 400; font-size: 22px; letter-spacing: .01em;
+  justify-content: flex-start; text-align: left;
+  --lip: 6px;
+  clip-path: var(--notch-slab);
+}
+.btn.big > .ico:first-child { font-size: 28px; }
+.btn.big > .ico:last-child { margin-left: auto; font-size: 20px; }
+.btn.big > span { display: flex; flex-direction: column; gap: 2px; }
+.btn.big > span { min-width: 0; }
+.btn.big small { font-family: var(--font-ui); font-size: 13px; font-weight: 600; letter-spacing: 0; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.btn.big:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 var(--lipc), var(--hi), var(--edge); }
+
+/* ---------- square icon blocks ---------- */
+.icon-btn {
+  --face: var(--bone-100); --lipc: var(--bone-400);
+  position: relative;
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  width: 44px; height: 44px; margin-bottom: var(--lip);
+  color: var(--ink-900); background: var(--face);
+  font-family: var(--font-display); font-size: 15px; line-height: 1;
+  box-shadow: 0 var(--lip) 0 var(--lipc), var(--hi), var(--edge);
+  clip-path: var(--notch-block);
+  transition: transform var(--press) ease-out, box-shadow var(--press) ease-out, background-color .15s;
+  touch-action: manipulation;
+}
+.icon-btn .ico { font-size: 20px; }
+@media (hover: hover) { .icon-btn:hover:not(:disabled) { --face: var(--bone-50); } }
+.icon-btn:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 var(--lipc), var(--hi), var(--edge); }
+.icon-btn:disabled { opacity: .5; }
+.icon-btn[aria-pressed="false"], .icon-btn.muted { --face: var(--bone-200); color: var(--ink-500); }
+
+/* the close cross on every sheet and panel */
+.tp-close {
+  display: inline-grid; place-items: center; flex: none;
+  width: 34px; height: 34px;
+  color: var(--ink-600);
+  font-size: 0;
+  clip-path: var(--notch-s);
+  transition: background-color .15s, color .15s;
+}
+.tp-close .ico { font-size: 14px; }
+@media (hover: hover) { .tp-close:hover { background: rgba(23, 19, 15, .08); color: var(--ink-900); } }
+.tp-close:active { background: rgba(23, 19, 15, .14); }
+
+/* ---------- form controls ---------- */
+select, .coop-select {
+  appearance: none; -webkit-appearance: none;
+  min-height: 40px; padding: 8px 34px 8px 12px;
+  font-weight: 650; font-size: 14px; color: var(--ink-900);
+  background: var(--bone-50) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' shape-rendering='crispEdges'%3E%3Cpath fill='%2317130f' d='M0 0h2v1H0zM8 0h2v1H8zM1 1h2v1H1zM7 1h2v1H7zM2 2h2v1H2zM6 2h2v1H6zM3 3h4v1H3zM4 4h2v1H4z'/%3E%3C/svg%3E") no-repeat right 12px center / 10px 6px;
+  border: 0; box-shadow: inset 0 0 0 2px rgba(23, 19, 15, .18), inset 0 -3px 0 rgba(23, 19, 15, .08);
+  clip-path: var(--notch-s);
+  cursor: pointer;
+}
+select:disabled { opacity: .5; cursor: default; }
+input[type="text"], input:not([type]), textarea, .coop-input, .account-input, .hold-input {
+  min-height: 42px; padding: 10px 12px;
+  font-weight: 600; color: var(--ink-900);
+  background: var(--bone-50);
+  border: 0; box-shadow: inset 0 0 0 2px rgba(23, 19, 15, .18), inset 0 3px 0 rgba(23, 19, 15, .06);
+  clip-path: var(--notch-s);
+}
+input::placeholder, textarea::placeholder { color: var(--ink-400); }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--gold-500), inset 0 3px 0 rgba(23, 19, 15, .06); }
+
+/* ---------- disclosures ---------- */
+details > summary {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 700;
+}
+details > summary::before {
+  content: ''; flex: none; width: 10px; height: 10px;
+  background: currentColor; opacity: .55;
+  clip-path: polygon(40% 0, 60% 0, 60% 40%, 100% 40%, 100% 60%, 60% 60%, 60% 100%, 40% 100%, 40% 60%, 0 60%, 0 40%, 40% 40%);
+  transition: transform .2s var(--ease-out);
+}
+details[open] > summary::before { clip-path: polygon(0 40%, 100% 40%, 100% 60%, 0 60%); }
+
+/* ---------- segmented choices: slots you drop a block into ---------- */
+.segmented, .mode-row, .diff-row, .levels-tabs {
+  display: flex; gap: 6px;
+  padding: 5px;
+  background: var(--bone-200);
+  box-shadow: inset 0 2px 0 rgba(23, 19, 15, .1);
+  clip-path: var(--notch-m);
+}
+.mode-option, .levels-tab {
+  flex: 1;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 40px; padding: 8px 14px;
+  font-weight: 700; font-size: 14px; color: var(--ink-500);
+  clip-path: var(--notch-s);
+  transition: background-color .15s, color .15s, box-shadow .15s;
+}
+.mode-option .ico, .levels-tab .ico { font-size: 16px; }
+@media (hover: hover) { .mode-option:hover:not(.picked), .levels-tab:hover:not(.picked) { color: var(--ink-900); background: rgba(255, 255, 255, .35); } }
+.mode-option.picked, .levels-tab.picked {
+  color: var(--ink-900); background: var(--bone-50);
+  box-shadow: inset 0 -3px 0 var(--gold-500), var(--edge);
+}
+
+/* ---------- small atoms ---------- */
+.kbd, .hotkey {
+  display: inline-grid; place-items: center;
+  min-width: 18px; height: 18px; padding: 0 4px;
+  font-family: var(--font-display); font-size: 10px; line-height: 1;
+  color: var(--bone-100); background: var(--ink-800);
+  clip-path: var(--notch-s);
+}
+.tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px;
+  font-family: var(--font-display); font-size: 10px; letter-spacing: .04em; line-height: 1.3;
+  color: var(--bone-100); background: var(--ink-800);
+  clip-path: var(--notch-s);
+}
+.tag .ico { font-size: 11px; }
+
+/* fingers, not pointers: every touch target is at least 44px */
+@media (pointer: coarse) {
+  .btn, .btn.small, .mode-option, .levels-tab, .diff-option, select { min-height: 44px; }
+  .tp-close { width: 44px; height: 44px; }
+}

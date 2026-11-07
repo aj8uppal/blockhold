@@ -1,6 +1,6 @@
 import type { CoopSession } from './core/coop.ts'
 import { coopEnabled, inviteCodeFromUrl } from './core/coopLink.ts'
-import { isPortalMode } from './core/platform.ts'
+import { isPortalMode, isNativeApp } from './core/platform.ts'
 import { readSession } from './game/session.ts'
 import { huntLevel, huntAccess, huntById } from './game/hunts.ts'
 import { requestDurableStorage, writeSave } from './core/save.ts'
@@ -22,8 +22,7 @@ import { Screens, isIPadOS, needsInstallGuide } from './ui/screens.ts'
 import { allLevels, levelById, levels, loadFrontier } from './game/levels.ts'
 import { isFrontierId } from './game/frontierIndex.ts'
 import { audio } from './core/audio.ts'
-import './style.css'
-import './ui/theme.css'
+import './ui/styles/index.css'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
 
@@ -427,6 +426,11 @@ game.onPhaseChange = (phase, stars) => {
   else if (phase === 'defeat') screens.show('defeat', { levelId: game.level!.id, stats: game.battleStats() })
 }
 
+// the menu frames the Hold beside its banner, so a resize reframes it
+const reframeMenu = () => { if (game.phase === 'idle' && screens.isCurrent('menu')) game.frameMenuBackdrop() }
+window.addEventListener('resize', reframeMenu)
+screens.onMenuLayout = reframeMenu
+
 // the boot screen has done its job the moment there is a menu behind it
 document.getElementById('loading')?.remove()
 
@@ -489,7 +493,7 @@ if (challenge?.levelId && isFrontierId(challenge.levelId)) {
 }
 
 // PWA: offline shell + installability (production only, so dev stays live-reloadable)
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+if (import.meta.env.PROD && 'serviceWorker' in navigator && !isNativeApp()) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(() => { /* offline play is a bonus, not a requirement */ })
   })

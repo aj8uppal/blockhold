@@ -39,7 +39,7 @@ export function renderFieldGuide(root: HTMLElement, seen: readonly string[], onC
     const head = el('div', 'ge-head', row)
     if (BOSS_ART.has(d.id)) {
       const art = el('div', 'ge-art', head)
-      art.style.backgroundImage = `url(art/boss-${d.id}.webp)`
+      art.style.backgroundImage = `url(art/bosses/${d.id}.webp)`
     }
     const t = el('div', 'ge-title', head)
     el('b', '', t, d.name)

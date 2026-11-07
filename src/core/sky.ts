@@ -107,6 +107,7 @@ const FRAGMENT = /* glsl */`
   uniform vec3 uCloudShade;
   uniform float uCloudSea;
   uniform float uCloudScale;
+  uniform vec3 uSunDir;
   #endif
   #ifdef AURORA
   uniform vec3 uAuroraA;
@@ -131,6 +132,49 @@ const FRAGMENT = /* glsl */`
   uniform float uVeins;
   #endif
   ${NOISE}
+
+  #ifdef CLOUDSEA
+  vec2 hash22(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+  }
+  float vnoise2(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash22(i).x, b = hash22(i + vec2(1.0, 0.0)).x;
+    float c = hash22(i + vec2(0.0, 1.0)).x, d = hash22(i + vec2(1.0, 1.0)).x;
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+  /*
+   * The rounded tops of a cumulus field: a union of jittered domes, one per
+   * cell. The tallest dome under a point wins, so neighbouring puffs meet in
+   * a crease, and the winner's own sphere normal comes back with its height -
+   * every billow is shaded as the ball it is, without sampling twice.
+   */
+  vec4 puffs(vec2 q, float rs) {
+    vec2 i = floor(q), f = fract(q);
+    float hmax = 0.0;
+    vec3 nsum = vec3(0.0);
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+      vec2 g = vec2(float(x), float(y));
+      vec2 o = hash22(i + g);
+      float r = (0.5 + 0.48 * o.y) * rs;
+      vec2 v = f - (g + 0.2 + o * 0.6);
+      float s = r * r - dot(v, v);
+      if (s > 0.0) {
+        float h = sqrt(s);
+        // weighted toward the taller dome, but fading to nothing at its rim,
+        // so two puffs meet in a soft fold rather than a drawn line
+        float w = exp(9.0 * h) - 1.0;
+        nsum += w * vec3(v.x, h, v.y) / max(r, 1e-3);
+        hmax = max(hmax, h);
+      }
+    }
+    // a puff's rim settles onto the heap beneath it instead of ending in a cut
+    return vec4(normalize(nsum + vec3(0.0, 0.8, 0.0)), hmax);
+  }
+  #endif
 
   float starField(vec3 d, float scale, float density, float t) {
     vec3 g = d * scale;
@@ -181,16 +225,51 @@ const FRAGMENT = /* glsl */`
     #endif
 
     #ifdef CLOUDSEA
-    if (d.y < -0.02) {
-      vec2 uv = d.xz / max(0.08, -d.y) * uCloudScale * 3.2;
-      vec2 drift = vec2(uTime * 0.03, uTime * 0.012);
-      float n = fbm(vec3(uv + drift, uTime * 0.01));
-      float puff = smoothstep(0.4, 0.62, n);
-      // the sunward side of each billow is lit, the far side sits in shade
-      float lit = smoothstep(0.0, 0.12, n - fbm(vec3(uv + drift + vec2(0.18, 0.25), uTime * 0.01)));
-      vec3 cloud = mix(uCloudShade, uCloudColor, lit);
-      float fade = smoothstep(0.0, 0.25, -d.y);
-      col = mix(col, cloud, puff * fade * uCloudSea);
+    if (d.y < 0.0) {
+      // the sea is a plane far below; p is where this ray meets it
+      float down = max(0.035, -d.y);
+      vec2 p = d.xz / down * uCloudScale * 5.0;
+      vec2 drift = vec2(uTime * 0.022, uTime * 0.009);
+      // how big one screen pixel is on the plane: detail that would shimmer is let go
+      float px = length(fwidth(p));
+      float bigDetail = 1.0 - smoothstep(0.3, 0.9, px * 0.6);
+      float smallDetail = 1.0 - smoothstep(0.2, 0.6, px * 1.6);
+
+      // heaps: where the cloud piles up, and the gaps between
+      vec2 q = p + drift;
+      float mass = vnoise2(q * 0.32 + 4.0) * 0.62 + vnoise2(q * 0.85 + 11.0) * 0.38;
+      float heap = smoothstep(0.3, 0.72, mass);
+      // puffs shrink toward a heap's edge, so its outline is a run of billows
+      vec4 big = puffs(q * 0.75, 0.25 + heap * 0.95);
+      vec4 small = puffs(q * 1.9 + vec2(17.0, 5.0) + drift * 0.5, 0.35 + heap * 0.75);
+      float hBig = mix(heap * 0.7, big.w, bigDetail);
+      float hSmall = mix(heap * 0.5, small.w, smallDetail);
+      float h = hBig * 0.8 + hSmall * 0.3 + heap * 0.35;
+      float edgeW = max(fwidth(h) * 1.5, 0.02);
+      float cover = smoothstep(0.32 - edgeW, 0.32 + edgeW, h);
+
+      vec3 n = normalize(mix(vec3(0.0, 1.0, 0.0), big.xyz, bigDetail) + small.xyz * vec3(0.6, 0.0, 0.6) * smallDetail);
+      // a lower light than the board's, so the round of every billow shows
+      vec3 L = normalize(vec3(uSunDir.x, uSunDir.y * 0.5, uSunDir.z));
+      float light = smoothstep(-0.3, 0.8, dot(n, L));
+      // low ground between billows sits in its neighbours' shadow
+      float ao = smoothstep(0.25, 1.0, h);
+      vec3 cloud = mix(uCloudShade, uCloudColor, light);
+      cloud = mix(mix(uCloudShade, cloud, 0.35), cloud, ao);
+      // looking toward the sun, the rims of the billows catch it
+      float sunward = max(0.0, dot(normalize(d.xz + 1e-4), normalize(L.xz + 1e-4)));
+      cloud += uCloudColor * pow(1.0 - clamp(n.y, 0.0, 1.0), 3.0) * sunward * 0.3;
+
+      // through the gaps: a second, softer deck far below
+      vec2 p2 = d.xz / down * uCloudScale * 2.4 + drift * 0.45;
+      float deck = smoothstep(0.35, 0.75, vnoise2(p2 * 0.5 + 23.0) * 0.6 + vnoise2(p2 * 1.3) * 0.4);
+      vec3 abyss = mix(mix(uCloudShade, col, 0.35) * 0.9, mix(uCloudShade, uCloudColor, 0.45), deck * 0.6);
+      vec3 sea = mix(abyss, cloud, cover);
+
+      // the far sea melts into the haze along the horizon
+      float haze = 1.0 - smoothstep(0.0, 0.42, -d.y);
+      sea = mix(sea, mix(col, uCloudColor, 0.25), haze * haze);
+      col = mix(col, sea, smoothstep(0.0, 0.04, -d.y) * uCloudSea);
     }
     #endif
 
@@ -344,6 +423,8 @@ export function skyMaterial(top: number, bottom: number, sky?: SkyDef): THREE.Sh
     uniforms.uCloudShade = { value: color(sky.cloudSea.shade) }
     uniforms.uCloudSea = { value: sky.cloudSea.strength }
     uniforms.uCloudScale = { value: sky.cloudSea.scale ?? 1 }
+    // where the key light stands; the engine overwrites it with its own sun
+    uniforms.uSunDir = { value: new THREE.Vector3(-9, 16, 7).normalize() }
   }
   if (sky?.aurora) {
     defines.AURORA = ''

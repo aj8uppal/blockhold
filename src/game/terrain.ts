@@ -36,6 +36,8 @@ export interface ThemeColors {
   waterBed?: number
   /** what surrounds the island; absent, a plain two-colour dome */
   sky?: SkyDef
+  /** where the key light stands; absent, high over the near-left corner */
+  sunPos?: [number, number, number]
   /** the rock hanging under the island's rim */
   bedrock?: number
   /** what drifts around the island: white cloud by default, a colour for tinted cloud, or none */
@@ -63,30 +65,35 @@ export const THEMES = {
     waterDeep: 0x2e6f9e, waterShallow: 0x54aacd, waterGlow: 0,
     skyTop: 0x5ea9e8, skyBottom: 0xcfeaf5, fog: 0xbfe0ef,
     sunColor: 0xfff0d0, sunIntensity: 2.6, hemiSky: 0xbfd9ff, hemiGround: 0x6a8a55, ambient: 0.25,
+    sky: { horizon: 0xeaf6ff, cloudSea: { color: 0xffffff, shade: 0xa8c4e0, strength: 0.95, scale: 0.9 } },
   },
   winter: {
     grass: 0xe3ecf2, grassAlt: 0xd2dfe8, dirt: 0x8d7f6f, road: 0xb5a689, roadAlt: 0xa89a7e,
     waterDeep: 0x3d7ba8, waterShallow: 0x8fd0e8, waterGlow: 0,
     skyTop: 0x7fb2e0, skyBottom: 0xe8f2f8, fog: 0xdcebf4,
     sunColor: 0xeef4ff, sunIntensity: 2.2, hemiSky: 0xcfe2ff, hemiGround: 0x9aa8b5, ambient: 0.32,
+    sky: { horizon: 0xf6faff, cloudSea: { color: 0xffffff, shade: 0xb4c8e0, strength: 1, scale: 1.05 } },
   },
   ember: {
     grass: 0x9c8a60, grassAlt: 0x8a7852, dirt: 0x5f4a3d, road: 0x55483e, roadAlt: 0x4d413a,
     waterDeep: 0xc23f14, waterShallow: 0xff9b2f, waterGlow: 1,
     skyTop: 0x352a4a, skyBottom: 0xc97a55, fog: 0xa8705f,
     sunColor: 0xffcf9f, sunIntensity: 2.1, hemiSky: 0x9a7f98, hemiGround: 0x6f5a45, ambient: 0.3,
+    sky: { horizon: 0xf0a474, cloudSea: { color: 0x7a5258, shade: 0x2a1820, strength: 0.85, scale: 0.6 }, specks: { color: 0xffa060, density: 0.35 } },
   },
   swamp: {
     grass: 0x6f8a4f, grassAlt: 0x5f7a44, dirt: 0x53483a, road: 0x9a8a68, roadAlt: 0x8d7f5e,
     waterDeep: 0x2b4f42, waterShallow: 0x4f7a5f, waterGlow: 0,
     skyTop: 0x6f8fa8, skyBottom: 0xc9d4c0, fog: 0xb2c2ad,
     sunColor: 0xf2e8c9, sunIntensity: 2.0, hemiSky: 0xa8bfb2, hemiGround: 0x5a6a48, ambient: 0.34,
+    sky: { horizon: 0xe2e8d6, cloudSea: { color: 0xe0e8da, shade: 0x7c9884, strength: 0.85, scale: 0.7 } },
   },
   void: {
     grass: 0x5a5270, grassAlt: 0x4d4660, dirt: 0x352f45, road: 0x8f8aa5, roadAlt: 0x817c96,
     waterDeep: 0x6f2adf, waterShallow: 0xb37aff, waterGlow: 1,
     skyTop: 0x181228, skyBottom: 0x6f4a8f, fog: 0x584a70,
     sunColor: 0xd8c9ff, sunIntensity: 1.9, hemiSky: 0x8f7ab8, hemiGround: 0x453e58, ambient: 0.36,
+    sky: { stars: 0.65, nebula: { a: 0x8a4ad0, b: 0x2a5ad0, strength: 0.45 }, cloudSea: { color: 0x5a3a86, shade: 0x140c26, strength: 0.7, scale: 0.6 } },
   },
   // cold cliff country: pale stone terraces over dark pine, lit hard from a
   // low sun so the height difference casts and reads
@@ -97,6 +104,7 @@ export const THEMES = {
     waterDeep: 0x2f6a86, waterShallow: 0x5fa3bd, waterGlow: 0,
     skyTop: 0x3f79ad, skyBottom: 0xdfe9ea, fog: 0xc4d2d6,
     sunColor: 0xfff2dc, sunIntensity: 2.6, hemiSky: 0xb4cade, hemiGround: 0x545a4a, ambient: 0.28,
+    sky: { horizon: 0xf3f7f8, cloudSea: { color: 0xffffff, shade: 0x9cb4c8, strength: 1, scale: 1.1 } },
   },
   // burnt ground under a lit sky: everything reads warm so the firestorm has
   // to be hotter than its own world to stand out
@@ -105,6 +113,7 @@ export const THEMES = {
     waterDeep: 0xd8401a, waterShallow: 0xff8a3c, waterGlow: 1,
     skyTop: 0x3f1c14, skyBottom: 0xd8703c, fog: 0x8a4a30,
     sunColor: 0xffb070, sunIntensity: 2.3, hemiSky: 0xd8905a, hemiGround: 0x4a382c, ambient: 0.38,
+    sky: { horizon: 0xffb27a, cloudSea: { color: 0x8a4c3c, shade: 0x2a110a, strength: 0.85, scale: 0.55 }, specks: { color: 0xffb070, density: 0.45 } },
   },
   // a drowned coast, where the roads themselves are the thing that changes
   tidal: {
@@ -112,6 +121,7 @@ export const THEMES = {
     waterDeep: 0x1d5a6e, waterShallow: 0x3f97a8, waterGlow: 0,
     skyTop: 0x2c5f74, skyBottom: 0xbfe0e0, fog: 0x9cc4c4,
     sunColor: 0xe8f4e0, sunIntensity: 2.1, hemiSky: 0x9fd0cf, hemiGround: 0x445048, ambient: 0.34,
+    sky: { horizon: 0xe8f6f4, cloudSea: { color: 0x8fd6d2, shade: 0x1c6274, strength: 0.9, scale: 0.55 } },
   },
 } as Record<ThemeId, ThemeColors>
 
@@ -996,10 +1006,11 @@ export class Terrain {
         side < 0 ? -1.5 - rng() * 2 : 4 + rng() * 3,   // some below the island, some above the horizon
         side * (h * 0.62 + 1.5 + rng() * 4),
       )
-      mesh.scale.set(1.5, 0.7, 1.5)
+      mesh.scale.setScalar(1.25 + rng() * 0.35)
       mesh.traverse(o => {
         if (o instanceof THREE.Mesh) {
-          o.material = new THREE.MeshStandardMaterial({ color: typeof kind === 'number' ? kind : 0xffffff, transparent: true, opacity: 0.8, roughness: 1, depthWrite: false })
+          // solid, with a cool belly: see-through slabs read as paper, not weather
+          o.material = new THREE.MeshStandardMaterial({ color: typeof kind === 'number' ? kind : 0xffffff, roughness: 1, emissive: 0x2c3a58, emissiveIntensity: 0.45, vertexColors: true })
           o.castShadow = false
           this.owned.push(o.material)
         }

@@ -10,7 +10,7 @@ export function renderModes(root: HTMLElement, save: SaveData, screens: Screens)
   overlay.className = 'help-overlay'
   const card = document.createElement('div')
   card.className = 'help-card modes-sheet'
-  card.innerHTML = '<header><h2>Explore modes</h2><button class="tp-close" aria-label="Close modes">×</button></header><p>A different way to hold the line.</p>'
+  card.innerHTML = `<header><h2>Explore modes</h2><button class="tp-close" aria-label="Close modes">${icon('close')}</button></header><p>A different way to hold the line.</p>`
   overlay.append(card); root.append(overlay)
   card.querySelector('button')!.onclick = () => overlay.remove()
   const day = dailyNumber()
@@ -25,7 +25,7 @@ export function renderModes(root: HTMLElement, save: SaveData, screens: Screens)
     const button = document.createElement('button')
     button.className = 'mode-choice'
     button.setAttribute('aria-label', title)
-    button.innerHTML = `${icon(ico)}<span><b>${title}</b><small>${description}</small></span><span aria-hidden="true">›</span>`
+    button.innerHTML = `${icon(ico)}<span><b>${title}</b><small>${description}</small></span><span aria-hidden="true">${icon('arrowRight')}</span>`
     button.onclick = () => { overlay.remove(); play() }
     card.append(button)
   }

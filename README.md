@@ -2,7 +2,7 @@
 
 *Hold the line, block by block.*
 
-A 3D voxel tower defense for the browser. Built with Three.js + TypeScript + Vite — no game engine: every 3D model is authored in code as colored voxel boxes, every sound is synthesized with WebAudio, and every UI symbol is a hand-written SVG. The 2D art (map cards, hero and boss portraits, key art) is generated with Midjourney and shipped as compressed webp.
+A 3D voxel tower defense for the browser. Built with Three.js + TypeScript + Vite — no game engine: every 3D model is authored in code as colored voxel boxes, every sound is synthesized with WebAudio, and every UI symbol is drawn on a 16-block pixel grid. Every image is rendered from the game itself: map cards are photographs of the real boards, and hero, boss and tower portraits are the in-game voxel models under one studio light (`scripts/render-art.mjs` rebuilds the whole set). Fire and explosions are procedural shaders; nothing ships as a texture.
 
 It starts from the classic tower-defense grammar and grows its own mechanics: road traps, a shard economy with tower ascension, Veiltide surge waves, resonance placement bonuses, phasing enemies, and a flying final boss.
 
@@ -20,6 +20,15 @@ npm run build      # typecheck + production bundle (deploy dist/ to any static h
 npm run preview    # serve the production build
 npm run typecheck  # tsc --noEmit
 npm test           # vitest unit/regression suite
+```
+
+### iOS
+
+The iOS app is the same build in a [Capacitor](https://capacitorjs.com) shell (`ios/`, Swift Package Manager, no CocoaPods). It is landscape-only on iPhone and ships without the sync service, so saves stay on the device.
+
+```bash
+npm run ios:sync   # typecheck, build, copy dist/ into the Xcode project
+npm run ios:open   # open it in Xcode: Product → Archive → Distribute → TestFlight
 ```
 
 ## The campaign
@@ -92,9 +101,10 @@ Plus the genre backbone: 6 tower families × 3 levels × 2 elite specializations
 
 - `src/voxel/` — voxel model system: models are named parts of colored boxes merged into single-draw-call geometries, with per-part rotation pivots for limb/turret animation.
 - `src/game/` — fixed-timestep (60 Hz) simulation: lane paths with chamfered corners, A* hero pathfinding, enemy/soldier blocking, towers, traps, projectiles, particles, waves, surge lighting, levels.
-- `src/ui/` — DOM-based HUD and screens.
+- `src/ui/` — DOM-based HUD and screens. `src/ui/styles/` is the design system (bone surfaces, notched corners, blocks that press into their lip); `icons.ts` holds the pixel icon set as ASCII grids and `wordmark.ts` builds the voxel logo.
 - `src/core/` — renderer/camera rig, synthesized audio, validated save data.
 - `reviews/` — adversarial code review and balance reports (GPT-5.x Codex) used throughout development.
+- `ios/` — the Capacitor shell for the App Store build; `capacitor.config.json` sits at the root.
 - `server/` — the optional sync service: cloud saves, the daily leaderboard, and the telemetry sink. The game is fully playable with it switched off.
 - `tests/` — vitest suite covering level-data validity, wave timing, save parsing, economy math, and path math.
 - `tests/smoke/` — Playwright tests that drive the built bundle in a real browser: the menu, a battle, a tower built by touch, and the daily's share link.

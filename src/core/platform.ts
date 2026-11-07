@@ -47,3 +47,13 @@ export function acquisitionSource(search = location.search, referrer = document.
 export function prefersReducedMotion(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 }
+
+/**
+ * True inside the iOS app shell (Capacitor), where the page is served from
+ * the app bundle rather than the web: there is no service worker to install,
+ * nothing to add to a Home Screen, and the app already owns the whole screen.
+ */
+export function isNativeApp(): boolean {
+  const cap = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor
+  return location.protocol === 'capacitor:' || !!cap?.isNativePlatform?.()
+}

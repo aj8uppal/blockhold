@@ -264,11 +264,20 @@ class BombProjectile extends Ballistic {
     )
   }
   protected targetPos(): THREE.Vector3 { return this.spec.at }
+  /** where the last trail puff was left; puffs are spaced by distance, not by tick */
+  private trailAt: THREE.Vector3 | null = null
   update(dt: number): void {
     super.update(dt)
     if (!this.done) {
       this.mesh.rotation.x += dt * 6
-      this.spec.world.particles.smokeTrail(this.mesh.position.x, this.mesh.position.y + 0.1, this.mesh.position.z)
+      const p = this.mesh.position
+      // a fixed spacing keeps the trail the same at 1× and 4×, and a bomblet's short hop lighter
+      const spacing = this.spec.submunition ? 0.22 : 0.13
+      if (!this.trailAt) this.trailAt = p.clone()
+      else if (this.trailAt.distanceToSquared(p) > spacing * spacing) {
+        this.trailAt.copy(p)
+        this.spec.world.particles.shellSmoke(p.x, p.y + 0.04, p.z)
+      }
     }
   }
   protected impact(): void {
@@ -304,7 +313,8 @@ function explode(
   world: World, at: THREE.Vector3, damage: number, splash: number,
   stunChance = 0, credit?: KillCredit, slow = false, submunition = false,
 ): void {
-  world.particles.explosion(at.x, at.y + 0.15, at.z, Math.max(submunition ? 0.45 : 0.7, splash))
+  world.particles.explosion(at.x, at.y + 0.15, at.z, submunition ? Math.max(0.45, splash) : Math.max(0.7, splash),
+    { ground: at.y - 0.02, scorch: true, small: submunition })
   world.sfx('explosion', submunition ? 0.4 : 0.8)
   // A cluster shell bursts into five of these at once. Letting each one take a
   // heavy impact hold and a full shake stacked five holds on one frame, which
@@ -456,7 +466,7 @@ class Meteor implements Projectile {
     world.particles.smokeTrail(this.mesh.position.x, this.mesh.position.y + 0.2, this.mesh.position.z)
     if (this.mesh.position.y <= at.y + 0.1) {
       this.done = true
-      world.particles.explosion(at.x, at.y + 0.15, at.z, 1.4)
+      world.particles.explosion(at.x, at.y + 0.15, at.z, 1.4, { ground: at.y, scorch: true })
       world.sfx('explosion', 1)
       world.shake(0.22)
       for (const e of world.enemies) {
@@ -812,7 +822,8 @@ export function detonateBurnZones(world: World, owner: KillCredit): number {
     removeBurnZone(world, z)
     for (const e of world.enemies) if (e.targetable && !e.airborne && Math.hypot(e.pos.x - z.pos.x, e.pos.z - z.pos.z) <= z.radius + .45 + e.radius)
       e.takeDamage(damage, 'true', world, { credit: owner, flavor: 'fire' })
-    world.particles.explosion(z.pos.x, world.groundY(z.pos.x, z.pos.z) + .15, z.pos.z, z.radius)
+    const gy = world.groundY(z.pos.x, z.pos.z)
+    world.particles.explosion(z.pos.x, gy + .15, z.pos.z, z.radius, { ground: gy, scorch: true })
   }
   return count
 }

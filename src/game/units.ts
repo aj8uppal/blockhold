@@ -451,7 +451,7 @@ export class Enemy {
     this.group.visible = false
     for (const s of this.blockers) s.target = null
     this.blockers = []
-    world.particles.explosion(this.pos.x, this.pos.y + 0.6, this.pos.z, 1.2)
+    world.particles.explosion(this.pos.x, this.pos.y + 0.6, this.pos.z, 1.2, { ground: this.pos.y })
     world.particles.magicImpact(this.pos.x, this.pos.y + 0.8, this.pos.z, 0x9fe8ff)
     world.sfx('explosion', 0.9)
     world.shake(0.28)

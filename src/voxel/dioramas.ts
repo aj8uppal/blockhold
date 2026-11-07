@@ -3,7 +3,7 @@ import { buildModel } from './builder.ts'
 import { towerModel } from './models_towers.ts'
 import * as units from './models_units.ts'
 import * as env from './models_env.ts'
-import { holdModel } from '../game/hold.ts'
+import { holdModel } from '../game/holdKeep.ts'
 
 /**
  * Dioramas: the game's own voxel work, staged.

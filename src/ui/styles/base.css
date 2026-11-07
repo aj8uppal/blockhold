@@ -1,0 +1,142 @@
+/* ---------- reset ---------- */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; background: var(--ink-900); overscroll-behavior: none; }
+body { -webkit-tap-highlight-color: transparent; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; border: 0; background: none; text-align: inherit; }
+button:disabled { cursor: default; }
+img, svg { display: block; }
+b, strong { font-weight: 700; }
+summary { cursor: pointer; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+.hidden { display: none !important; }
+[hidden] { display: none !important; }
+.dim { opacity: .55; }
+
+/* focus is a gold ring that steps out of the block, never a browser glow */
+:focus { outline: none; }
+:focus-visible { outline: 3px solid var(--gold-500); outline-offset: 2px; }
+.btn:focus-visible, .icon-btn:focus-visible, .ability:focus-visible, .build-option:focus-visible, .level-card:focus-visible {
+  outline: none;
+  filter: drop-shadow(0 0 0 var(--gold-500)) drop-shadow(2px 0 0 var(--gold-500)) drop-shadow(-2px 0 0 var(--gold-500)) drop-shadow(0 2px 0 var(--gold-500)) drop-shadow(0 -2px 0 var(--gold-500));
+}
+
+/* thin, warm scrollbars on every scrolling surface */
+* { scrollbar-width: thin; scrollbar-color: var(--bone-400) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--bone-400); border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- layers ---------- */
+#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#hud, #screens { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#screens { z-index: 20; }
+#screens.hidden { display: none; }
+#hud > *, #screens > * { pointer-events: auto; }
+
+/* passive overlays and layout containers never take a click; interactive
+   children opt back in below. This must outrank `#hud > *`. */
+#hud > .damage-vignette,
+#hud > .banner,
+#hud > .toast,
+#hud > .floater,
+#hud > .enemy-tip,
+#hud > .topbar,
+#hud > .abilities,
+#hud > .hunt-status,
+#hud > .beat-meter { pointer-events: none; }
+#hud .topbar .icon-btn,
+#hud .topbar .stat,
+#hud .topbar .wave-call-wrap > *,
+#hud .topbar .sandbox-tools,
+#hud .abilities .ability { pointer-events: auto; }
+
+/* Chrome-hidden clears the frame completely: a diorama and a Siege Tape
+   render behind it, and a stray coach mark or banner would land in the shot. */
+#hud.chrome-hidden .topbar,
+#hud.chrome-hidden .abilities,
+#hud.chrome-hidden .coach-mark,
+#hud.chrome-hidden .banner,
+#hud.chrome-hidden .toast,
+#hud.chrome-hidden .enemy-tip,
+#hud.chrome-hidden .hunt-status,
+#hud.chrome-hidden .beat-meter,
+#hud.chrome-hidden .sandbox-tools,
+#hud.chrome-hidden .wave-call-wrap { display: none; }
+
+/* ---------- shared atoms ---------- */
+.ico { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: -0.14em; }
+.ico-heart { color: var(--blood-500); }
+.ico-coin { color: var(--gold-500); }
+.ico-gem { color: var(--sky-500); }
+.ico-sparkle { color: var(--veil-500); }
+.ico-medal { color: var(--gold-500); }
+.ico-medal.vet { color: #b9c3d0; }
+.ico-flame, .ico-meteor, .ico-blast { color: var(--ember-500); }
+.ico-frost { color: var(--sky-500); }
+.ico-crown, .ico-trophy { color: var(--gold-500); }
+.ico.plain { color: inherit; }
+
+.eyebrow {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--ink-500);
+  text-transform: uppercase;
+}
+
+/* a pixel star, the unit of every reward */
+.pstar { display: inline-block; width: 1em; height: 1em; vertical-align: -0.12em; background: currentColor;
+  clip-path: polygon(43.75% 0, 56.25% 0, 56.25% 12.5%, 62.5% 12.5%, 62.5% 31.25%, 100% 31.25%, 100% 43.75%, 87.5% 43.75%, 87.5% 50%, 75% 50%, 75% 62.5%, 81.25% 62.5%, 81.25% 87.5%, 87.5% 87.5%, 87.5% 100%, 75% 100%, 75% 93.75%, 62.5% 93.75%, 62.5% 87.5%, 37.5% 87.5%, 37.5% 93.75%, 25% 93.75%, 25% 100%, 12.5% 100%, 12.5% 87.5%, 18.75% 87.5%, 18.75% 62.5%, 25% 62.5%, 25% 50%, 12.5% 50%, 12.5% 43.75%, 0 43.75%, 0 31.25%, 37.5% 31.25%, 37.5% 12.5%, 43.75% 12.5%); }
+
+/* a segmented bar: progress is counted in blocks, not a smooth gradient */
+.block-bar {
+  --fill: var(--veil-500);
+  --track: rgba(23, 19, 15, .14);
+  --seam: var(--bone-100);
+  --cells: 12;
+  position: relative;
+  display: block;
+  height: 10px;
+  background: var(--track);
+  overflow: hidden;
+}
+.block-bar > i {
+  position: absolute; inset: 0 auto 0 0; display: block;
+  background: var(--fill);
+  box-shadow: inset 0 3px 0 rgba(255, 255, 255, .35), inset 0 -2px 0 rgba(0, 0, 0, .18);
+  transition: width .5s var(--ease-out);
+}
+.block-bar::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--cells) - 2px), var(--seam) calc(100% / var(--cells) - 2px) calc(100% / var(--cells)));
+}
+
+/* ---------- portrait phones: the battlefield needs landscape ---------- */
+#rotate-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 100;
+  flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  padding: calc(24px + var(--safe-t)) calc(24px + var(--safe-r)) calc(24px + var(--safe-b)) calc(24px + var(--safe-l));
+  background: var(--ink-900);
+  background-image: radial-gradient(circle at 50% 38%, rgba(242, 177, 52, .14), transparent 60%);
+  color: var(--bone-100); text-align: center; font-size: 16px; line-height: 1.55;
+}
+#rotate-overlay .rotate-icon { animation: rotate-hint 2.4s var(--ease-out) infinite; }
+#rotate-overlay .rotate-icon svg { width: 72px; height: 72px; }
+#rotate-overlay p { max-width: 300px; color: var(--bone-300); }
+#rotate-overlay b { display: block; margin-bottom: 4px; font-family: var(--font-display); font-weight: 400; font-size: 18px; color: var(--gold-500); }
+#rotate-overlay small { max-width: 300px; color: var(--ink-400); font-size: 12px; }
+@keyframes rotate-hint { 0%, 15% { transform: rotate(0deg); } 50%, 65% { transform: rotate(-90deg); } 100% { transform: rotate(0deg); } }
+@media (orientation: portrait) and (pointer: coarse) and (max-width: 940px) {
+  body:has(#screens.hidden) #rotate-overlay { display: flex; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+
+/* an unchecked box beside a checklist line */
+.todo-pip { display: inline-block; width: .75em; height: .75em; vertical-align: -.05em; box-shadow: inset 0 0 0 2px currentColor; opacity: .4; }
+.ico-check { color: var(--moss-600); }
+.ico-star { color: var(--gold-600); }

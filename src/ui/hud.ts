@@ -4,7 +4,7 @@ import { QUALITY_OPTIONS, type QualityPreference } from '../core/quality.ts'
 import { fmtDamage } from './screens.ts'
 import type { Game, TargetMode } from '../game/game.ts'
 import type { Hero } from '../game/hero.ts'
-import type { Tower } from '../game/towers.ts'
+import type { Tower, TargetPolicy } from '../game/towers.ts'
 import type { PlotInfo } from '../game/terrain.ts'
 import type { Enemy } from '../game/units.ts'
 import type { Trap, TrapSpotInfo } from '../game/traps.ts'
@@ -16,17 +16,20 @@ import { towerTrees } from '../game/towerDefs.ts'
 import { mythicFor } from '../game/mythics.ts'
 import { TARGET_POLICY_LABEL, REACTIONS } from '../game/towers.ts'
 import { isCoarsePointer } from '../core/utils.ts'
-import { isPortalMode } from '../core/platform.ts'
+import { isPortalMode, isNativeApp } from '../core/platform.ts'
 import { EARTHWORK_DEFS, raiseCost, type EarthworkSpot, type Earthwork, RAMPART_DAMAGE_BONUS, RAMPART_RANGE_BONUS } from '../game/earthworks.ts'
 import { beatIndex, BEATS_PER_BAR } from '../game/beat.ts'
 import { traitsOf, counterFor } from '../game/dossier.ts'
 import { heroRankCost, heroRankGold, heroRankLevel } from '../game/hero.ts'
-import type { EnemyDef, TowerAura } from '../game/types.ts'
-import { icon, BOSS_ART } from './icons.ts'
+import type { EnemyDef, PerkDef } from '../game/types.ts'
+import { icon, checkMark, BOSS_ART } from './icons.ts'
 import { unlockLevel, levelForXp, levelProgress, MAX_LEVEL } from '../game/progress.ts'
 
+/** a tower's rendered portrait, for the build bar */
+const towerArt = (model: string) => `<span class="b-art"><img src="art/towers/${model}.webp" width="384" height="384" alt="" decoding="async" draggable="false"></span>`
+
 function chip(label: string, value: string, cls = ''): string {
-  return `<span class="chip${cls ? ' ' + cls : ''}"${cls.split(' ').includes('lit') ? ' title="Boosted · see Combat details"' : ''}><span class="chip-label">${label}</span><span class="chip-value">${value}</span></span>`
+  return `<span class="chip${cls ? ' ' + cls : ''}"${cls.split(' ').includes('lit') ? ' title="Boosted · see Details"' : ''}><span class="chip-label">${label}</span><span class="chip-value">${value}</span></span>`
 }
 
 const TOWER_ICONS: Record<TowerKind, string> = { arrow: 'bow', mage: 'orb', cannon: 'bomb', barracks: 'helm', beacon: 'flame', ballista: 'target', seraph: 'seraph', tidecaller: 'wave' }
@@ -159,8 +162,11 @@ export class HUD {
   private buildTopBar(): void {
     const bar = el('div', 'topbar', this.root)
     new ResizeObserver(() => {
-      const bottom = Math.max(...[...bar.querySelectorAll(':scope > .topbar-group')].map(group => group.getBoundingClientRect().bottom))
-      document.documentElement.style.setProperty('--hud-top-bottom', `${bottom}px`)
+      const groups = [...bar.querySelectorAll(':scope > .topbar-group')].map(group => group.getBoundingClientRect().bottom)
+      document.documentElement.style.setProperty('--hud-top-bottom', `${Math.max(...groups)}px`)
+      // the inspector docks under the right-hand buttons, which stay on one
+      // line when a narrow phone wraps the resource chips onto two
+      if (groups[1] !== undefined) document.documentElement.style.setProperty('--hud-top-right', `${groups[1]}px`)
     }).observe(bar)
     const left = el('div', 'topbar-group', bar)
     this.livesEl = el('div', 'stat lives', left, `${icon('heart')} <b>20</b><span class="star-target" title="Keep this many lives for three stars"></span>`)
@@ -188,7 +194,7 @@ export class HUD {
     this.flowBtn.setAttribute('aria-label', 'Keep waves coming')
     this.flowBtn.onclick = () => this.game.setAutoWaves(!this.game.autoWaves)
     const doc = document as Document & { webkitFullscreenEnabled?: boolean }
-    if ((doc.fullscreenEnabled || doc.webkitFullscreenEnabled) && !isPortalMode()) {
+    if ((doc.fullscreenEnabled || doc.webkitFullscreenEnabled) && !isPortalMode() && !isNativeApp()) {
       const fs = el('button', 'icon-btn', right, icon('fullscreen', 'plain')) as HTMLButtonElement
       fs.setAttribute('aria-label', 'Toggle fullscreen'); fs.title = 'Fullscreen (V)'
       fs.onclick = () => this.onFullscreen()
@@ -281,7 +287,7 @@ export class HUD {
     const bar = el('div', 'abilities', this.root)
     this.heroBtn = el('button', 'ability hero-btn', bar) as HTMLButtonElement
     this.heroBtn.innerHTML =
-      `<span class="ability-icon"><img class="hero-face" src="art/hero-aldric.webp" alt=""></span><span class="cd-sweep"></span>` +
+      `<span class="ability-icon"><img class="hero-face" src="art/heroes/aldric.webp" alt=""></span><span class="cd-sweep"></span>` +
       '<span class="hotkey">1</span><span class="hero-level">1</span><span class="hero-hp"><span class="hero-hp-fill"></span></span>' +
       '<span class="hero-bark" aria-live="polite"></span>'
     this.heroBtn.title = 'Select or deselect your hero (1). Tap the ground to move.'
@@ -526,7 +532,7 @@ export class HUD {
       // the three-star line, beside the number it is measured against
       const target = game.starTarget()
       const tEl = this.livesEl.querySelector('.star-target') as HTMLElement
-      tEl.textContent = target === null ? '' : `★${target}`
+      tEl.textContent = target === null ? '' : `${target}`
       tEl.classList.toggle('below', target !== null && game.lives < target)
     }
     // a capstone's special attack, counting down where the player can see it
@@ -641,7 +647,7 @@ export class HUD {
       if (this.lastHeroId !== hero.heroDef.id) {
         this.lastHeroId = hero.heroDef.id
         const heroIco = this.heroBtn.querySelector('.ability-icon') as HTMLElement
-        if (heroIco) heroIco.innerHTML = `<img class="hero-face" src="art/hero-${hero.heroDef.id}.webp" alt="">`
+        if (heroIco) heroIco.innerHTML = `<img class="hero-face" src="art/heroes/${hero.heroDef.id}.webp" alt="">`
         this.heroBtn.title = `${hero.heroDef.name} ${hero.heroDef.title} — select, then click the ground to move. ${hero.abilityName}: ${hero.abilityBlurb} Hotkey 1; press again to deselect.`
       }
       const sweep = this.heroBtn.querySelector('.cd-sweep') as HTMLElement
@@ -737,11 +743,7 @@ export class HUD {
     this.refreshMasteryProgress()
     // tower panel gold/shard-dependent button states
     if (this.currentTower && !this.towerPanel.classList.contains('hidden')) {
-      const stats = this.towerPanel.querySelector<HTMLElement>('.tp-combat-stats')
-      if (stats) {
-        const html = this.combatStats(this.currentTower)
-        if (stats.dataset.readout !== html) { stats.innerHTML = html; stats.dataset.readout = html }
-      }
+      this.refreshStatBlock()
       const setNeed = (b: HTMLButtonElement, text: string) => {
         const n = b.querySelector('.u-need')
         if (n && n.textContent !== text) n.textContent = text
@@ -759,16 +761,18 @@ export class HUD {
           : '')
       })
       const oc = document.getElementById('oc-btn') as HTMLButtonElement | null
-      if (oc) {
+      if (oc && !oc.classList.contains('confirming')) {
         const t = this.currentTower
         oc.disabled = !t.canOvercharge(game)
         const cdLeft = Math.max(0, t.overchargeCdUntil - game.time)
-        const html = icon('lightning') + (t.isOvercharged(game)
-          ? ` Overcharged! ${Math.ceil(t.overchargeUntil - game.time)}s`
-          : cdLeft > 0 ? ` Recharging ${Math.ceil(cdLeft)}s` : ` Overcharge ${icon('gem')}${OVERCHARGE_SHARD_COST}`)
+        const live = t.isOvercharged(game)
+        const secs = Math.ceil(live ? t.overchargeUntil - game.time : cdLeft)
+        const html = icon('lightning') + (live || cdLeft > 0 ? `<span>${secs}s</span>` : `${icon('gem')}<span>${OVERCHARGE_SHARD_COST}</span>`)
         if (html !== this.lastOcHtml) {
           this.lastOcHtml = html
           oc.innerHTML = html
+          oc.classList.toggle('lit', live)
+          oc.setAttribute('aria-label', live ? `Overcharged · ${secs}s left` : cdLeft > 0 ? `Overcharge recharging · ${secs}s` : `Overcharge · ${OVERCHARGE_SHARD_COST} shards`)
         }
       }
     }
@@ -798,7 +802,7 @@ export class HUD {
     const label = el('div', '', head)
     el('b', '', label, 'Build')
     el('small', '', label, isCoarsePointer() ? 'Tap to build · hold to inspect' : 'Hover to inspect · click to build')
-    const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    const close = el('button', 'tp-close', head, icon('close')) as HTMLButtonElement
     close.setAttribute('aria-label', 'Close build menu')
     close.onclick = () => this.game.clearSelection()
     this.buildMenu.scrollTop = 0
@@ -820,7 +824,7 @@ export class HUD {
       // than what they can build today and what it takes to grow it
       if (!this.game.towerUnlocked(kind)) {
         const lockBtn = el('button', 'build-option locked', this.buildMenu) as HTMLButtonElement
-        lockBtn.innerHTML = `<span class="b-icon">${icon('lock')}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">Lv ${unlockLevel('tower', kind)}</span>`
+        lockBtn.innerHTML = `${towerArt(def.model)}<span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">${icon('lock')} Lv ${unlockLevel('tower', kind)}</span>`
         lockBtn.disabled = true
         lockBtn.title = `${TOWER_NAMES[kind]} unlocks at account level ${unlockLevel('tower', kind)}`
         continue
@@ -829,14 +833,14 @@ export class HUD {
       // and shut, so the restriction reads as a rule and not a missing button
       if (this.game.trial && !this.game.trial.kinds.includes(kind)) {
         const lockBtn = el('button', 'build-option locked', this.buildMenu) as HTMLButtonElement
-        lockBtn.innerHTML = `<span class="b-icon">${icon('lock')}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">Trial</span>`
+        lockBtn.innerHTML = `${towerArt(def.model)}<span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">${icon('lock')} Trial</span>`
         lockBtn.disabled = true
         lockBtn.title = `${this.game.trial.name}: not on this board`
         continue
       }
       const btn = el('button', 'build-option', this.buildMenu) as HTMLButtonElement
       btn.dataset.cost = `${def.cost}`
-      btn.innerHTML = `<span class="b-icon">${icon(TOWER_ICONS[kind])}</span><span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
+      btn.innerHTML = `${towerArt(def.model)}<span class="b-name">${TOWER_NAMES[kind]}</span><span class="b-cost">${icon('coin')}${def.cost}</span>`
       this.bindSpend(kind, btn, () => {
         this.game.previewRange(kind)
         this.showBuildTooltip(def, kind)
@@ -972,16 +976,25 @@ export class HUD {
    * shards for good. These were the *only* single-tap actions on touch while
    * building and upgrading each cost two, which is exactly backwards.
    */
-  private confirmOnTouch(btn: HTMLButtonElement, label: string, act: () => void): void {
+  private confirmOnTouch(btn: HTMLButtonElement, label: string, act: () => void, onArm?: () => void, onDisarm?: () => void): void {
     if (!isCoarsePointer()) { btn.onclick = this.menuGuard(act); return }
     const original = btn.innerHTML
     let armed = false
-    const disarm = () => { armed = false; btn.innerHTML = original; btn.classList.remove('confirming') }
+    let name: string | null = null
+    const disarm = () => {
+      armed = false; btn.innerHTML = original; btn.classList.remove('confirming')
+      if (name !== null) btn.setAttribute('aria-label', name)
+      onDisarm?.()
+    }
     btn.onclick = this.menuGuard(() => {
       if (armed) { disarm(); act(); return }
       armed = true
+      // a compact button names itself in aria-label; while it asks, the question is its name
+      name = btn.getAttribute('aria-label')
+      if (name !== null) btn.setAttribute('aria-label', label)
       btn.innerHTML = `<span class="u-name">${label}</span>`
       btn.classList.add('confirming')
+      onArm?.()
       window.setTimeout(() => { if (armed) disarm() }, 2600)
     })
   }
@@ -1002,8 +1015,9 @@ export class HUD {
     if (pv.lights.length) gains.push(`${icon('flame')} Would light ${pv.lights.length} tower${pv.lights.length === 1 ? '' : 's'}`)
     if (pv.reactions.length || pv.beacon || pv.lights.length) gains.unshift('Gold links show these bonuses:')
     if (pv.highGround) gains.push(kind === 'beacon' ? `${icon('quake')} High ground: +15% aura reach` : `${icon('quake')} High ground: +${Math.round(RAMPART_DAMAGE_BONUS * 100)}% damage, +${Math.round(RAMPART_RANGE_BONUS * 100)}% range`)
-    tip.innerHTML = `<b>${def.name}</b><br>${def.description}<br><span class="tip-stats">${statLine(def, this.mults(kind))}</span>` +
-      (gains.length ? `<span class="tip-gains">${gains.join('<br>')}</span>` : '')
+    tip.innerHTML = `<span class="tip-head"><b>${def.name}</b><span class="tip-cost">${icon('coin')}${def.cost}</span></span>`
+      + `<span class="tip-desc">${def.description}</span><span class="tip-stats">${keyStats(def, this.mults(kind))}</span>`
+      + (gains.length ? `<span class="tip-gains">${gains.join('<br>')}</span>` : '')
     tip.classList.remove('hidden')
   }
 
@@ -1035,7 +1049,7 @@ export class HUD {
     const showTip = () => {
       const tip = document.getElementById('build-tip')
       if (tip) {
-        tip.innerHTML = `<b>${def.name}</b><br>${def.description}`
+        tip.innerHTML = `<span class="tip-head"><b>${def.name}</b><span class="tip-cost">${icon('coin')}${def.cost}</span></span><span class="tip-desc">${def.description}</span>`
         tip.classList.remove('hidden')
       }
     }
@@ -1058,15 +1072,17 @@ export class HUD {
     if (plot.raised || this.game.terrain?.isOnHill(...plot.cell)) {
       btn.disabled = true
       btn.title = 'Already elevated: the high-ground bonus is active. Raising adds no range.'
-      btn.innerHTML = cls.includes('build-option')
-        ? `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">High ground<br><small>Bonus already active</small></span>`
-        : `${icon(def.icon)} High ground<span class="u-desc">Bonus already active; raising adds no range.</span>`
+      if (cls.includes('build-option')) btn.innerHTML = `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">High ground<br><small>Bonus already active</small></span>`
+      else btn.innerHTML = `${icon(def.icon)}${icon('check')}<span class="sr-only">High ground · Bonus already active; raising adds no range.</span>`
       return btn
     }
     btn.dataset.cost = `${cost}`
-    btn.innerHTML = cls.includes('build-option')
-      ? `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${cost}</span>`
-      : `${icon(def.icon)} ${def.name} ${icon('coin')}${cost}`
+    if (cls.includes('build-option')) btn.innerHTML = `<span class="b-icon">${icon(def.icon)}</span><span class="b-name">${def.name}</span><span class="b-cost">${icon('coin')}${cost}</span>`
+    else {
+      // in the inspector's action row: the build menu's own icon, and the price
+      btn.innerHTML = `${icon(def.icon)}${icon('coin')}<span>${cost}</span>`
+      btn.setAttribute('aria-label', `${def.name} · ${cost} gold`)
+    }
     const description = this.game.towers.find(t => t.plot === plot)?.isBeacon ? 'Raise this Beacon onto high ground to extend its aura by 15%.' : def.description
     btn.title = `${description} Permanent. The next foundation after this costs ${raiseCost(this.game.raisedCount() + 1)} gold.`
     const showTip = () => {
@@ -1075,7 +1091,7 @@ export class HUD {
       // the hovered button can alternate enter/leave forever. Its native title
       // supplies the details; touch players can still hold to inspect them.
       if (tip && (isCoarsePointer() || !parent.closest('.tower-panel'))) {
-        tip.innerHTML = `<b>${def.name}</b><br>${description}<br><span class="tip-stats">Permanent. The next foundation after this costs ${icon('coin')}${raiseCost(this.game.raisedCount() + 1)}.</span>`
+        tip.innerHTML = `<span class="tip-head"><b>${def.name}</b><span class="tip-cost">${icon('coin')}${cost}</span></span><span class="tip-desc">${description}</span><span class="tip-stats">Permanent · the next one costs ${icon('coin')}${raiseCost(this.game.raisedCount() + 1)}</span>`
         tip.classList.remove('hidden')
       }
       this.game.previewRaise(plot)
@@ -1100,7 +1116,7 @@ export class HUD {
     const t = el('div', 'tp-title', head)
     el('div', 'tp-name', t, work.def.name)
     el('div', 'tp-level', t, work.kind === 'rampart' ? 'High ground' : 'Sunken road')
-    const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    const close = el('button', 'tp-close', head, icon('close')) as HTMLButtonElement
     close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
 
@@ -1120,7 +1136,7 @@ export class HUD {
       const showTrapTip = () => {
         const tip = document.getElementById('build-tip')
         if (tip) {
-          tip.innerHTML = `<b>${def.name}</b><br>${def.description}`
+          tip.innerHTML = `<span class="tip-head"><b>${def.name}</b><span class="tip-cost">${icon('coin')}${def.cost}</span></span><span class="tip-desc">${def.description}</span>`
           tip.classList.remove('hidden')
         }
       }
@@ -1150,7 +1166,7 @@ export class HUD {
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, trap.def.name)
     el('div', 'tp-level', title, `Road trap<span class="tp-kills" title="Enemies slain by this trap, and the health it has taken from them"> · ${icon('skull')} <span class="tp-kill-n">${trap.kills}</span> · ${icon('swords')} <span class="tp-dmg-n">${fmtDamage(trap.damage)}</span></span>`)
-    const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    const close = el('button', 'tp-close', head, icon('close')) as HTMLButtonElement
     close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
     el('div', 'tp-stats', p, trap.def.description)
@@ -1163,19 +1179,112 @@ export class HUD {
 
   // ---------------- tower panel ----------------
 
-  private combatStats(tower: Tower): string {
+  /**
+   * The strip compares the tower with one option at a time: the one under the
+   * cursor or finger, or, when there is only one way up, that one. The panel
+   * used to print a before/after table inside every upgrade card and then the
+   * same four numbers again underneath; one row with the change in green says
+   * the same thing in a third of the room.
+   */
+  private statPreview: StatPreview = null
+
+  private setStatPreview(preview: StatPreview): void {
+    this.statPreview = preview
+    this.refreshStatBlock()
+  }
+
+  private refreshStatBlock(): void {
+    const tower = this.currentTower
+    const block = this.towerPanel.querySelector<HTMLElement>('.tp-combat-stats')
+    if (!tower || !block) return
+    const html = this.statBlock(tower)
+    if (block.dataset.readout !== html) { block.innerHTML = html; block.dataset.readout = html }
+  }
+
+  /** every way up the panel offers: tiers unless a trial caps them, and the two ascensions */
+  private panelOptions(tower: Tower): { tiers: TowerLevelDef[], perks: PerkDef[], capped: boolean } {
+    const capped = !!this.game.trial && tower.level >= this.game.trial.maxTier
+    return { capped, tiers: capped ? [] : tower.upgradeOptions, perks: tower.level >= 4 && !tower.perk ? tower.ascensionOptions : [] }
+  }
+
+  /** towers standing in a beacon's light */
+  private litBy(beacon: Tower): Tower[] {
+    return this.game.towers.filter(t => t !== beacon && !t.isBeacon
+      && Math.hypot(t.pos.x - beacon.pos.x, t.pos.z - beacon.pos.z) <= beacon.auraReach)
+  }
+
+  private statBlock(tower: Tower): string {
     const m = this.mults(tower.kind), def = tower.def
-    const [lo, hi] = tower.effectiveDamage()!.map(v => Math.round(v * m.dmg)) as [number, number]
-    const interval = tower.effectiveInterval()!
-    const typeIco = def.damageType === 'magic' ? 'sparkle' : def.splash ? 'blast' : 'sword'
-    const boosted = tower.damageMult > 1 || tower.rateMult > 1
-    return (
-      chip('Damage', `${icon(typeIco)} ${lo}–${hi}`, tower.damageMult > 1 ? 'lit' : '') +
-      chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`, tower.rateMult > 1 ? 'lit' : '') +
-      chip('Range', `${icon('range')} ${fmtNum(tower.range)}`, tower.range > def.range ? 'lit' : '') +
-      chip(tower.isFused ? 'Primary DPS' : def.beamTargets ? 'DPS / target' : 'DPS', `${icon('swords')} ${((lo + hi) / 2 / interval).toFixed(1)}`, boosted ? 'lit' : '') +
-      (def.beamTargets ? chip('Targets', `${def.beamTargets}`) : '') +
-      (tower.isSeraph && def.splash ? chip('Splash radius', `${Math.round(def.splash * m.splash * 100) / 100} tiles`) + chip(tower.isFused ? 'Splash damage' : 'Targets', tower.isFused ? '40%' : 'All in area') : ''))
+    const { tiers, perks } = this.panelOptions(tower)
+    const options = [
+      ...tiers.map((t, i) => ({ id: `tier:${i}`, deltas: upgradeDeltas(tower, t, m) })),
+      ...perks.map(p => ({ id: `perk:${p.id}`, deltas: perkDeltas(tower, p.id, m) })),
+    ]
+    const preview = this.statPreview
+    const active = preview ? ('tier' in preview ? `tier:${preview.tier}` : `perk:${preview.perk}`) : tiers.length === 1 ? 'tier:0' : null
+    const cells: StatCell[] = []
+    const notes: string[] = []
+    if (def.aura) {
+      const a = def.aura
+      const pct = (n: number) => `+${Math.round(n * 100)}%`
+      cells.push(
+        { key: 'Reach', ico: 'range', value: tower.auraReach.toFixed(1) },
+        { key: 'Damage', ico: 'sword', value: pct(a.damage + (tower.perk?.id === 'zeal' ? 0.08 : 0)) },
+        { key: 'Range', ico: 'range', value: pct(a.range) },
+        { key: 'Speed', ico: 'hourglass', value: pct(a.rate) })
+      const lit = this.litBy(tower)
+      notes.push(lit.length
+        ? `${icon('flame')} Lighting <b>${lit.length}</b>: ${lit.map(t => t.def.name).join(', ')}`
+        : `${icon('flame')} Lighting nothing yet — build inside the ring`)
+    } else if (def.soldier) {
+      const s = def.soldier
+      const mult = tower.soldierDamageMult
+      cells.push(
+        { key: 'Squad', ico: 'soldiers', value: `${tower.squadSize}` },
+        { key: 'Health', ico: 'heart', value: `${Math.round(s.hp * m.soldierHp)}` },
+        { key: 'Damage', ico: 'sword', value: `${Math.round(s.damage[0] * mult)}–${Math.round(s.damage[1] * mult)}` },
+        { key: 'Armor', ico: 'shield', value: `${Math.round(s.armor * 100)}%` },
+        { key: 'Respawn', ico: 'respawn', value: `${def.respawnTime}s` })
+      notes.push(`${tower.squadSize}× ${s.name} · swings every ${fmtSecs(s.attackInterval / (1 + tower.auraRate))}`)
+      // the Warcamp throws: its own attack is the reason to build it
+      if (def.damage && def.attackInterval) {
+        const [lo, hi] = tower.effectiveDamage()!.map(Math.round)
+        notes.push(`${icon('feather')} Axes vs air ${lo}–${hi} every ${fmtSecs(tower.effectiveInterval()!)} · reach ${fmtNum(tower.range)}`)
+      }
+    } else {
+      const [lo, hi] = tower.effectiveDamage()!.map(v => Math.round(v * m.dmg)) as [number, number]
+      const interval = tower.effectiveInterval()!
+      cells.push(
+        { key: 'Damage', ico: def.damageType === 'magic' ? 'sparkle' : def.splash ? 'blast' : 'sword', value: `${lo}–${hi}`, lit: tower.damageMult > 1 },
+        { key: 'Rate', ico: 'hourglass', value: fmtSecs(interval), lit: tower.rateMult > 1, title: 'Seconds between attacks' },
+        { key: 'Range', ico: 'range', value: fmtNum(tower.range), lit: tower.range > def.range },
+        { key: 'DPS', ico: 'swords', value: ((lo + hi) / 2 / interval).toFixed(1), lit: tower.damageMult > 1 || tower.rateMult > 1,
+          title: tower.isFused ? 'Primary DPS' : def.beamTargets ? 'DPS per target' : 'Damage per second' })
+      if (def.beamTargets) cells.push({ key: 'Targets', ico: 'target', value: `${def.beamTargets}` })
+      if (def.splash && !tower.isSeraph) cells.push({ key: 'Blast', ico: 'blast', value: fmtNum(def.splash * m.splash, 2), title: 'Blast radius in tiles' })
+      // whether it can hit a flyer is the question asked most, so it comes first
+      notes.push(def.flying ? `${icon('feather')} Hits flyers` : 'Ground only')
+      notes.push(def.damageType === 'magic' ? `${icon('sparkle')} Magic · ignores armor` : def.splash ? `${icon('blast')} Splash` : `${icon('sword')} Physical`)
+      if (def.beamTargets) notes.push(`${def.beamTargets} beams, full damage each`)
+      if (tower.isSeraph && def.splash) notes.push(`Splash radius ${Math.round(def.splash * m.splash * 100) / 100} tiles`, tower.isFused ? 'Splash damage 40%' : 'Targets: All in area')
+    }
+    // anything an option would change that the strip does not show yet gets
+    // a cell up front, so hovering an option never reflows the panel
+    for (const { deltas } of options) for (const [key, v] of Object.entries(deltas)) {
+      if (v.from !== v.to && !cells.some(c => c.key === key)) cells.push({ key, ico: STAT_ICONS[key] ?? 'sparkle', value: v.from })
+    }
+    // every option's figure is laid out in the same spot and only the active
+    // one is shown, so each cell is already as wide as its widest change
+    const strip = cells.map(c => {
+      const nexts = options.map(({ id, deltas }) => {
+        const d = deltas[c.key]
+        return d && d.from !== d.to ? `<span class="${id === active ? 'on' : ''}${d.better ? '' : ' same'}">→ ${d.to}</span>` : ''
+      }).join('')
+      const next = options.length ? `<span class="chip-next">${nexts}</span>` : ''
+      const title = c.lit ? `${c.title ?? c.key} · boosted, see Details` : c.title
+      return `<span class="chip${c.lit ? ' lit' : ''}"${title ? ` title="${title}"` : ''}><span class="chip-label">${icon(c.ico)}${c.key}</span><span class="chip-value">${c.value}</span>${next}</span>`
+    }).join('')
+    return `<div class="stat-chips${cells.length > 4 ? ' dense' : ''}">${strip}</div><div class="ts-note">${notes.join(' · ')}</div>`
   }
 
   private refreshMasteryProgress(): void {
@@ -1185,7 +1294,7 @@ export class HUD {
     const game = this.game
     const save = game.hasSharedMythic(tower.kind) && masteryReady(game.save, tower.kind) ? game.save : game.roster
     const earned = (id: string) => save.honors?.includes(`mastery:${tower.kind}:${id}`)
-    const stamps = HUNTS.map(h => `<div>${earned(h.id) ? '✓' : '○'} ${h.name}</div>`).join('')
+    const stamps = HUNTS.map(h => `<div>${checkMark(!!earned(h.id))} ${h.name}</div>`).join('')
     let status: string
     if (game.isSandbox) status = 'All Mythics available · sandbox earns no mastery.'
     else if (game.hasSharedMythic(tower.kind) && !masteryReady(save, tower.kind)) status = 'Available for this defense · shared by a player who earned mastery.'
@@ -1196,8 +1305,8 @@ export class HUD {
     else {
       const damage = tower.isBeacon ? tower.supportedDamage : tower.damage
       const ready = tower.level >= 5 && damage >= 4000
-      status = `<div>${tower.level >= 5 ? '✓' : '○'} Tier five · currently ${tower.level}</div>`
-        + `<div>${damage >= 4000 ? '✓' : '○'} ${Math.floor(damage).toLocaleString()} / 4,000 ${tower.isBeacon ? 'supported damage' : 'damage'}</div>`
+      status = `<div>${checkMark(tower.level >= 5)} Tier five · currently ${tower.level}</div>`
+        + `<div>${checkMark(damage >= 4000)} ${Math.floor(damage).toLocaleString()} / 4,000 ${tower.isBeacon ? 'supported damage' : 'damage'}</div>`
         + `<progress max="4000" value="${Math.min(4000, damage)}" aria-label="${tower.isBeacon ? 'Supported damage' : 'Damage'} toward mastery"></progress>`
         + `<div>${ready ? 'Ready — win' : 'Then win'} ${game.hunt.name} with this tower still standing.</div>`
     }
@@ -1208,135 +1317,68 @@ export class HUD {
     }
   }
 
+  /**
+   * The inspector, in reading order: what it is, what it does (with what the
+   * next step would change, in green), the way up, the four things you can do
+   * to it, and everything else folded away under Details.
+   */
   openTowerPanel(tower: Tower): void {
     if (this.currentTower !== tower) this.towerPanel.scrollTop = 0
     this.currentTower = tower
     this.currentTrap = null
     this.currentHero = null
+    this.statPreview = null
     this.menuOpenedAt = performance.now()
     const p = this.towerPanel
     p.innerHTML = ''
+    const def = tower.def
     const head = el('div', 'tp-head', p)
-    el('div', 'tp-icon', head, icon(TOWER_ICONS[tower.kind]))
+    el('div', 'tp-icon', head, `<img src="art/towers/${def.model}.webp" width="384" height="384" alt="" decoding="async">`)
     const title = el('div', 'tp-title', head)
-    el('div', 'tp-name', title, tower.def.name)
-    el('div', 'tp-level', title, (tower.isFused ? 'Fusion · ' : tower.level === 6 ? 'Mythic · ' : tower.level === 5 ? '✦ ' : tower.level === 4 ? '★ ' : '')
-      + `Tier ${tower.level}/6`
-      + `<span class="tp-kills" title="Enemies slain by this building, and the health it has taken from them"> · ${icon('skull')} <span class="tp-kill-n">${tower.kills}</span> · ${icon('swords')} <span class="tp-dmg-n">${fmtDamage(tower.damage)}</span></span>`)
-    const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    el('div', 'tp-name', title, def.name)
+    const pips = Array.from({ length: 6 }, (_, i) => `<i class="t${i + 1}${i < tower.level ? ' on' : ''}"></i>`).join('')
+    const rank = tower.isFused ? 'Fusion' : tower.level === 6 ? 'Mythic' : ''
+    el('div', 'tp-level tp-meta', title,
+      `<span class="tp-tier" role="img" aria-label="Tier ${tower.level} of 6" title="Tier ${tower.level} of 6">${pips}</span>`
+      + (rank ? `<span class="tp-rank">${rank}</span>` : '')
+      + `<span class="tp-kills" title="Enemies slain by this building, and the health it has taken from them">${icon('skull')}<span class="tp-kill-n">${tower.kills}</span>${icon('swords')}<span class="tp-dmg-n">${fmtDamage(tower.damage)}</span></span>`)
+    const close = el('button', 'tp-close', head, icon('close')) as HTMLButtonElement
     close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
 
-    // labeled stat chips read faster than an inline icon run
-    const m = this.mults(tower.kind)
-    const def = tower.def
-    if (def.aura) {
-      const a = def.aura
-      el('div', 'stat-chips', p,
-        chip('Reach', `${icon('range')} ${tower.auraReach.toFixed(1)}`) +
-        chip('Damage', `${icon('sword')} +${Math.round((a.damage + (tower.perk?.id === 'zeal' ? 0.08 : 0)) * 100)}%`) +
-        chip('Range', `${icon('range')} +${Math.round(a.range * 100)}%`) +
-        chip('Speed', `${icon('hourglass')} +${Math.round(a.rate * 100)}%`))
-      const lit = this.game.towers.filter(t => t !== tower && !t.isBeacon
-        && Math.hypot(t.pos.x - tower.pos.x, t.pos.z - tower.pos.z) <= tower.auraReach)
-      const traits = [
-        lit.length ? `${icon('flame')} lighting <b>${lit.length}</b>: ${lit.map(t => t.def.name).join(', ')}` : `${icon('flame')} lighting nothing yet — build inside the ring`,
-      ]
-      for (const note of tower.modifierNotes()) traits.push(`${icon('quake')} ${note}`)
-      if (a.reveal) traits.push(`${icon('eye')} phasing enemies in the light can be shot`)
-      if (a.bounty) traits.push(`${icon('coin')} kills in the light pay +${Math.round(a.bounty * 100)}%`)
-      el('div', 'tp-traits', p, traits.join('<br>'))
-    } else if (def.soldier) {
-      const s = def.soldier
-      el('div', 'stat-chips', p,
-        chip('Squad', `${icon('soldiers')} ${tower.squadSize}× ${s.name}`, 'wide') +
-        chip('Health', `${icon('heart')} ${Math.round(s.hp * m.soldierHp)}`) +
-        chip('Damage', `${icon('sword')} ${Math.round(s.damage[0] * tower.soldierDamageMult)}–${Math.round(s.damage[1] * tower.soldierDamageMult)}`) +
-        chip('Rate', `${icon('hourglass')} ${fmtSecs(s.attackInterval / (1 + tower.auraRate))}`) +
-        chip('Armor', `${icon('shield')} ${Math.round(s.armor * 100)}%`) +
-        chip('Respawn', `${icon('respawn')} ${def.respawnTime}s`))
-      // the Warcamp throws: its own attack is the whole reason to build it,
-      // and the panel used to describe only the soldiers
-      if (def.damage && def.attackInterval) {
-        const [lo, hi] = tower.effectiveDamage()!
-        const interval = tower.effectiveInterval()!
-        el('div', 'stat-chips', p,
-          chip('Axes vs air', `${icon('feather')} ${lo}–${hi}`, 'wide') +
-          chip('Rate', `${icon('hourglass')} ${fmtSecs(interval)}`) +
-          chip('Reach', `${icon('range')} ${fmtNum(tower.range)}`))
-        el('div', 'tp-traits', p, `${icon('feather')} Shared axe attack · targets visible flyers within the camp’s range. Grounded foes are fought in melee.`)
-      }
-    } else {
-      el('div', 'stat-chips tp-combat-stats', p, this.combatStats(tower))
-      const traits: string[] = []
-      for (const note of tower.modifierNotes()) traits.push(`${icon('flame')} ${note}`)
-      if (def.beamTargets) traits.push('independent beams from the idol; full damage to each target')
-      if (def.splash) traits.push(`${icon('blast')} blast r${Math.round(def.splash * m.splash * 100) / 100}`)
-      if (def.damageType === 'magic') traits.push(`${icon('sparkle')} ignores armor`)
-      traits.push(def.flying ? `${icon('feather')} hits flyers` : 'no flyers')
-      const details = el('details', 'tp-details', p)
-      el('summary', '', details, 'Combat details')
-      el('div', 'tp-traits', details, traits.join(' · '))
-    }
+    el('div', 'tp-combat-stats', p)
+    this.refreshStatBlock()
+
     // the special attack's counter, live (refresh() keeps it current)
     this.sigEl = null
     this.lastSigText = ''
     if (tower.signatureReadout(this.game.time)) this.sigEl = el('div', 'tp-signature', p)
 
-    // the road this tower has taken: tiers, branch, perk, capstone
-    if (tower.level >= 2 || tower.perk) {
-      const tree = towerTrees[tower.kind]
-      const steps: string[] = tree.levels.slice(0, Math.min(tower.level, 3)).map(l => l.name)
-      if (tower.level >= 4 && tower.branch !== null) steps.push(`★ ${tree.branches[tower.branch].name}`)
-      if (tower.level >= 5 && tower.branch !== null) steps.push(`✦ ${tree.capstones[tower.branch].name}`)
-      if (tower.level === 6) steps.push(tower.def.name)
-      if (tower.isFused) steps.splice(0, steps.length, `${mythicFor('seraph', 0)!.name} + ${mythicFor('seraph', 1)!.name}`, tower.def.name)
-      if (tower.perk) steps.push(`${icon(tower.perk.icon)} ${tower.perk.name}`)
-      const lineage = el('div', 'tp-lineage', p, steps.join(' <span class="dim">→</span> '))
-      const details = p.querySelector('.tp-details')
-      if (details) details.before(lineage)
-    }
-
-    const mastery = el('details', 'tp-mastery tp-details', p)
-    el('summary', '', mastery, 'Mythic progress')
-    el('div', 'tp-mastery-body', mastery)
-    this.refreshMasteryProgress()
-
-    const extras: string[] = []
-    for (const r of REACTIONS) {
-      if (tower.has(r.id)) extras.push(`${icon(r.icon)} <b>${r.name}</b> — ${r.description}`)
-    }
-    if (tower.perk) extras.push(`${icon(tower.perk.icon)} ${tower.perk.name} — ${tower.perk.description}`)
-    if (extras.length) el('div', 'tp-traits', p, extras.join('<br>'))
-
+    const { tiers, perks, capped } = this.panelOptions(tower)
     const primary = el('div', 'tp-primary', p)
-    head.after(primary)
-    const actions = el('div', 'tp-actions', p)
-    const capped = !!this.game.trial && tower.level >= this.game.trial.maxTier
-    if (capped) el('div', 'tp-traits', actions, `${icon('lock')} ${this.game.trial!.name}: tier ${this.game.trial!.maxTier} is the ceiling`)
+    if (capped) el('div', 'tp-traits', primary, `${icon('lock')} ${this.game.trial!.name}: tier ${this.game.trial!.maxTier} is the ceiling`)
     // Tier four is a fork, and the two greyed options used to read as locked
     // when the only thing between the player and either was gold. Say what
     // the step is, and (below, live) exactly how much gold is missing.
-    if (!capped && tower.level === 3) {
-      el('div', 'tp-choice', primary, `Choose a specialization · permanent`)
-    }
-    if (!capped) tower.upgradeOptions.forEach((opt, i) => {
-      const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, primary) as HTMLButtonElement
-      const mythicLock = this.game.mythicLock(tower)
+    if (tiers.length > 1) el('div', 'tp-choice', primary, 'Choose a specialization · permanent')
+    const ups = el('div', `tp-upgrades${tiers.length > 1 ? ' split' : ''}`, primary)
+    const mythicLock = this.game.mythicLock(tower)
+    tiers.forEach((opt, i) => {
+      const btn = el('button', `btn upgrade${tower.level === 4 ? ' capstone' : ''}`, ups) as HTMLButtonElement
       if (!mythicLock) btn.dataset.cost = `${opt.cost}`
-      btn.classList.add('has-preview')
-      btn.innerHTML = `<span class="u-name">${tower.level === 4 ? '✦ ' : tower.level === 3 ? '★ ' : '⬆ '}${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span>` +
-        `<span class="u-overview"><span class="u-copy"><span class="u-desc">${opt.description}</span><span class="u-delta">${deltaLines(tower, opt, m)}</span></span>` +
-        `<img class="u-model" src="art/towers/${opt.model}.webp" width="384" height="384" alt="${opt.name} tower preview" decoding="async"></span><span class="u-need"></span>`
-      // show what the upgrade actually buys in range terms, on both pointers:
-      // hover for a mouse, and the first tap for touch (which arms before it
-      // commits, so the preview is visible before any gold is spent)
-      const preview = () => this.game.previewUpgradeRange(tower, opt)
-      const clearPreview = () => { if (!this.armedBuild) this.game.previewUpgradeRange(tower, null) }
+      btn.innerHTML = `<img class="u-model" src="art/towers/${opt.model}.webp" width="384" height="384" alt="" decoding="async">`
+        + `<span class="u-name">${opt.name}</span><span class="u-cost">${icon('coin')}${opt.cost}</span>`
+        + `<span class="u-desc">${opt.description}</span><span class="u-need"></span>`
+      btn.title = opt.description
+      // what the upgrade buys, on both pointers: the strip shows the numbers
+      // and the board shows the reach - hover for a mouse, hold for a finger
+      const preview = () => { this.game.previewUpgradeRange(tower, opt); this.setStatPreview({ tier: i }) }
+      const clearPreview = () => { if (!this.armedBuild) this.game.previewUpgradeRange(tower, null); this.setStatPreview(null) }
       this.bindSpend(
         `upgrade:${tower.plot.index}:${i}`, btn, preview, clearPreview,
         () => { this.game.previewUpgradeRange(tower, null); this.game.upgradeTower(tower, i) },
       )
+      if (!isCoarsePointer()) { btn.addEventListener('focus', preview); btn.addEventListener('blur', clearPreview) }
       if (mythicLock) {
         btn.disabled = true
         btn.querySelector('.u-need')!.textContent = mythicLock
@@ -1348,75 +1390,123 @@ export class HUD {
     if (tower.isSeraph && tower.level === 6 && !tower.isGhost) {
       if (tower.isFused) el('div', 'tp-traits', primary, tower.def.description)
       else {
-        const fusion = el('button', 'btn upgrade has-preview', primary) as HTMLButtonElement
-        fusion.innerHTML = `<span class="u-name">Awaken Crimson Sovereign</span><span class="u-overview"><span class="u-copy"><span class="u-desc">Sacrifice an opposite tier-six Seraph. Choose which tower stays.</span></span><img class="u-model" src="art/towers/seraphCrimson.webp" width="384" height="384" alt="Crimson Sovereign preview" decoding="async"></span>`
+        const fusion = el('button', 'btn upgrade', ups) as HTMLButtonElement
+        fusion.innerHTML = '<img class="u-model" src="art/towers/seraphCrimson.webp" width="384" height="384" alt="" decoding="async">'
+          + '<span class="u-name">Awaken Crimson Sovereign</span><span class="u-desc">Sacrifice an opposite tier-six Seraph. Choose which tower stays.</span>'
+        fusion.title = 'Sacrifice an opposite tier-six Seraph. Choose which tower stays.'
         fusion.onclick = this.menuGuard(() => { void import('./seraphFusion.ts').then(({ showSeraphFusion }) => showSeraphFusion(this.game, tower)) })
       }
     }
-    // ascension: tier-4+ towers pick one of two shard-bought perks
-    if (tower.level >= 4 && !tower.perk) {
-      tower.ascensionOptions.forEach((perk, i) => {
-        const btn = el('button', 'btn upgrade ascend', actions) as HTMLButtonElement
-        btn.innerHTML = `<span class="u-name">${icon(perk.icon)} Ascend: ${perk.name}</span><span class="u-cost">${icon('gem')}${ASCEND_SHARD_COST} ${icon('coin')}${ASCEND_GOLD_COST}</span><span class="u-desc">${perk.description}</span>` +
-          `<span class="u-delta">${perkDeltaLines(tower, perk.id, m)}</span><span class="u-need"></span>`
+    if (!ups.childElementCount) ups.remove()
+    // ascension: tier-4+ towers pick one of two shard-bought perks; both cost
+    // the same, so the price is said once above them
+    if (perks.length) {
+      const ascend = el('div', 'tp-ascend', primary)
+      el('div', 'tp-choice ascend', ascend, `<span>Ascend</span><span class="tp-price">${icon('gem')}${ASCEND_SHARD_COST} ${icon('coin')}${ASCEND_GOLD_COST}</span><span class="tp-pick">choose one</span>`)
+      const list = el('div', 'tp-upgrades split', ascend)
+      perks.forEach((perk, i) => {
+        const btn = el('button', 'btn upgrade ascend', list) as HTMLButtonElement
+        btn.innerHTML = `<span class="u-art">${icon(perk.icon)}</span><span class="u-name"><span class="sr-only">Ascend: </span>${perk.name}</span>`
+          + `<span class="u-desc">${perk.description}</span><span class="u-need"></span>`
+        btn.title = perk.description
         // a perk that reaches further draws the reach it would buy, the same
         // way a tier upgrade does; the others have nothing spatial to show
-        if (perk.id === 'hawkeye' || perk.id === 'windlass' && tower.worldBalance >= 16) {
-          btn.onmouseenter = () => this.game.previewUpgradeRange(tower, { range: perk.id === 'hawkeye' ? tower.def.range + 0.8 : tower.def.range * 1.2 })
-          btn.onmouseleave = () => this.game.previewUpgradeRange(tower, null)
+        const reach = perk.id === 'hawkeye' || perk.id === 'windlass' && tower.worldBalance >= 16
+        const show = () => {
+          if (reach) this.game.previewUpgradeRange(tower, { range: perk.id === 'hawkeye' ? tower.def.range + 0.8 : tower.def.range * 1.2 })
+          this.setStatPreview({ perk: perk.id })
         }
-        this.confirmOnTouch(btn, `Ascend to ${perk.name}? Tap again`, () => this.game.ascendTower(tower, i as 0 | 1))
+        const hide = () => { if (reach) this.game.previewUpgradeRange(tower, null); this.setStatPreview(null) }
+        if (!isCoarsePointer()) for (const [on, fn] of [['mouseenter', show], ['focus', show], ['mouseleave', hide], ['blur', hide]] as const) btn.addEventListener(on, fn)
+        this.confirmOnTouch(btn, `Ascend to ${perk.name}?`, () => this.game.ascendTower(tower, i as 0 | 1), show, hide)
         btn.disabled = this.game.shards < ASCEND_SHARD_COST || this.game.gold < ASCEND_GOLD_COST
       })
     }
+    if (!primary.childElementCount) primary.remove()
+
+    // the four things you can do to a standing tower, in one row
+    const actions = el('div', 'tp-actions', p)
     const row = el('div', 'tp-row', actions)
-    if (!tower.isBarracks && !tower.isBeacon) {
-      const oc = el('button', 'btn small overcharge', row, `${icon('lightning')} Overcharge ${icon('gem')}${OVERCHARGE_SHARD_COST}`) as HTMLButtonElement
-      oc.title = `+60% attack speed for ${OVERCHARGE_DURATION}s`
-      oc.id = 'oc-btn'
-      this.lastOcHtml = ''
-      this.confirmOnTouch(oc, `Spend ${OVERCHARGE_SHARD_COST} shards? Tap again`, () => this.game.overchargeTower(tower))
-      oc.disabled = !tower.canOvercharge(this.game)
-    }
     if (tower.isBarracks) {
-      const rally = el('button', 'btn small', row, `${icon('flag')} Rally point`) as HTMLButtonElement
+      const rally = el('button', 'btn small', row, `${icon('flag')}<span>Rally</span>`) as HTMLButtonElement
+      rally.setAttribute('aria-label', 'Rally point')
+      rally.title = 'Rally point: choose where the squad stands'
       rally.onclick = this.menuGuard(() => this.game.setTargetMode('rally'))
     } else if (!tower.isBeacon) {
       // a beacon aims at nothing, so it has no targeting rule to cycle
-      const tgt = el('button', 'btn small', row,
-        `${icon('target')} ${TARGET_POLICY_LABEL[tower.targetPolicy]}`) as HTMLButtonElement
+      const tgt = el('button', 'btn small target', row) as HTMLButtonElement
+      const label = (policy: TargetPolicy) => {
+        tgt.innerHTML = `${icon('target')}<span>${POLICY_SHORT[policy]}</span>`
+        tgt.setAttribute('aria-label', `Targeting: ${TARGET_POLICY_LABEL[policy]}`)
+      }
+      label(tower.targetPolicy)
       tgt.title = 'Which enemy this tower shoots: closest to the gate, furthest from it, the toughest, or the weakest'
       tgt.onclick = this.menuGuard(() => {
         const next = this.game.cycleTargetPolicy(tower)
-        if (next) tgt.innerHTML = `${icon('target')} ${TARGET_POLICY_LABEL[next]}`
+        if (next) label(next)
       })
     }
+    if (!tower.isBarracks && !tower.isBeacon) {
+      const oc = el('button', 'btn small overcharge', row, `${icon('lightning')}${icon('gem')}<span>${OVERCHARGE_SHARD_COST}</span>`) as HTMLButtonElement
+      oc.setAttribute('aria-label', `Overcharge · ${OVERCHARGE_SHARD_COST} shards`)
+      oc.title = `Overcharge: +60% attack speed for ${OVERCHARGE_DURATION}s, for ${OVERCHARGE_SHARD_COST} shards`
+      oc.id = 'oc-btn'
+      this.lastOcHtml = ''
+      this.confirmOnTouch(oc, `Spend ${OVERCHARGE_SHARD_COST} shards?`, () => this.game.overchargeTower(tower), undefined, () => { this.lastOcHtml = '' })
+      oc.disabled = !tower.canOvercharge(this.game)
+    }
+    // the ground under a standing tower can be raised too
+    const raisable = !tower.plot.raised && !tower.plot.water
+    if (raisable) this.raiseOption(row, tower.plot, 'btn small raise')
+    const sell = el('button', 'btn small sell', row, `<span>Sell</span>${icon('coin')}<span>${tower.sellValue}</span>`) as HTMLButtonElement
+    sell.setAttribute('aria-label', `Sell for ${tower.sellValue} gold`)
+    this.confirmOnTouch(sell, `Sell for ${tower.sellValue}?`, () => this.game.sellTower(tower))
+    if (raisable) {
+      const tip = el('div', 'build-tooltip hidden', actions)
+      tip.id = 'build-tip'
+    }
     if (tower.canHoldLine) {
-      // The engine has a second mode, and it needs room to say which one it is
-      // in: a crowded row of four buttons reads as nothing on a phone.
+      // The engine has a second mode, and it needs room to say which one it is in.
       const lineRow = el('div', 'tp-row', actions)
       const held = !!tower.holdLine
       const lay = el('button', `btn small${held ? ' lit' : ''}`, lineRow,
-        `${icon('range')} ${held ? 'Re-lay the line' : 'Hold a line'}`) as HTMLButtonElement
+        `${icon('range')}<span>${held ? 'Re-lay the line' : 'Hold a line'}</span>`) as HTMLButtonElement
       lay.title = 'Lay this engine on a fixed bearing: click the ground, and it fires down that line and nowhere else. Deadly along a straight road, blind to everything off it.'
       lay.onclick = this.menuGuard(() => this.game.setTargetMode('holdline'))
       if (held) {
-        const track = el('button', 'btn small', lineRow, `${icon('target')} Track again`) as HTMLButtonElement
+        const track = el('button', 'btn small', lineRow, `${icon('target')}<span>Track again</span>`) as HTMLButtonElement
         track.title = 'Go back to tracking whatever the targeting rule picks'
         track.onclick = this.menuGuard(() => this.game.clearHoldLine(tower))
       }
     }
-    const sell = el('button', 'btn small sell', row, `Sell ${icon('coin')}${tower.sellValue}`) as HTMLButtonElement
-    this.confirmOnTouch(sell, `Sell for ${tower.sellValue}? Tap again`, () => this.game.sellTower(tower))
-    // the ground under a standing tower can be raised too; a raised one says so
-    if (!tower.plot.raised && !tower.plot.water) {
-      const raise = el('div', 'tp-row', actions)
-      this.raiseOption(raise, tower.plot, 'btn small raise')
-      const tip = el('div', 'build-tooltip hidden', actions)
-      tip.id = 'build-tip'
-    } else if (tower.plot.raised) {
-      el('div', 'tp-traits', p, `${icon('quake')} Standing on raised ground.`)
+
+    // everything else: the road taken, what modifies it, and Mythic progress
+    const details = el('details', 'tp-details tp-mastery', p)
+    el('summary', '', details, 'Details & Mythic progress')
+    const body = el('div', 'tp-details-body', details)
+    if (tower.level >= 2 || tower.perk) {
+      const tree = towerTrees[tower.kind]
+      const steps: string[] = tree.levels.slice(0, Math.min(tower.level, 3)).map(l => l.name)
+      if (tower.level >= 4 && tower.branch !== null) steps.push(`${icon('star')} ${tree.branches[tower.branch].name}`)
+      if (tower.level >= 5 && tower.branch !== null) steps.push(`${icon('sparkle')} ${tree.capstones[tower.branch].name}`)
+      if (tower.level === 6) steps.push(tower.def.name)
+      if (tower.isFused) steps.splice(0, steps.length, `${mythicFor('seraph', 0)!.name} + ${mythicFor('seraph', 1)!.name}`, tower.def.name)
+      if (tower.perk) steps.push(`${icon(tower.perk.icon)} ${tower.perk.name}`)
+      el('div', 'tp-lineage', body, steps.join(' <span class="dim">→</span> '))
     }
+    const traits: string[] = []
+    for (const note of tower.modifierNotes()) traits.push(`${icon(def.aura ? 'quake' : 'flame')} ${note}`)
+    if (def.aura?.reveal) traits.push(`${icon('eye')} Phasing enemies in the light can be shot`)
+    if (def.aura?.bounty) traits.push(`${icon('coin')} Kills in the light pay +${Math.round(def.aura.bounty * 100)}%`)
+    if (def.soldier && def.damage && def.attackInterval) traits.push(`${icon('feather')} Shared axe attack · targets visible flyers within the camp’s range. Grounded foes are fought in melee.`)
+    if (def.beamTargets) traits.push('Independent beams from the idol; full damage to each target')
+    for (const r of REACTIONS) if (tower.has(r.id)) traits.push(`${icon(r.icon)} <b>${r.name}</b> — ${r.description}`)
+    if (tower.perk) traits.push(`${icon(tower.perk.icon)} <b>${tower.perk.name}</b> — ${tower.perk.description}`)
+    if (tower.plot.raised) traits.push(`${icon('quake')} Standing on raised ground.`)
+    if (traits.length) el('div', 'tp-traits', body, traits.join('<br>'))
+    el('div', 'tp-sub', body, 'Mythic progress')
+    el('div', 'tp-mastery-body', body)
+    this.refreshMasteryProgress()
 
     p.classList.remove('hidden')
   }
@@ -1445,12 +1535,12 @@ export class HUD {
     const p = this.towerPanel
     p.innerHTML = ''
     const head = el('div', 'tp-head', p)
-    el('div', 'tp-icon', head, `<img class="tp-portrait" src="art/hero-${hero.heroDef.id}.webp" alt="">`)
+    el('div', 'tp-icon', head, `<img class="tp-portrait" src="art/heroes/${hero.heroDef.id}.webp" alt="">`)
     const title = el('div', 'tp-title', head)
     el('div', 'tp-name', title, hero.heroDef.name)
     el('div', 'tp-level', title, `${hero.heroDef.title} · Level <span class="hp-lvl">${hero.level}</span>/${hero.levelMax}`
       + `<span class="tp-kills" title="Foes slain by the hero, and the health it has taken from them"> · ${icon('skull')} <span class="tp-kill-n">${hero.kills}</span> · ${icon('swords')} <span class="tp-dmg-n">${fmtDamage(hero.damage)}</span></span>`)
-    const close = el('button', 'tp-close', head, '✕') as HTMLButtonElement
+    const close = el('button', 'tp-close', head, icon('close')) as HTMLButtonElement
     close.setAttribute('aria-label', 'Close')
     close.onclick = () => this.game.clearSelection()
 
@@ -1469,13 +1559,13 @@ export class HUD {
         : chip('Guards', `${icon('range')} r ${hero.guardRange}`)))
 
     el('div', 'tp-traits', p,
-      `✦ <b>${hero.abilityName}</b>${hero.signatureRank > 0 ? ` <span class="hero-rank">rank ${hero.signatureRank}</span>` : ''}`
+      `${icon('sparkle')} <b>${hero.abilityName}</b>${hero.signatureRank > 0 ? ` <span class="hero-rank">rank ${hero.signatureRank}</span>` : ''}`
       + ` — ${hero.abilityBlurb} <span class="ability-cd-num"></span>`)
     if (hero.signatureRank >= 6) el('div', 'tp-traits', p, `<b>Legendary signature</b> · ${hero.legendaryBlurb}`)
     if (hero.signatureRank < hero.rankMax) {
       const cost = heroRankCost(hero.signatureRank), gold = heroRankGold(hero.signatureRank), level = heroRankLevel(hero.signatureRank)
       const up = el('button', 'btn upgrade hero-rank-upgrade', p,
-        `<span class="u-name">✦ ${hero.rankTitle}</span>`
+        `<span class="u-name">${icon('sparkle')} ${hero.rankTitle}</span>`
         + `<span class="u-cost">${gold ? `${icon('coin')}${gold.toLocaleString()} · ` : ''}${icon('gem')}${cost}</span>`
         + `<span class="u-desc">${hero.rankDescription}${hero.level < level ? ` <b>Requires hero level ${level}.</b>` : ''}</span>`) as HTMLButtonElement
       up.onclick = this.menuGuard(() => this.game.upgradeHeroSignature())
@@ -1555,7 +1645,7 @@ export class HUD {
     if (enemy.surged) traits.push(`${icon('veil')} Veiltide-empowered`)
     if (d.boss) traits.push(`${icon('crown')} BOSS`)
     this.tipArmorShown = Math.round(enemy.armor * 100)
-    const portrait = BOSS_ART.has(d.id) ? `<img class="et-portrait" src="art/boss-${d.id}.webp" alt="">` : ''
+    const portrait = BOSS_ART.has(d.id) ? `<img class="et-portrait" src="art/bosses/${d.id}.webp" alt="">` : ''
     // an affix renames the thing, because that is what makes it recognisable
     // the next time it appears - and says in one line what to do about it
     const af = enemy.affix
@@ -1608,7 +1698,7 @@ export class HUD {
     const head = el('div', 'dossier-head', card)
     if (BOSS_ART.has(def.id)) {
       const art = el('div', 'dossier-art', head)
-      art.style.backgroundImage = `url(art/boss-${def.id}.webp)`
+      art.style.backgroundImage = `url(art/bosses/${def.id}.webp)`
     }
     const title = el('div', 'dossier-title', head)
     el('h2', '', title, def.name)
@@ -1835,53 +1925,59 @@ export class HUD {
 
 interface StatMults { dmg: number, splash: number, soldierHp: number }
 
-/** stats shown in menus include armory bonuses, matching real combat numbers */
-/**
- * What an upgrade changes, as numbers the player can compare.
- *
- * An upgrade button used to show its flavour text and its price and nothing
- * else: the only way to learn that the Marksman Tower shoots faster was to
- * buy it and read the chips afterwards. Each line here is "now -> after", with
- * the after in green when it is better, so the decision can be made on the
- * numbers rather than on faith.
- */
-/** formatting shared by the chips and the deltas */
+/** one stat an option would change: as it stands, as it would be, and whether that is a gain */
+type Deltas = Record<string, { from: string, to: string, better: boolean }>
+type StatPreview = { tier: number } | { perk: string } | null
+interface StatCell { key: string, ico: string, value: string, lit?: boolean, title?: string }
+
+/** icons for stats that only appear in the strip because an option changes them */
+const STAT_ICONS: Record<string, string> = {
+  Damage: 'sword', Rate: 'hourglass', Range: 'range', DPS: 'swords', Targets: 'target', Blast: 'blast', Air: 'feather',
+  Reach: 'range', Speed: 'hourglass', Reveals: 'eye', Bounty: 'coin',
+  Squad: 'soldiers', Health: 'heart', Armor: 'shield', Swing: 'hourglass', Respawn: 'respawn',
+}
+
+/** the targeting rule on a button a quarter of the panel wide */
+const POLICY_SHORT: Record<TargetPolicy, string> = { first: 'First', last: 'Last', strong: 'Strong', weak: 'Weak' }
+
+/** formatting shared by the strip and the deltas */
 const fmtNum = (n: number, dp = 1) => Number.isInteger(n) ? `${n}` : n.toFixed(dp)
 const fmtSecs = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(2).replace(/0$/, '')}s`
 
-function deltaLines(tower: Tower, to: TowerLevelDef, m: StatMults): string {
+/**
+ * What a tier upgrade changes, keyed by the strip's own labels. Both sides
+ * carry every bonus this plot grants, so a lit tower's upgrade is compared
+ * lit-to-lit rather than against a number it never dealt.
+ */
+function upgradeDeltas(tower: Tower, to: TowerLevelDef, m: StatMults): Deltas {
   const from = tower.def
-  const rows: string[] = []
-  const up = (label: string, a: string, b: string, better: boolean) =>
-    rows.push(`<span class="d-row"><span class="d-label">${label}</span>${a} <span class="d-arrow">\u2192</span> <span class="${better ? 'd-up' : 'd-same'}">${b}</span></span>`)
-  const fmt = (n: number, dp = 1) => Number.isInteger(n) ? `${n}` : n.toFixed(dp)
+  const out: Deltas = {}
+  const put = (key: string, a: string, b: string, better: boolean) => { out[key] = { from: a, to: b, better } }
 
   if (to.aura && from.aura) {
     const a = from.aura, b = to.aura
     const pct = (n: number) => `+${Math.round(n * 100)}%`
-    up('Reach', fmt(tower.rangeFor(from)), fmt(tower.rangeFor(to)), to.range > from.range)
-    up('Damage', pct(a.damage), pct(b.damage), b.damage > a.damage)
-    if (a.range !== b.range) up('Range', pct(a.range), pct(b.range), b.range > a.range)
-    if (a.rate !== b.rate) up('Speed', pct(a.rate), pct(b.rate), b.rate > a.rate)
-    if (!!a.reveal !== !!b.reveal) up('Reveals', a.reveal ? 'yes' : 'no', b.reveal ? 'yes' : 'no', !!b.reveal)
-    if ((a.bounty ?? 0) !== (b.bounty ?? 0)) up('Bounty', pct(a.bounty ?? 0), pct(b.bounty ?? 0), (b.bounty ?? 0) > (a.bounty ?? 0))
-    return rows.join('')
+    put('Reach', fmtNum(tower.rangeFor(from)), fmtNum(tower.rangeFor(to)), to.range > from.range)
+    put('Damage', pct(a.damage), pct(b.damage), b.damage > a.damage)
+    put('Range', pct(a.range), pct(b.range), b.range > a.range)
+    put('Speed', pct(a.rate), pct(b.rate), b.rate > a.rate)
+    if (!!a.reveal !== !!b.reveal) put('Reveals', a.reveal ? 'Yes' : 'No', b.reveal ? 'Yes' : 'No', !!b.reveal)
+    if ((a.bounty ?? 0) !== (b.bounty ?? 0)) put('Bounty', pct(a.bounty ?? 0), pct(b.bounty ?? 0), (b.bounty ?? 0) > (a.bounty ?? 0))
+    return out
   }
   if (to.soldier && from.soldier) {
     const a = from.soldier, b = to.soldier
     const ahp = Math.round(a.hp * m.soldierHp), bhp = Math.round(b.hp * m.soldierHp)
     const acount = from.soldierCount ?? 3, bcount = to.soldierCount ?? 3
-    if (acount !== bcount) up('Squad', `${acount}`, `${bcount}`, bcount > acount)
-    up('Health', `${ahp}`, `${bhp}`, bhp > ahp)
-    up('Damage', `${a.damage[0]}\u2013${a.damage[1]}`, `${b.damage[0]}\u2013${b.damage[1]}`, (b.damage[0] + b.damage[1]) > (a.damage[0] + a.damage[1]))
-    if (a.armor !== b.armor) up('Armor', `${Math.round(a.armor * 100)}%`, `${Math.round(b.armor * 100)}%`, b.armor > a.armor)
-    if (a.attackInterval !== b.attackInterval) up('Swing', `${a.attackInterval}s`, `${b.attackInterval}s`, b.attackInterval < a.attackInterval)
-    if ((from.respawnTime ?? 10) !== (to.respawnTime ?? 10)) up('Respawn', `${from.respawnTime}s`, `${to.respawnTime}s`, (to.respawnTime ?? 10) < (from.respawnTime ?? 10))
-    return rows.join('')
+    put('Squad', `${acount}`, `${bcount}`, bcount > acount)
+    put('Health', `${ahp}`, `${bhp}`, bhp > ahp)
+    put('Damage', `${a.damage[0]}–${a.damage[1]}`, `${b.damage[0]}–${b.damage[1]}`, (b.damage[0] + b.damage[1]) > (a.damage[0] + a.damage[1]))
+    put('Armor', `${Math.round(a.armor * 100)}%`, `${Math.round(b.armor * 100)}%`, b.armor > a.armor)
+    if (a.attackInterval !== b.attackInterval) put('Swing', fmtSecs(a.attackInterval), fmtSecs(b.attackInterval), b.attackInterval < a.attackInterval)
+    put('Respawn', `${from.respawnTime ?? 10}s`, `${to.respawnTime ?? 10}s`, (to.respawnTime ?? 10) < (from.respawnTime ?? 10))
+    return out
   }
   if (to.damage && to.attackInterval) {
-    // both sides carry every bonus this plot grants, so a lit tower's upgrade
-    // is compared lit-to-lit rather than against a number it never dealt
     const fe = tower.effectiveDamage(from) ?? [0, 0]
     const te = tower.effectiveDamage(to)!
     const fi = tower.effectiveInterval(from) ?? tower.effectiveInterval(to)!
@@ -1889,60 +1985,48 @@ function deltaLines(tower: Tower, to: TowerLevelDef, m: StatMults): string {
     const alo = Math.round(fe[0] * m.dmg), ahi = Math.round(fe[1] * m.dmg)
     const blo = Math.round(te[0] * m.dmg), bhi = Math.round(te[1] * m.dmg)
     const adps = (alo + ahi) / 2 / fi, bdps = (blo + bhi) / 2 / ti
-    up('Damage', `${alo}\u2013${ahi}`, `${blo}\u2013${bhi}`, (blo + bhi) > (alo + ahi))
-    up('Rate', fmtSecs(fi), fmtSecs(ti), ti < fi)
-    up(to.beamTargets ? 'DPS / target' : 'DPS', fmt(adps), fmt(bdps), bdps > adps)
-    if (to.beamTargets) up('Targets', `${from.beamTargets ?? 1}`, `${to.beamTargets}`, to.beamTargets > (from.beamTargets ?? 1))
+    put('Damage', `${alo}–${ahi}`, `${blo}–${bhi}`, (blo + bhi) > (alo + ahi))
+    put('Rate', fmtSecs(fi), fmtSecs(ti), ti < fi)
+    put('DPS', adps.toFixed(1), bdps.toFixed(1), bdps > adps)
+    if (to.beamTargets) put('Targets', `${from.beamTargets ?? 1}`, `${to.beamTargets}`, to.beamTargets > (from.beamTargets ?? 1))
   }
   const ar = tower.rangeFor(from), br = tower.rangeFor(to)
-  if (Math.abs(ar - br) > 1e-6) up('Range', fmt(ar), fmt(br), br > ar)
+  put('Range', fmtNum(ar), fmtNum(br), br > ar)
   if ((to.splash ?? 0) !== (from.splash ?? 0)) {
-    up('Blast', fmt((from.splash ?? 0) * m.splash, 2), fmt((to.splash ?? 0) * m.splash, 2), (to.splash ?? 0) > (from.splash ?? 0))
+    put('Blast', fmtNum((from.splash ?? 0) * m.splash, 2), fmtNum((to.splash ?? 0) * m.splash, 2), (to.splash ?? 0) > (from.splash ?? 0))
   }
-  if (!!to.flying !== !!from.flying) up('Air', from.flying ? 'yes' : 'no', to.flying ? 'yes' : 'no', !!to.flying)
-  return rows.join('')
+  if (!!to.flying !== !!from.flying) put('Air', from.flying ? 'Yes' : 'No', to.flying ? 'Yes' : 'No', !!to.flying)
+  return out
 }
 
 /**
- * The same comparison for an ascension perk.
- *
- * A perk is a modifier on the tower as it stands, so "after" is the current
- * tier with the perk applied. The whole stat block is shown, not only the line
- * the perk touches: a player weighing Serrated Arrows against Hawkeye wants to
- * see both towers side by side, and a single "+0.8 range" line does not let
- * them. Changed values are highlighted; unchanged ones are shown as they are.
+ * The same comparison for an ascension perk: the tower as it stands, with the
+ * perk applied. The two perks that change a rule rather than a number say so
+ * in their own description.
  */
-function perkDeltaLines(tower: Tower, perkId: string, m: StatMults): string {
+function perkDeltas(tower: Tower, perkId: string, m: StatMults): Deltas {
   const def = tower.def
-  const rows: string[] = []
-  const row = (label: string, a: string, b: string) =>
-    rows.push(`<span class="d-row"><span class="d-label">${label}</span>${a} <span class="d-arrow">\u2192</span> <span class="${a === b ? 'd-same' : 'd-up'}">${b}</span></span>`)
-  const fmt = (n: number, dp = 1) => Number.isInteger(n) ? `${n}` : n.toFixed(dp)
+  const out: Deltas = {}
+  const put = (key: string, a: string, b: string) => { out[key] = { from: a, to: b, better: true } }
   const pct = (n: number) => `+${Math.round(n * 100)}%`
 
   if (def.aura) {
-    const a = def.aura
     const reach = tower.auraReach
-    row('Reach', fmt(reach), fmt(reach + (perkId === 'farsight' ? 0.6 * (tower.onHighGround ? 1 + RAMPART_RANGE_BONUS : 1) : 0)))
-    row('Damage', pct(a.damage), pct(a.damage + (perkId === 'zeal' ? 0.08 : 0)))
-    if (a.range) row('Range', pct(a.range), pct(a.range))
-    if (a.rate) row('Speed', pct(a.rate), pct(a.rate))
-    return rows.join('')
+    put('Reach', reach.toFixed(1), (reach + (perkId === 'farsight' ? 0.6 * (tower.onHighGround ? 1 + RAMPART_RANGE_BONUS : 1) : 0)).toFixed(1))
+    const dmg = def.aura.damage + (tower.perk?.id === 'zeal' ? 0.08 : 0)
+    put('Damage', pct(dmg), pct(dmg + (perkId === 'zeal' ? 0.08 : 0)))
+    return out
   }
-
   if (def.soldier) {
-    const sd = def.soldier
+    const sd = def.soldier, mult = tower.soldierDamageMult
     const hp = Math.round(sd.hp * m.soldierHp)
     const hpMult = perkId === 'vanguard' ? 1.25 : 1
     const dmgMult = perkId === 'whetstone' ? 1.25 : 1
-    row('Squad', `${def.soldierCount ?? 3}`, `${def.soldierCount ?? 3}`)
-    row('Health', `${hp}`, `${Math.round(hp * hpMult)}`)
-    row('Damage', `${sd.damage[0]}\u2013${sd.damage[1]}`, `${Math.round(sd.damage[0] * dmgMult)}\u2013${Math.round(sd.damage[1] * dmgMult)}`)
-    row('Armor', `${Math.round(sd.armor * 100)}%`, `${Math.round(sd.armor * 100)}%`)
-    // the Warcamp also throws; its own numbers ride below the soldiers'
-    if (!def.damage || !def.attackInterval) return rows.join('')
+    const lo = Math.round(sd.damage[0] * mult), hi = Math.round(sd.damage[1] * mult)
+    put('Health', `${hp}`, `${Math.round(hp * hpMult)}`)
+    put('Damage', `${lo}–${hi}`, `${Math.round(lo * dmgMult)}–${Math.round(hi * dmgMult)}`)
+    return out
   }
-
   if (def.damage && def.attackInterval) {
     const [lo, hi] = tower.effectiveDamage()!.map(v => Math.round(v * m.dmg)) as [number, number]
     const dmgMult = perkId === 'serrated' || perkId === 'heavybolts' ? 1.2 : 1
@@ -1953,45 +2037,37 @@ function perkDeltaLines(tower: Tower, perkId: string, m: StatMults): string {
     const ai = tower.effectiveInterval()!, bi = ai * intMult
     const adps = (lo + hi) / 2 / ai
     const bdps = (blo + bhi) / 2 / bi * echo
-    row('Damage', `${lo}\u2013${hi}`, `${blo}\u2013${bhi}`)
-    row('Rate', fmtSecs(ai), fmtSecs(bi))
-    row('Range', fmt(tower.range), fmt(tower.range + rangeAdd))
-    row('DPS', fmt(adps), echo > 1 ? `${fmt(bdps)} avg` : fmt(bdps))
-    if (def.splash) {
+    put('Damage', `${lo}–${hi}`, `${blo}–${bhi}`)
+    put('Rate', fmtSecs(ai), fmtSecs(bi))
+    put('Range', fmtNum(tower.range), fmtNum(tower.range + rangeAdd))
+    put('DPS', adps.toFixed(1), echo > 1 ? `${bdps.toFixed(1)} avg` : bdps.toFixed(1))
+    if (def.splash && !tower.isSeraph) {
       const sp = def.splash * m.splash
-      row('Blast', fmt(sp, 2), fmt(sp * (perkId === 'napalm' ? 1.3 : 1), 2))
+      put('Blast', fmtNum(sp, 2), fmtNum(sp * (perkId === 'napalm' ? 1.3 : 1), 2))
     }
   }
-  // the two perks that change a rule rather than a number
-  if (perkId === 'tremor') row('Stun', 'none', '30% for 0.5s')
-  if (perkId === 'deepveil') row('Magic resist', 'full', 'half')
-  return rows.join('')
+  return out
 }
 
-/** an aura in the player's words: what it adds, and to what */
-function auraLine(a: TowerAura, reach: number): string {
-  const parts = [`${icon('range')} lights ${reach.toFixed(1)}`]
-  if (a.damage) parts.push(`${icon('sword')} +${Math.round(a.damage * 100)}% damage`)
-  if (a.range) parts.push(`${icon('range')} +${Math.round(a.range * 100)}% range`)
-  if (a.rate) parts.push(`${icon('hourglass')} +${Math.round(a.rate * 100)}% attack speed`)
-  if (a.reveal) parts.push(`${icon('eye')} reveals phasing`)
-  if (a.bounty) parts.push(`${icon('coin')} +${Math.round(a.bounty * 100)}% bounty`)
-  return parts.join(' \u00b7 ')
-}
-
-function statLine(def: TowerLevelDef, m: StatMults): string {
-  if (def.aura) return auraLine(def.aura, def.range) + ' \u00b7 does not attack'
+/** a tower's numbers at a glance, for the build tooltip: figures and a couple of tags */
+function keyStats(def: TowerLevelDef, m: StatMults): string {
+  const stat = (ico: string, v: string, label: string) => `<span class="tip-stat" title="${label}">${icon(ico)}${v}</span>`
+  const tag = (t: string) => `<span class="tip-tag">${t}</span>`
+  if (def.aura) {
+    const a = def.aura, pct = (n: number) => `+${Math.round(n * 100)}%`
+    return [stat('range', fmtNum(def.range), 'Reach'),
+      a.damage ? tag(`${pct(a.damage)} damage`) : '', a.range ? tag(`${pct(a.range)} range`) : '', a.rate ? tag(`${pct(a.rate)} speed`) : '',
+      a.reveal ? tag('Reveals phasing') : '', a.bounty ? tag(`${pct(a.bounty)} bounty`) : '', tag('Does not attack')].join('')
+  }
   if (def.soldier) {
     const s = def.soldier
-    const hp = Math.round(s.hp * m.soldierHp)
-    return `${icon('soldiers')} ${def.soldierCount ?? 3}× ${s.name} · ${icon('heart')} ${hp} · ${icon('sword')} ${s.damage[0]}–${s.damage[1]}` +
-      `${s.armor ? ` · ${icon('shield')} ${Math.round(s.armor * 100)}%` : ''} · ${icon('respawn')} ${def.respawnTime}s respawn`
+    return stat('soldiers', `${def.soldierCount ?? 3}×`, 'Squad') + stat('heart', `${Math.round(s.hp * m.soldierHp)}`, 'Health')
+      + stat('sword', `${s.damage[0]}–${s.damage[1]}`, 'Damage') + stat('respawn', `${def.respawnTime}s`, 'Respawn')
   }
   const lo = Math.round(def.damage![0] * m.dmg), hi = Math.round(def.damage![1] * m.dmg)
-  const dps = ((lo + hi) / 2 / def.attackInterval!).toFixed(1)
-  const type = def.damageType === 'magic' ? `${icon('sparkle')} magic` : def.splash ? `${icon('blast')} splash` : `${icon('sword')} physical`
-  const splash = def.splash ? Math.round(def.splash * m.splash * 100) / 100 : 0
-  return `${icon('swords')} ${lo}–${hi} (${type}) · ${icon('hourglass')} ${def.attackInterval}s · ${icon('range')} ${def.range} · DPS${def.beamTargets ? '/target' : ''} ${dps}` +
-    (def.beamTargets ? ` · ${def.beamTargets} independent beams at full damage` : '') +
-    (splash ? ` · ${icon('blast')} r${splash}` : '') + (def.flying ? ` · ${icon('feather')} hits flyers` : ' · no flyers')
+  return stat('swords', `${lo}–${hi}`, 'Damage') + stat('hourglass', fmtSecs(def.attackInterval!), 'Seconds between attacks') + stat('range', fmtNum(def.range), 'Range')
+    + (def.damageType === 'magic' ? tag('Magic') : '')
+    + (def.splash ? tag(`Splash r${Math.round(def.splash * m.splash * 100) / 100}`) : '')
+    + (def.beamTargets ? tag(`${def.beamTargets} beams`) : '')
+    + tag(def.flying ? 'Hits flyers' : 'Ground only')
 }

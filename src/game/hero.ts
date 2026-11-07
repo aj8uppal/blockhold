@@ -402,7 +402,7 @@ export class Hero extends Soldier {
         this.plantSignatureField('bulwark', world, 2.2 * this.signatureReach)
         this.updateSignatureField(world)
       }
-      world.particles.explosion(pos.x, 0.15, pos.z, 0.55)
+      { const gy = world.groundY(pos.x, pos.z); world.particles.explosion(pos.x, gy + 0.15, pos.z, 0.55, { ground: gy }) }
       world.floater(pos.x, 0.9, pos.z, `${this.abilityName}!`, 'gold')
       world.sfx('crit', 1)
       world.shake(0.09)
@@ -450,7 +450,7 @@ export class Hero extends Soldier {
       }
     }
     world.particles.magicImpact(pos.x, 0.4, pos.z, 0x9fe8ff)
-    world.particles.explosion(pos.x, 0.2, pos.z, 0.5)
+    { const gy = world.groundY(pos.x, pos.z); world.particles.explosion(pos.x, gy + 0.2, pos.z, 0.5, { ground: gy }) }
     world.floater(pos.x, 0.9, pos.z, 'Static Nova!', 'gold')
     world.sfx('lightning', 1)
     world.impact('heavy')

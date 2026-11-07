@@ -1,0 +1,11 @@
+Blockhold self-hosts two typefaces, both under the SIL Open Font License 1.1
+(https://openfontlicense.org). Latin subsets via Fontsource.
+
+Bungee — Copyright 2023 The Bungee Project Authors (https://github.com/djrrb/Bungee)
+Schibsted Grotesk — Copyright 2022 The Schibsted Grotesk Project Authors
+  (https://github.com/schibsted/schibsted-grotesk)
+
+The full license text is reproduced at https://openfontlicense.org/open-font-license-official-text/
+and applies to both fonts. The fonts may be bundled, embedded and redistributed
+with software provided they are not sold by themselves, and the Reserved Font
+Names are not used for modified versions.

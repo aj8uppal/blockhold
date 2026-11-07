@@ -2,7 +2,6 @@ import { CRIMSON_SOVEREIGN } from '../game/seraphFusion.ts'
 import type { Game } from '../game/game.ts'
 import type { Tower } from '../game/towers.ts'
 import { bindDialog } from './dialog.ts'
-import './seraphFusion.css'
 
 /** Explicitly choose the plot that disappears. Battle commands are still
  * checked when the room executes them, since a teammate may act first. */

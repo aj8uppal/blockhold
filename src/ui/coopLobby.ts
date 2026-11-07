@@ -67,7 +67,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
   const cleanup = () => { disposed = true; sceneVersion++; sceneCleanup?.(); onlineCleanup() }
   const wrap = el('div', 'screen menu-screen gathering-screen', api.root)
   const card = el('div', 'menu-hero coop-card', wrap)
-  el('h2', 'coop-title', card, `${icon('helmPlume')} Co-op`)
+  el('h2', 'coop-title', card, `${icon('users')} Co-op`)
   const session = coopSession
   preview(session?.setup?.hold ?? holdSnapshot(save))
 
@@ -130,7 +130,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
     join.onclick = doJoin
     input.onkeydown = ev => { if (ev.key === 'Enter') void doJoin() }
     if (prefill && prefill.length === 5) void doJoin()
-    const back = el('button', 'btn ghost', card, '← Menu') as HTMLButtonElement
+    const back = el('button', 'btn ghost', card, `${icon('arrowLeft')} Menu`) as HTMLButtonElement
     back.onclick = () => api.show('menu')
     return cleanup
   }

@@ -79,7 +79,8 @@ test('Seraph beams render and the panel shows target growth with upgrades', asyn
   expect(hitCount).toBe(3)
   const panel = page.locator('.tower-panel')
   await expect(panel).toContainText('Targets3')
-  await expect(panel.locator('.u-delta')).toContainText('Targets3 → 4')
+  // the one way up is previewed in the stat strip: the Targets cell shows what it becomes
+  await expect(panel.locator('.chip', { hasText: 'Targets' }).locator('.chip-next .on')).toHaveText('→ 4')
   await page.screenshot({ path: 'tests/smoke/output/seraph-beams.png' })
   expect(consoleErrors).toEqual([])
 })

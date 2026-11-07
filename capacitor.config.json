@@ -1,0 +1,13 @@
+{
+  "appId": "com.aj8uppal.blockhold",
+  "appName": "Blockhold",
+  "webDir": "dist",
+  "backgroundColor": "#17130f",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false,
+    "allowsLinkPreview": false,
+    "backgroundColor": "#17130f",
+    "preferredContentMode": "mobile"
+  }
+}

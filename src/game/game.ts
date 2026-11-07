@@ -23,7 +23,7 @@ import { tallestLandmark } from '../voxel/models_env.ts'
 import { reactionFor, REACTION_RADIUS, HOLD_LINE_HALF_WIDTH, type TargetPolicy } from './towers.ts'
 import { buildPaths, LanePath } from './path.ts'
 import { disposeClonedMaterials, buildModel } from '../voxel/builder.ts'
-import { holdModel, holdPieces, holdCacheKey, holdSummary } from './hold.ts'
+import { holdPieces, holdCacheKey, holdSummary } from './hold.ts'
 import { isNotable, counterFor } from './dossier.ts'
 import { AFFIX_IDS } from './affixes.ts'
 import { difficultyMods, endlessScale, freeplayScale } from './difficulty.ts'
@@ -57,6 +57,7 @@ import { ReplayLog } from './replay.ts'
 import { parseBattleCommand, writeSession, clearSession, parseSession, SESSION_MAX_COMMANDS, SESSION_MAX_TICKS, type BattleSession } from './session.ts'
 import { canRecordTape } from '../core/captureSupport.ts'
 import { attachDebris, shatter, updateDebris, clearDebris, type DeathFlavor } from './debris.ts'
+import { setFxQuality } from './effects/fxShaders.ts'
 
 /** the kill sound and puff colour, by what did the killing */
 const DEATH_SFX: Partial<Record<DeathFlavor, SfxName>> = { magic: 'dieMagic', fire: 'dieFire', shock: 'dieShock' }
@@ -64,6 +65,25 @@ const DEATH_PUFF: Partial<Record<DeathFlavor, number>> = { magic: 0x9a7cff, fire
 import { telemetry } from '../core/telemetry.ts'
 import type { DailyResult } from './share.ts'
 
+
+/**
+ * The light the Hold is shown in behind the menu: late afternoon, the sun low
+ * off to the right so the keep's front catches it and its shadows run long
+ * across the meadow, over a sea of cloud that fades into a warm horizon.
+ */
+const MENU_THEME = {
+  ...THEMES.forest,
+  skyTop: 0x5b8fd0, skyBottom: 0xaac3e8, fog: 0xf4dcc0,
+  sunColor: 0xffd9a8, sunIntensity: 3.1, hemiSky: 0xcfe0ff, hemiGround: 0xc9cfe6, ambient: 0.3,
+  sunPos: [13, 10, 11] as [number, number, number],
+  sky: {
+    horizon: 0xffd7aa,
+    cloudSea: { color: 0xfff4e6, shade: 0x9fb0d8, strength: 1, scale: 0.85 },
+    body: { kind: 'sun' as const, dir: [1, 0.05, 0.12] as [number, number, number], size: 0.02, color: 0xfff1d6, accent: 0xffb36a, glow: 0.55 },
+  },
+}
+/** how big the island and its keep stand behind the menu */
+const MENU_SCALE = 2.4
 export type GamePhase = 'idle' | 'playing' | 'victory' | 'defeat'
 /** a selection ring sits just above a road spot, which on a raised road is not the floor */
 const ringLift = (y: number): number => y > 0.1 ? y + 0.08 : 0.1
@@ -966,6 +986,9 @@ export class Game implements World {
     try {
       // centre the keep for its portrait; the menu framing deliberately pushes
       // it off to one side so the card can sit over the empty half
+      this.engine.camera.clearViewOffset()
+      this.engine.camera.zoom = 1
+      this.engine.camera.updateProjectionMatrix()
       this.engine.camTarget.set(0, 0.6, 0)
       this.engine.camTargetGoal.copy(this.engine.camTarget)
       this.engine.yaw = this.engine.yawGoal = startYaw + 0.25
@@ -981,6 +1004,7 @@ export class Game implements World {
       this.engine.camTargetGoal.copy(startTarget)
       this.engine.yaw = this.engine.yawGoal = startYaw
       this.engine.dist = this.engine.distGoal = startDist
+      this.frameMenuBackdrop()
       this.hud.setChrome(wasChrome)
     }
   }
@@ -1562,33 +1586,104 @@ export class Game implements World {
     this.level = level
     this.engine.scene.add(this.particles.group)
     attachDebris(this.engine.scene)
-    // always the meadow light: the Hold is the thing being shown, and the
-    // late-campaign void theme lit it too darkly to read behind the menu
-    this.engine.applyTheme(THEMES.forest, 16, 12)
+    this.engine.applyTheme(MENU_THEME, 16, 12)
+    // the island is in shot from the side, so the fog that hides a board's
+    // far rows would only wash out its underside
+    this.engine.scene.fog = new THREE.Fog(MENU_THEME.fog, 60, 160)
 
     const pieces = holdPieces(this.save)
-    this.holdGroup = buildModel(holdModel(pieces), holdCacheKey(pieces), { receiveShadow: true })
-    this.holdGroup.scale.setScalar(3.2)
-    this.engine.scene.add(this.holdGroup)
+    const group = new THREE.Group()
+    group.scale.setScalar(MENU_SCALE)
+    this.holdGroup = group
+    this.engine.scene.add(group)
     this.engine.resetView(16, 12)
-    // frame the keep itself, not the empty sky around it
-    // the menu card sits centred, so the keep is framed off to one side and
-    // low, where it can actually be seen rather than hidden behind the panel
-    this.engine.distGoal = this.engine.dist = 15
-    this.engine.camTargetGoal.set(3.4, 0, -2.2)
-    this.engine.camTarget.copy(this.engine.camTargetGoal)
-    this.engine.pitchGoal = this.engine.pitch = 0.46
-    this.engine.yawGoal = this.engine.yaw = -0.6
+    // the island and keep are scenery, fetched beside the menu rather than in
+    // the first download; the sky is already up while they arrive
+    void Promise.all([import('./holdIsland.ts'), import('./holdKeep.ts')]).then(([{ holdIslandModel }, { holdModel }]) => {
+      if (this.holdGroup !== group) return
+      group.add(buildModel(holdIslandModel(), 'hold:island', { receiveShadow: true }))
+      group.add(buildModel(holdModel(pieces), holdCacheKey(pieces), { receiveShadow: true }))
+      this.frameMenuBackdrop()
+    }, () => { /* offline before the chunk was cached: the sky stands alone */ })
+  }
+
+  /**
+   * Frame the island in the open part of the screen.
+   *
+   * The menu banner hangs over part of the screen - the left on a wide one,
+   * most of it on a phone held upright - so the island is fitted into the
+   * largest clear area beside or below it, at a low angle that shows the
+   * horizon above and the island's underside below. With nowhere clear
+   * enough, it sits centred behind the banner as scenery.
+   */
+  frameMenuBackdrop(): void {
+    const e = this.engine, w = window.innerWidth, h = window.innerHeight
+    const group = this.holdGroup
+    if (!group) return
+    e.camera.clearViewOffset()
+    e.yawGoal = e.yaw = -0.62
+    e.pitchGoal = e.pitch = 0.27
+    const center = new THREE.Vector3(0, -0.9, 0)
+    e.camTargetGoal.copy(center)
+    e.camTarget.copy(center)
+
+    const banner = document.querySelector('.home-banner')?.getBoundingClientRect()
+    let area = { x: 0, y: 0, w, h }
+    if (banner && banner.width > 0) {
+      const right = { x: banner.right, y: 0, w: w - banner.right, h }
+      const below = { x: 0, y: banner.bottom, w, h: h - banner.bottom }
+      const best = right.w * right.h >= below.w * below.h ? right : below
+      if (Math.min(best.w, best.h) >= 130) area = best
+    }
+    const pad = Math.min(area.w, area.h) * 0.08
+    area = { x: area.x + pad, y: area.y + pad, w: area.w - pad * 2, h: area.h - pad * 2 }
+
+    group.updateMatrixWorld(true)
+    const b = new THREE.Box3().setFromObject(group)
+    if (b.isEmpty()) return
+    const corners: THREE.Vector3[] = []
+    for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) corners.push(new THREE.Vector3(x, y, z))
+    // back the camera off until the island fits; on a screen too small for
+    // that within the sky, the lens widens instead
+    const measure = () => {
+      e.camera.updateProjectionMatrix()
+      e.updateCamera(0)
+      e.camera.updateMatrixWorld(true)
+      const pts = corners.map(p => p.clone().project(e.camera))
+      return {
+        left: Math.min(...pts.map(p => (p.x + 1) * w / 2)), right: Math.max(...pts.map(p => (p.x + 1) * w / 2)),
+        top: Math.min(...pts.map(p => (1 - p.y) * h / 2)), bottom: Math.max(...pts.map(p => (1 - p.y) * h / 2)),
+      }
+    }
+    e.camera.zoom = 1
+    let bounds = measure()
+    for (let dist = 14; dist <= 56; dist *= 1.04) {
+      e.distGoal = e.dist = dist
+      bounds = measure()
+      if (bounds.right - bounds.left < area.w && bounds.bottom - bounds.top < area.h) break
+    }
+    e.camera.zoom = Math.min(1, area.w / (bounds.right - bounds.left), area.h / (bounds.bottom - bounds.top))
+    bounds = measure()
+    e.camera.setViewOffset(w, h,
+      (bounds.left + bounds.right) / 2 - (area.x + area.w / 2),
+      (bounds.top + bounds.bottom) / 2 - (area.y + area.h / 2), w, h)
   }
 
   /** Hide the menu diorama while a disposable cosmetic preview owns the camera. */
   hideMenuBackdrop(): () => void {
     const group = this.holdGroup
     if (group) group.visible = false
-    return () => { if (group?.parent) group.visible = true }
+    return () => {
+      if (!group?.parent) return
+      group.visible = true
+      this.engine.applyTheme(MENU_THEME, 16, 12)
+      this.engine.scene.fog = new THREE.Fog(MENU_THEME.fog, 60, 160)
+      this.frameMenuBackdrop()
+    }
   }
 
   private holdGroup: THREE.Group | null = null
+  private menuTime = 0
 
   /** dev-only: pose a diorama in an empty scene, for capturing art */
   showDiorama(spec: {
@@ -2085,6 +2180,9 @@ export class Game implements World {
       this.engine.scene.remove(this.holdGroup)
       disposeClonedMaterials(this.holdGroup)
       this.holdGroup = null
+      this.engine.camera.clearViewOffset()
+      this.engine.camera.zoom = 1
+      this.engine.camera.updateProjectionMatrix()
     }
     clearDebris()
     this.simAccumulator = 0
@@ -3689,6 +3787,7 @@ export class Game implements World {
     if (this.recovering) return
     this.autoPlantLegacyStandards()
     this.particles.normal.density = this.particles.add.density = this.engine.qualityTier >= 2 ? 0.3 : 1
+    setFxQuality(this.engine.qualityTier)
     if (this.canSaveSession) {
       this.sessionSaveT += dtRaw
       if (this.sessionSaveT >= 5) { this.sessionSaveT = 0; this.saveSession() }
@@ -3770,6 +3869,12 @@ export class Game implements World {
       if (this.phase === 'idle' && this.terrain) {
         this.engine.yawGoal += dtRaw * 0.045
         if (this.level) this.ambientWeather(Math.min(dtRaw, 0.05))
+      }
+      // the Hold's island rides the air a little
+      if (this.phase === 'idle' && this.holdGroup && !this.engine.reducedMotion) {
+        this.menuTime += Math.min(dtRaw, 0.05)
+        this.holdGroup.position.y = Math.sin(this.menuTime * 0.55) * 0.12
+        this.holdGroup.rotation.y = Math.sin(this.menuTime * 0.21) * 0.025
       }
       this.particles.update(Math.min(dtRaw, 0.05))
     }

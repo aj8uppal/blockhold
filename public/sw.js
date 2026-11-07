@@ -1,7 +1,7 @@
 /* Blockhold service worker.
    Navigations are NETWORK-FIRST (with cached fallback) so new deployments are
    picked up immediately; hashed immutable assets are cache-first. */
-const CACHE = 'blockhold-v3'
+const CACHE = 'blockhold-v4'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

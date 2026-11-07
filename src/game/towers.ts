@@ -1595,7 +1595,13 @@ export class Tower {
           })
         }
         world.sfx('cannon', 0.85)
-        world.particles.explosion(release.x, release.y, release.z, 0.35)
+        // the report rides the barrel's own bearing, not the shell's arc
+        const flash = this.level >= 5 ? 0.85 : this.level >= 4 ? 0.75 : 0.62
+        world.particles.muzzleFlash(release.x, release.y, release.z, at.x - release.x, at.z - release.z, flash)
+        if (def.signature === 'twinShells') {
+          const second = this.visualMuzzle(1)
+          world.particles.muzzleFlash(second.x, second.y, second.z, at.x - second.x, at.z - second.z, flash)
+        }
         break
       }
     }

@@ -1,0 +1,176 @@
+/*
+ * Sheets: every dialog is a bone slab laid over an ink scrim. One shape, one
+ * header treatment, one footer — so the armory, the field guide and the
+ * battle setup feel like pages of the same book.
+ */
+.help-overlay, .fusion-overlay {
+  position: fixed; inset: 0; z-index: 40;
+  display: grid; place-items: center;
+  padding: calc(var(--safe-t) + 16px) calc(var(--safe-r) + 16px) calc(var(--safe-b) + 16px) calc(var(--safe-l) + 16px);
+  background: rgba(15, 12, 9, .62);
+  overflow-y: auto; overscroll-behavior: contain;
+  animation: fade-in .15s ease-out;
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+
+.help-card, .fusion-card {
+  position: relative;
+  display: flex; flex-direction: column; gap: 12px;
+  width: min(680px, 100%);
+  max-height: calc(100dvh - 32px - var(--safe-t) - var(--safe-b));
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: 24px 26px 24px;
+  background: var(--bone-100);
+  box-shadow: inset 0 -6px 0 var(--bone-400), var(--hi);
+  clip-path: var(--notch-l);
+  animation: sheet-in .22s var(--ease-out);
+}
+.help-card > h2, .help-card header h2, .fusion-card h2 {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-display); font-weight: 400; font-size: 24px; line-height: 1.05; letter-spacing: .01em;
+}
+.help-card > h2 .ico { font-size: 24px; color: var(--gold-600); }
+.help-card > .btn.primary:last-child, .help-card > .btn:last-child { align-self: flex-end; min-width: 140px; }
+.help-card > p { color: var(--ink-600); }
+
+/* ---------- how to play ---------- */
+.help-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.help-grid > div {
+  padding: 11px 13px 12px;
+  font-size: 13px; line-height: 1.5; color: var(--ink-600);
+  background: var(--bone-50); box-shadow: var(--edge);
+  clip-path: var(--notch-s);
+}
+.help-grid b { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; font-size: 14px; color: var(--ink-900); }
+.help-grid b .ico { font-size: 16px; color: var(--ink-700); }
+.gold-star { color: var(--gold-500); }
+
+/* ---------- install guide ---------- */
+.install-intro { color: var(--ink-600); }
+.install-steps { display: grid; gap: 6px; }
+.install-step { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--bone-50); box-shadow: var(--edge); clip-path: var(--notch-s); }
+.is-num { display: grid; place-items: center; width: 28px; height: 28px; font-family: var(--font-display); color: var(--gold-ink); background: var(--gold-500); clip-path: var(--notch-s); }
+.is-text { font-size: 14px; }
+
+/* ---------- modes ---------- */
+.modes-sheet header { display: flex; align-items: center; justify-content: space-between; }
+.modes-sheet > p { margin-top: -6px; }
+.mode-choice {
+  --face: var(--bone-50); --lipc: var(--bone-300);
+  display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 14px;
+  padding: 12px 14px 13px;
+  margin-bottom: 3px;
+  background: var(--face);
+  box-shadow: 0 3px 0 var(--lipc), var(--edge);
+  clip-path: var(--notch-block);
+  transition: transform var(--press) ease-out, box-shadow var(--press) ease-out, background-color .15s;
+}
+.mode-choice > .ico { width: 44px; height: 44px; padding: 10px; color: var(--bone-100); background: var(--ink-800); clip-path: var(--notch-s); }
+.mode-choice b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 15px; letter-spacing: .01em; }
+.mode-choice small { display: block; margin-top: 2px; font-size: 12.5px; line-height: 1.4; color: var(--ink-500); }
+.mode-choice > span:last-child { font-family: var(--font-display); font-size: 18px; color: var(--ink-400); }
+@media (hover: hover) { .mode-choice:hover { --face: #fff; } .mode-choice:hover > span:last-child { color: var(--gold-600); } }
+.mode-choice:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--lipc), var(--edge); }
+
+/* ---------- armory ---------- */
+.armory-card { width: min(760px, 100%); }
+.armory-stars { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 12px 14px; color: var(--ink-600); background: var(--ink-800); color: var(--bone-200); clip-path: var(--notch-s); }
+.armory-stars b { font-family: var(--font-display); font-weight: 400; font-size: 22px; color: var(--gold-500); }
+.armory-stars small { flex-basis: 100%; font-size: 12px; color: var(--ink-400); }
+.armory-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.armory-item { display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto auto; gap: 4px 12px; padding: 12px; background: var(--bone-50); box-shadow: var(--edge); clip-path: var(--notch-s); }
+.armory-item .ai-icon { grid-row: 1 / 3; display: grid; place-items: center; width: 40px; height: 40px; font-size: 22px; color: var(--gold-500); background: var(--ink-800); clip-path: var(--notch-s); }
+.armory-item .ai-body { min-width: 0; }
+.armory-item .ai-name { font-weight: 800; font-size: 14px; }
+.armory-item .ai-pips { margin-left: 4px; font-size: 9px; letter-spacing: 2px; color: var(--gold-600); }
+.armory-item .ai-desc { margin-top: 2px; font-size: 12.5px; line-height: 1.4; color: var(--ink-500); }
+.armory-item .btn { grid-column: 2; justify-self: start; }
+.end-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+/* ---------- dossier: a new enemy, introduced ---------- */
+.dossier-card { width: min(520px, 100%); }
+.dossier-eyebrow { font-family: var(--font-display); font-size: 12px; letter-spacing: .05em; color: var(--ember-600); }
+.dossier-head { display: flex; align-items: center; gap: 16px; }
+.dossier-art { flex: none; width: 110px; height: 110px; background: var(--ink-800) center / contain no-repeat; clip-path: var(--notch-m); }
+.dossier-title h2 { font-family: var(--font-display); font-weight: 400; font-size: 26px; line-height: 1.05; }
+.dossier-blurb { margin-top: 6px; color: var(--ink-600); }
+.dossier-traits { display: grid; gap: 4px; }
+.dossier-trait { display: grid; grid-template-columns: 120px 1fr; gap: 10px; padding: 7px 10px; font-size: 13px; background: var(--bone-50); clip-path: var(--notch-s); }
+.dt-label { font-weight: 800; }
+.dt-detail { color: var(--ink-600); }
+.dossier-counter { display: grid; gap: 3px; padding: 12px 14px; color: var(--bone-100); background: var(--ink-800); box-shadow: inset 4px 0 0 var(--gold-500); clip-path: var(--notch-s); }
+.dc-label { font-family: var(--font-display); font-size: 11px; letter-spacing: .05em; color: var(--gold-500); }
+.dc-text { font-size: 14px; line-height: 1.45; }
+.dossier-card > .btn { align-self: stretch !important; }
+
+/* ---------- field guide & capstone cards ---------- */
+.guide-card { width: min(820px, 100%); }
+.guide-sub { margin-top: -6px; font-weight: 650; color: var(--ink-500); }
+.guide-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.guide-entry { display: grid; gap: 6px; padding: 12px; background: var(--bone-50); box-shadow: var(--edge); clip-path: var(--notch-s); }
+.guide-entry.boss { grid-column: 1 / -1; box-shadow: inset 0 0 0 2px var(--ember-500); }
+.ge-head { display: flex; gap: 12px; align-items: center; }
+.ge-art { flex: none; width: 64px; height: 64px; background: var(--ink-800) center / contain no-repeat; clip-path: var(--notch-s); }
+.ge-title b { display: block; font-weight: 800; font-size: 15px; }
+.ge-blurb { display: block; font-size: 12.5px; line-height: 1.4; color: var(--ink-500); }
+.ge-traits { display: flex; flex-wrap: wrap; gap: 4px; }
+.ge-trait { padding: 2px 7px; font-size: 11px; font-weight: 750; color: var(--ink-700); background: var(--bone-200); clip-path: var(--notch-s); }
+.ge-counter, .ge-phase { font-size: 12.5px; line-height: 1.4; color: var(--ink-700); }
+.ge-counter .ico, .ge-phase .ico { font-size: 12px; color: var(--gold-600); }
+.cards-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cap-card { display: grid; gap: 4px; padding: 12px 14px; background: var(--bone-200); clip-path: var(--notch-s); opacity: .8; }
+.cap-card.stamped { opacity: 1; background: var(--bone-50); box-shadow: inset 0 0 0 2px var(--gold-500); }
+.cc-family { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 750; color: var(--ink-500); }
+.cc-name { font-family: var(--font-display); font-size: 15px; }
+.cap-card.stamped .cc-name { color: var(--gold-700); }
+.cc-desc { font-size: 12.5px; line-height: 1.4; color: var(--ink-600); }
+
+/* ---------- account ---------- */
+.account-card { width: min(480px, 100%); }
+.account-card > .btn { width: 100%; }
+.account-body { font-size: 13.5px; color: var(--ink-600); }
+.account-warn { font-weight: 700; color: var(--blood-600); }
+.account-warn:empty { display: none; }
+.account-backup { display: grid; gap: 10px; padding: 12px 14px; background: var(--bone-200); clip-path: var(--notch-s); }
+.account-backup details { display: grid; gap: 8px; }
+.account-backup-head { font-size: 13.5px; }
+.account-input { width: 100%; }
+textarea.account-input { min-height: 80px; resize: vertical; }
+
+/* ---------- Seraph fusion ---------- */
+.fusion-card { width: min(560px, 100%); }
+.fusion-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.fusion-card header small { font-family: var(--font-display); font-size: 11px; letter-spacing: .06em; color: var(--ember-600); }
+.fusion-result { display: grid; grid-template-columns: 120px 1fr; gap: 14px; align-items: center; padding: 12px; color: var(--bone-100); background: var(--ink-800); clip-path: var(--notch-m); }
+.fusion-result img { width: 120px; height: 120px; object-fit: contain; }
+.fusion-result strong { font-family: var(--font-display); font-weight: 400; font-size: 16px; color: var(--ember-300); }
+.fusion-result p { margin-top: 4px; font-size: 13px; color: var(--bone-300); }
+.fusion-keeps, .fusion-warning, .fusion-status { font-size: 13px; color: var(--ink-600); }
+.fusion-warning { font-weight: 700; color: var(--ember-600); }
+.fusion-status:empty { display: none; }
+.fusion-location > summary { font-size: 13px; padding: 4px 0; }
+.fusion-map svg { width: 100%; height: auto; max-height: 220px; background: var(--bone-200); }
+.fusion-card fieldset { border: 0; display: grid; gap: 6px; }
+.fusion-card legend { margin-bottom: 6px; font-weight: 800; }
+.fusion-donors { display: grid; gap: 6px; }
+.fusion-donors label, .fusion-donors button { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bone-50); box-shadow: var(--edge); clip-path: var(--notch-s); cursor: pointer; }
+.fusion-donors img { width: 48px; height: 48px; object-fit: contain; }
+.fusion-card footer { display: flex; justify-content: flex-end; gap: 8px; }
+.fusion-confirm { --face: var(--ember-500) !important; --lipc: var(--ember-600) !important; --txt: #fff !important; }
+.fusion-confirm:disabled { --face: var(--bone-200) !important; --lipc: var(--bone-300) !important; --txt: var(--ink-400) !important; }
+
+@media (max-width: 700px), (max-height: 560px) {
+  .help-card, .fusion-card { padding: 16px 16px 18px; gap: 10px; }
+  .help-card > h2, .help-card header h2, .fusion-card h2 { font-size: 20px; }
+  .help-grid, .armory-grid, .guide-list, .cards-grid { grid-template-columns: 1fr; }
+  .dossier-art { width: 80px; height: 80px; }
+  .dossier-title h2 { font-size: 21px; }
+  .dossier-trait { grid-template-columns: 1fr; gap: 2px; }
+}
+@media (max-height: 560px) and (min-width: 700px) {
+  .help-grid, .armory-grid, .guide-list, .cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.armory-item .ai-pips { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: 1px; }
+.armory-item .ai-pips i { width: 8px; height: 8px; box-shadow: inset 0 0 0 2px var(--bone-400); }
+.armory-item .ai-pips i.on { background: var(--gold-500); box-shadow: inset 0 -2px 0 var(--gold-600); }

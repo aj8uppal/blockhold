@@ -42,7 +42,7 @@ export function renderCapstoneCards(root: HTMLElement, cards: readonly string[],
       const have = cards.includes(id)
       const c = el('div', `cap-card${have ? ' stamped' : ''}`, grid)
       el('div', 'cc-family', c, `${icon(FAMILY_ICON[kind])} ${FAMILY_NAME[kind]} · ${towerTrees[kind].branches[branch].name}`)
-      el('div', 'cc-name', c, `${have ? '✦ ' : ''}${cap.name}`)
+      el('div', 'cc-name', c, `${have ? `${icon('sparkle')} ` : ''}${cap.name}`)
       el('div', 'cc-desc', c, have ? cap.description : 'Not yet flown.')
     })
   }

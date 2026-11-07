@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { BlastFx, type BlastOpts } from './effects/explosions.ts'
 
 /**
  * Two pooled point-sprite systems: 'normal' for dirt/debris/smoke,
@@ -174,32 +175,51 @@ class ParticlePool {
 export class Particles {
   normal: ParticlePool
   add: ParticlePool
+  /** shader-driven fireballs, shockwaves, scorch and voxel debris */
+  blast = new BlastFx()
   group = new THREE.Group()
 
   constructor() {
     this.normal = new ParticlePool(1600, false)
     this.add = new ParticlePool(1600, true)
-    this.group.add(this.normal.points, this.add.points)
+    this.group.add(this.normal.points, this.add.points, this.blast.group)
   }
 
   update(dt: number): void {
     this.normal.update(dt)
     this.add.update(dt)
+    this.blast.update(dt)
   }
 
   /** kill every live particle instantly (level boundaries) */
   clear(): void {
     this.normal.clear()
     this.add.clear()
+    this.blast.clear()
   }
 
   // ---- recipe library ----
 
-  explosion(x: number, y: number, z: number, scale = 1): void {
-    this.add.emit({ x, y, z, count: Math.round(26 * scale), color: [0xffd23c, 0xff8c42, 0xff5a3c], speed: 2.2 * scale, life: 0.5, size: 0.75 * scale, gravity: 1.5, dirY: 0.5 })
-    this.add.emit({ x, y, z, count: Math.round(10 * scale), color: 0xfff2c8, speed: 3 * scale, life: 0.25, size: 0.5, gravity: 0, dirY: 0.4 })
-    this.normal.emit({ x, y, z, count: Math.round(16 * scale), color: [0x4a3b30, 0x6b5a45], speed: 2.6 * scale, life: 0.8, size: 0.5, gravity: 5, dirY: 0.6 })
-    this.normal.emit({ x, y: y + 0.2, z, count: Math.round(8 * scale), color: [0x555555, 0x777777], speed: 0.8, life: 1.1, size: 0.9 * scale, sizeEnd: 1.4 * scale, gravity: -0.6, dirY: 0.8 })
+  /**
+   * A blast: flash, a fireball that cools into soot, a dust shockwave, voxel
+   * chunks and a column of smoke - plus a spray of white-hot sparks, which the
+   * point sprites still draw best. `opts.scorch` leaves a fading burn mark.
+   */
+  explosion(x: number, y: number, z: number, scale = 1, opts: BlastOpts = {}): void {
+    this.blast.explosion(x, y, z, scale, opts)
+    const s = opts.small ? scale * .6 : scale
+    this.add.emit({ x, y: y + .1, z, count: Math.round(12 * s), color: [0xfff2c8, 0xffc35a, 0xff8a2a], speed: 3.4 * scale, speedVar: 2.4 * scale, life: 0.42, lifeVar: .6, size: 0.16, sizeEnd: .04, gravity: 6, drag: 1.2, dirY: 0.7 })
+  }
+
+  /** a cannon's report at the barrel, pointed along (dx, dz) */
+  muzzleFlash(x: number, y: number, z: number, dx: number, dz: number, scale = 1): void {
+    this.blast.muzzle(x, y, z, dx, dz, scale)
+    this.add.emit({ x, y, z, count: Math.round(5 * scale), color: [0xfff2c8, 0xffb347], speed: 1.8 * scale, life: 0.22, size: 0.12, sizeEnd: .03, gravity: 3, dirY: 0.4 })
+  }
+
+  /** one soft puff behind a shell in flight */
+  shellSmoke(x: number, y: number, z: number): void {
+    this.blast.shellSmoke(x, y, z)
   }
 
   hitSpark(x: number, y: number, z: number, color = 0xffe6a0): void {

@@ -106,7 +106,7 @@ test('touch Hold selection toggles, drags do not place and repeated exits releas
   await page.getByRole('button', { name: 'Cancel', exact: true }).tap()
   const measurements: { geometries: number, children: number }[] = []
   for (let i = 0; i < 5; i++) {
-    await page.getByRole('button', { name: '← Home', exact: true }).tap()
+    await page.getByRole('button', { name: 'Home', exact: true }).tap()
     await openHold(page)
     measurements.push(await page.evaluate(() => { const e = (window.vg.game as unknown as Game).engine; return { geometries: e.renderer.info.memory.geometries, children: e.scene.children.length } }))
   }

@@ -100,7 +100,7 @@ class Eruption implements Hazard {
       const m = c.mesh.material as THREE.MeshBasicMaterial
       m.opacity = 0.35 + Math.sin(t * 10) * 0.2
       if (t >= c.at) {
-        game.particles.explosion(c.pos.x, 0.15, c.pos.z, 0.85)
+        { const gy = game.groundY(c.pos.x, c.pos.z); game.particles.explosion(c.pos.x, gy + 0.15, c.pos.z, 0.85, { ground: gy, scorch: true }) }
         game.sfx('explosion', 0.7)
         game.shake(0.08)
         for (const e of game.enemies) {

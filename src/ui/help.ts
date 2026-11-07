@@ -12,7 +12,7 @@ export function renderHelp(root: HTMLElement): void {
     card.insertAdjacentHTML('beforeend', `
       <div class="help-grid">
         <div><b>${icon('castle')} Build.</b> Click a stone plot and pick a tower. Arrows are cheap and quick, mages pierce armor, cannons splash groups, barracks block the road.</div>
-        <div><b>⬆ Upgrade.</b> Level up a tower, choose a specialization, then save for its capstone. Each branch has a different final form.</div>
+        <div><b>${icon('arrowUp')} Upgrade.</b> Level up a tower, choose a specialization, then save for its capstone. Each branch has a different final form.</div>
         <div><b>${icon('shield')} Block.</b> Barracks soldiers hold enemies in place while your towers work. Move them with the rally flag.</div>
         <div><b>${icon('helmPlume')} Command your hero.</b> Select your champion (1 or H), then click the ground to move. Battlefield kills earn hero XP. Upgrade their weapon and signature from the hero panel; use their ability with 2.</div>
         <div><b>${icon('swords')} Call waves.</b> Call the next wave early for bonus gold — if you dare.</div>
@@ -23,7 +23,7 @@ export function renderHelp(root: HTMLElement): void {
         <div><b>${icon('moon')} Respect the Veiltide.</b> Marked waves surge with empowered enemies under a violet sky. Calling one early is a gamble.</div>
         <div><b>${icon('link')} Combine towers.</b> Different tower families near each other unlock reactions. Inspect a tower to see its active bonuses and useful neighbors.</div>
         <div><b>${icon('eye')} Know your enemy.</b> Inspect foes for counters. Use magic against armor, arrows against mystics, and air defenses against flyers.</div>
-        <div><b><span class="gold-star">★</span> Spend your stars.</b> Victory stars buy permanent upgrades in the Royal Armory, found on the level-select screen.</div>
+        <div><b><span class="gold-star pstar"></span> Spend your stars.</b> Victory stars buy permanent upgrades in the Royal Armory, found on the level-select screen.</div>
         <div><b>${icon('moon')} The Long Night.</b> Beat a map to unlock Endless: escalating waves and a boss every tenth. How long can you hold?</div>
         <div><b>${icon('range')} Camera.</b> Drag to pan; right-drag, middle-drag, or Shift+drag to orbit and tilt; scroll to zoom. Touch: pinch to zoom, twist to rotate, two-finger drag to tilt.</div>
         <div><b>${icon('rune')} Hotkeys.</b> Space = call wave · F = speed · P = pause · 1 = hero · 2 = hero ability · 3 = reinforcements · 4 = meteor · V = fullscreen · Q/E rotate · T/G tilt · C = reset view · Esc = cancel/close.</div>

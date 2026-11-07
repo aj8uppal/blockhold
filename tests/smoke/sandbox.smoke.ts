@@ -63,7 +63,7 @@ test('tower panels keep details optional and track damage for the current hunt l
     g.towers[0].damage = 3999
     g.selectTower(g.towers[0])
   })
-  await expect(page.locator('.tp-details').filter({ has: page.locator('summary', { hasText: 'Combat details' }) })).not.toHaveAttribute('open', '')
+  await expect(page.locator('.tp-details').filter({ has: page.locator('summary', { hasText: 'Details' }) })).not.toHaveAttribute('open', '')
   await page.locator('.tp-mastery summary').click()
   await expect(page.locator('.tp-mastery')).toContainText('3,999 / 4,000 damage')
   await expect(page.locator('.tp-mastery')).toContainText('The Bone Procession')

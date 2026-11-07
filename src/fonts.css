@@ -1,11 +1,17 @@
-/* Inter 4.1 by Rasmus Andersson, SIL Open Font License (fonts/Inter-LICENSE.txt).
- * Self-hosted Latin subset of https://rsms.me/inter/font-files/InterVariable.woff2.
- * A single variable face supplies real weights and optical sizing throughout the UI.
- */
+/* Two self-hosted faces (SIL OFL 1.1, see fonts/LICENSE.txt):
+ * Bungee — blocky display caps for titles, numerals and primary actions.
+ * Schibsted Grotesk — a sturdy variable grotesque for everything read. */
 @font-face {
-  font-family: 'Inter';
+  font-family: 'Bungee';
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: 400;
   font-display: swap;
-  src: url(./fonts/inter-variable-latin.woff2) format('woff2');
+  src: url(./fonts/bungee-latin.woff2) format('woff2');
+}
+@font-face {
+  font-family: 'Schibsted Grotesk';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url(./fonts/schibsted-grotesk-variable-latin.woff2) format('woff2');
 }

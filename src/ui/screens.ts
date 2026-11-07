@@ -1,4 +1,5 @@
 import { bindDialog } from './dialog.ts'
+import { isNativeApp } from '../core/platform.ts'
 import { downloadBattleBackup } from '../game/battleBackup.ts'
 import { readSession, readSessionIssue } from '../game/session.ts'
 import { huntById, type HuntId } from '../game/hunts.ts'
@@ -16,6 +17,7 @@ import { TRIAL_KINDS, TRIAL_NAMES, TRIAL_ICONS, trialFor, trialsWon, type TrialK
 import { writeSave } from '../core/save.ts'
 import type { SaveData } from '../core/save.ts'
 import { icon } from './icons.ts'
+import { wordmark } from './wordmark.ts'
 import { readCheckpoint } from '../game/checkpoint.ts'
 import { setTelemetryAllowed, telemetryAllowed } from '../core/sink.ts'
 import { fetchDaily, leaderboardEnabled, nickname, setNickname } from '../core/leaderboard.ts'
@@ -47,19 +49,12 @@ const THEME_ART: Record<string, string> = {
   eclipse: 'linear-gradient(160deg, #ffc36a 0%, #6a2f4a 50%, #0d0a1f 100%)',
 }
 
-// Later battlefields use an illustrated theme treatment until they have key art.
-// Never request a missing image: a gradient is a deliberate fallback, not a 404.
-const PAINTED_MAPS = new Set(['greenhollow', 'frostmere', 'emberwastes', 'mistfen', 'shatteredcrown', 'cinderwake', 'veilscar',
-  // the Frontier's cards are renders of the boards themselves, sky and all
-  ...FRONTIER_BOARDS.map(b => b.id)])
-const THEME_ICONS: Record<string, string> = { forest: 'tree', winter: 'frost', ember: 'volcano', swamp: 'mushroom', void: 'rune', highland: 'castle', ashfall: 'flame', tidal: 'wave',
-  blossom: 'sparkle', desert: 'hourglass', skyreach: 'feather', reef: 'drop', cavern: 'orb', cosmos: 'meteor', jungle: 'tree', aurora: 'frost', storm: 'lightning', eclipse: 'moon' }
 const TIER_NAMES = Object.fromEntries(FRONTIER_TIERS.map(t => [t.tier, t.name])) as Record<string, string>
 const isFrontier = isFrontierId
 
 function mapArt(level: { id: string, theme: string }): string {
   const gradient = THEME_ART[level.theme]
-  return PAINTED_MAPS.has(level.id) ? `url(art/card-${level.id}.webp) center / cover, ${gradient}` : gradient
+  return `url(art/maps/${level.id}.webp) center / cover, ${gradient}`
 }
 
 /**
@@ -175,6 +170,9 @@ function frontierObjective(save: SaveData, ctx: { won: boolean, levelId: string,
   return { text: `Hold the line on ${lvl.name} - see how far past the end it stands`, action: 'hold', levelId: ctx.levelId }
 }
 
+/** a row of pixel stars, earned then unearned */
+export const starRow = (earned: number, of = 3) => '<span class="pstar"></span>'.repeat(earned) + '<span class="pstar off"></span>'.repeat(Math.max(0, of - earned))
+
 /** 12,400 reads as 12.4k: the number is a badge, not a ledger */
 export const fmtDamage = (d: number) => d >= 10000 ? `${(d / 1000).toFixed(1)}k` : `${Math.round(d).toLocaleString()}`
 
@@ -197,7 +195,7 @@ export function isIPadOS(): boolean {
 export function needsInstallGuide(): boolean {
   const doc = document as Document & { webkitFullscreenEnabled?: boolean }
   const nav = navigator as Navigator & { standalone?: boolean }
-  return window.matchMedia('(pointer: coarse)').matches
+  return !isNativeApp() && window.matchMedia('(pointer: coarse)').matches
     && (!(doc.fullscreenEnabled || doc.webkitFullscreenEnabled) || isIPadOS())
     && !nav.standalone
     && !window.matchMedia('(display-mode: standalone)').matches
@@ -252,36 +250,34 @@ export class Screens {
     const save = this.save()
     const pieces = holdPieces(save)
     const wrap = el('div', 'screen menu-screen home-screen', this.root)
-    const masthead = el('header', 'home-masthead', wrap)
-    el('div', 'home-brand', masthead, `${icon('castle')} <span>BLOCKHOLD</span>`)
-    el('span', 'home-edition', masthead, 'A voxel tower defense')
-    {
-      const hold = el('button', 'menu-account hold-view', masthead, `${icon('castle')} Your Hold`)
-      hold.onclick = () => this.show('hold')
-      void import('../hold/catalog.ts').then(({ newHoldRewards }) => {
-        if (!hold.isConnected) return
-        const n = newHoldRewards(this.save()).length
-        if (n) hold.append(document.createTextNode(` · ${n} new`))
-      })
-    }
-    const layout = el('div', 'home-layout', wrap)
-    const card = el('div', 'menu-hero main-menu', layout)
-    el('div', 'eyebrow menu-eyebrow', card, 'The kingdom is counting on you')
-    const head = el('div', 'menu-heading', card)
-    el('h1', 'game-title', head, 'Blockhold')
-    el('div', 'game-tagline', card, 'Hold the line, block by block.')
-    el('p', 'menu-description', card, 'Raise your towers. Rally your champion.<br>Build a defense that stands against the dark.')
+    // the menu is a banner hung over the player's own Hold, which the engine
+    // is already drawing behind this screen
+    const banner = el('div', 'home-banner', wrap)
+    // the Hold is framed in whatever the banner leaves clear, so it is
+    // reframed whenever the banner settles: after fonts load, on rotation
+    this.menuObserver?.disconnect()
+    this.menuObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this.onMenuLayout())
+    this.menuObserver?.observe(banner)
+    const card = el('div', 'home-cloth menu-hero main-menu', banner)
+    const crest = el('div', 'home-crest', card)
+    el('h1', 'game-title', crest, `<span class="sr-only">Blockhold</span>${wordmark('', 'ink')}`)
+    el('p', 'game-tagline', crest, 'Hold the line, block by block')
     // A newcomer has nothing to choose between yet, and a link-shared game has
     // about ten seconds. Drop them straight into the first battle; the level
     // select, heroes and difficulty appear once they have played one.
     const fresh = isFirstRun(save)
     const actions = el('div', 'menu-primary-actions', card)
     const play = el('button', 'btn primary big', actions,
-      `${icon('swords')} <span>${fresh ? 'Play' : 'To Battle'}<small>${fresh ? 'Your campaign begins in Greenhollow' : 'Choose your next battlefield'}</small></span>${icon('arrowRight')}`) as HTMLButtonElement
+      `${icon('swords')}<span>${fresh ? 'Play' : 'To Battle'}<small>${fresh ? 'Your campaign begins in Greenhollow' : 'Choose your next battlefield'}</small></span>${icon('arrowRight')}`) as HTMLButtonElement
     play.setAttribute('aria-label', fresh ? 'Play' : 'To Battle')
     play.onclick = () => {
       if (fresh) this.onPlayLevel(levels[0].id, 'normal', 'aldric', 'campaign')
       else this.show('levels')
+    }
+    const demote = () => {
+      play.classList.replace('primary', 'ghost')
+      play.innerHTML = `${icon('plus')}<span>New battle</span>`
+      play.setAttribute('aria-label', 'New battle')
     }
     // a battle interrupted mid-campaign is worth more than a fresh one
     const session = readSession()
@@ -289,10 +285,8 @@ export class Screens {
     const sessionLevel = session ? (session.hunt ? huntById(session.hunt)?.name
       : allLevels.find(l => l.id === session.levelId)?.name ?? frontierBoard(session.levelId)?.name) : null
     if (session && sessionLevel) {
-      play.classList.replace('primary', 'ghost')
-      play.textContent = 'New battle'
-      play.setAttribute('aria-label', 'New battle')
-      const resume = el('button', 'btn primary menu-resume', actions, `<span>Continue<small>${sessionLevel} · Wave ${Math.max(1, session.wave)}</small></span><span aria-hidden="true">→</span>`) as HTMLButtonElement
+      demote()
+      const resume = el('button', 'btn primary menu-resume', actions, `${icon('play')}<span>Continue<small>${sessionLevel} · Wave ${Math.max(1, session.wave)}</small></span>${icon('arrowRight')}`) as HTMLButtonElement
       resume.onclick = () => this.onResume()
       play.before(resume)
     } else if (readSessionIssue()?.kind === 'incompatible') {
@@ -307,24 +301,28 @@ export class Screens {
     if (!session && cp && cpLevel) {
       const depth = cp.waveIndex + 1 - cpLevel.waves
       const resume = el('button', 'btn primary menu-resume', actions, cp.freeplay
-        ? `${icon('castle')} Hold the line on ${cpLevel.name} · +${Math.max(1, depth)}`
-        : `${icon('respawn')} Resume ${cpLevel.name} · wave ${cp.waveIndex + 1}`) as HTMLButtonElement
+        ? `${icon('castle')}<span>Hold the line<small>${cpLevel.name} · +${Math.max(1, depth)}</small></span>${icon('arrowRight')}`
+        : `${icon('respawn')}<span>Resume<small>${cpLevel.name} · wave ${cp.waveIndex + 1}</small></span>${icon('arrowRight')}`) as HTMLButtonElement
+      resume.setAttribute('aria-label', cp.freeplay ? `Hold the line on ${cpLevel.name} · +${Math.max(1, depth)}` : `Resume ${cpLevel.name} · wave ${cp.waveIndex + 1}`)
       resume.onclick = () => this.onResume()
-      play.classList.replace('primary', 'ghost'); play.textContent = 'New battle'; play.before(resume)
-      play.setAttribute('aria-label', 'New battle')
+      demote(); play.before(resume)
     }
-    const navigation = el('div', 'menu-navigation', card)
-    const campaign = el('button', 'btn ghost', navigation, `${icon('flag')} Campaign`)
+    const navigation = el('nav', 'menu-navigation', card)
+    navigation.setAttribute('aria-label', 'Ways to play')
+    const campaign = el('button', 'btn', navigation, `${icon('flag')} Campaign`)
     campaign.onclick = () => this.show('levels')
-    const frontier = el('button', 'btn ghost', navigation, `${icon('compass')} Frontier`)
+    const frontier = el('button', 'btn', navigation, `${icon('compass')} Frontier`)
     frontier.setAttribute('aria-label', 'Frontier maps')
     frontier.onclick = () => this.show('frontier')
     if (coopEnabled()) {
-      const coop = el('button', 'btn ghost', navigation, `${icon('helmPlume')} Co-op`) as HTMLButtonElement
+      const coop = el('button', 'btn', navigation, `${icon('users')} Co-op`) as HTMLButtonElement
       coop.onclick = () => this.show('coop')
     }
+    // on a portrait phone the banner fills the screen, so the Hold is reached from inside it
+    const holdInline = el('button', 'btn hold-inline', navigation, `${icon('castle')} Your Hold`)
+    holdInline.onclick = () => this.show('hold')
     const explore = el('button', 'menu-explore', card,
-      `${icon('compass')}<span>Explore modes<small>Sandbox, boss hunts & daily challenges</small></span>${icon('arrowRight')}`)
+      `${icon('sparkle')}<span>Explore modes<small>Sandbox, boss hunts, the Daily Hold</small></span>${icon('arrowRight')}`)
     explore.setAttribute('aria-label', 'Explore modes')
     let openingModes = false
     explore.onclick = async () => {
@@ -344,12 +342,11 @@ export class Screens {
       backup.onclick = () => downloadBattleBackup(this.save())
     }
     if (cloud.enabled) {
-      const st = cloud.status()
-      const acct = el('button', 'menu-account', masthead,
-        `${st.provider ? 'Account' : 'Sign in'}`) as HTMLButtonElement
+      const acct = el('button', 'btn ghost account-inline', utilities, `${icon('user')} ${cloud.status().provider ? 'Account' : 'Sign in'}`) as HTMLButtonElement
       acct.onclick = () => this.renderAccount()
     }
-    const how = el('button', 'btn ghost', utilities, 'How to play') as HTMLButtonElement
+    const how = el('button', 'btn ghost', utilities, `${icon('book')} How to play`) as HTMLButtonElement
+    how.setAttribute('aria-label', 'How to play')
     how.onclick = () => this.renderHelp()
     if (save.seenEnemies.length) {
       const guide = el('button', 'btn ghost', utilities, `${icon('eye')} Field guide`) as HTMLButtonElement
@@ -367,15 +364,27 @@ export class Screens {
       shot.onclick = () => this.show('hold')
     }
     this.renderPrivacyRow(settings)
+    el('div', 'home-signoff', card, `${icon('shield')} ${cloud.signedIn ? 'Account connected · progress synced' : 'Progress saved on this device'}`)
+
+    // the keep itself, and who it belongs to
+    const corner = el('div', 'home-corner', wrap)
+    const hold = el('button', 'btn hold-view', corner, `${icon('castle')} Your Hold`)
+    hold.onclick = () => this.show('hold')
+    void import('../hold/catalog.ts').then(({ newHoldRewards }) => {
+      if (!hold.isConnected) return
+      const n = newHoldRewards(this.save()).length
+      if (n) hold.insertAdjacentHTML('beforeend', `<span class="new-count">${n} new</span>`)
+    })
+    if (cloud.enabled) {
+      const st = cloud.status()
+      const acct = el('button', 'btn', corner, `${icon('user')} ${st.provider ? 'Account' : 'Sign in'}`) as HTMLButtonElement
+      acct.onclick = () => this.renderAccount()
+    }
     const cleared = pieces.towers
-    const story = el('aside', 'home-story', layout)
-    el('span', 'eyebrow', story, 'A small kingdom. A mighty defense.')
-    el('p', '', story, 'Make your stand.')
-    el('div', 'home-campaign-progress', story,
-      `${icon('flag')} <span>${cleared} of ${levels.length} battlefields conquered</span><span class="home-progress-track"><i style="width:${cleared / levels.length * 100}%"></i></span>`)
-    const foot = el('footer', 'home-footer', wrap)
-    el('span', '', foot, `${icon('shield')} ${cloud.signedIn ? 'Account connected' : 'Progress saved on this device'}`)
-    el('span', '', foot, 'Build. Defend. Prevail.')
+    const plaque = el('aside', 'home-plaque', wrap)
+    el('span', 'eyebrow', plaque, 'Your Hold')
+    el('b', '', plaque, `${cleared} of ${levels.length} battlefields conquered`)
+    el('span', 'block-bar', plaque, `<i style="width:${cleared / levels.length * 100}%"></i>`)
   }
 
   /**
@@ -399,7 +408,7 @@ export class Screens {
     bar.setAttribute('aria-valuenow', String(level >= MAX_LEVEL ? span : Math.min(into, span)))
     el('span', 'level-xp', row, level >= MAX_LEVEL ? `${save.xp.toLocaleString()} XP` : `${(span - into).toLocaleString()} XP to Level ${level + 1}`)
     if (next) {
-      el('span', 'level-next', row, `${icon(next.kind === 'hero' ? 'helmPlume' : 'castle')} ${next.name} at ${next.level}`)
+      el('span', 'level-next', row, `${icon(next.kind === 'hero' ? 'helmPlume' : 'castle')} ${next.name} joins at level ${next.level}`)
     } else {
       const hunt = el('button', 'level-next', row, `${icon('crown')} Hunt victories unlock hero paths & Mythics`) as HTMLButtonElement
       hunt.onclick = () => this.show('hunts')
@@ -461,12 +470,12 @@ export class Screens {
     const save = this.save()
     const wrap = el('div', 'screen levels-screen', this.root)
     const head = el('div', 'levels-head', wrap)
-    const back = el('button', 'btn ghost small', head, '← Back') as HTMLButtonElement
+    const back = el('button', 'btn ghost small', head, `${icon('arrowLeft')} Back`) as HTMLButtonElement
     back.onclick = () => this.show('menu')
     if (sandbox) el('div', 'levels-nav-label', head, `${icon('castle')} Sandbox`)
     else this.renderLevelTabs(head, 'levels')
     const collection = el('div', 'levels-collection', head)
-    const armoryBtn = el('button', 'btn ghost small', collection, `${icon('swords')} Armory <span class="nav-count">${starsAvailable(save)}★</span>`) as HTMLButtonElement
+    const armoryBtn = el('button', 'btn ghost small', collection, `${icon('swords')} Armory <span class="nav-count">${starsAvailable(save)}<span class="pstar"></span></span>`) as HTMLButtonElement
     armoryBtn.onclick = () => this.renderArmory()
     const cardsBtn = el('button', 'btn ghost small', collection, `${icon('crown')} Cards <span class="nav-count">${(save.capstones ?? []).length}/14</span>`) as HTMLButtonElement
     cardsBtn.title = 'Capstone cards: one for every crown you have flown to a campaign win'
@@ -485,11 +494,10 @@ export class Screens {
       const card = el('button', `level-card${locked ? ' locked' : ''}`, grid) as HTMLButtonElement
       card.disabled = locked
       card.setAttribute('aria-label', `${lvl.name}${locked ? `, locked. Complete ${levels[i - 1].name} to unlock` : sandbox ? ', open sandbox' : `, ${stars} of 3 stars`}`)
-      const art = el('div', `level-art${PAINTED_MAPS.has(lvl.id) ? '' : ' theme-art'}`, card)
+      const art = el('div', 'level-art', card)
       art.style.background = mapArt(lvl)
-      if (!PAINTED_MAPS.has(lvl.id)) el('span', 'theme-emblem', art, icon(THEME_ICONS[lvl.theme]))
-      el('span', 'level-chapter', art, `CHAPTER ${String(i + 1).padStart(2, '0')}`)
-      el('span', `level-status${locked ? '' : ' available'}`, art, locked ? `${icon('lock')} Locked` : stars > 0 ? `${icon('check')} Conquered` : sandbox ? 'Free build' : 'Available')
+      el('span', 'level-chapter', art, `Chapter <b>${String(i + 1).padStart(2, '0')}</b>`)
+      el('span', `level-status${locked || stars > 0 ? '' : ' available'}`, art, locked ? `${icon('lock')} Locked` : stars > 0 ? `${icon('check')} Conquered` : sandbox ? 'Free build' : 'Available')
       const body = el('div', 'level-card-body', card)
       el('div', 'level-name', body, lvl.name)
       el('div', 'level-sub', body, lvl.subtitle)
@@ -497,7 +505,7 @@ export class Screens {
       const best = save.bestEndless[lvl.id] ?? 0
       const held = Math.max(...(['casual', 'normal', 'veteran'] as const).map(d => save.bestFreeplay?.[`${lvl.id}:${d}`] ?? 0))
       const medals = save.medals[lvl.id] ?? []
-      if (!sandbox) el('div', 'level-stars', body, '★'.repeat(stars) + '<span class="dim">' + '★'.repeat(3 - stars) + '</span>' +
+      if (!sandbox) el('div', 'level-stars', body, starRow(stars) +
         (medals.includes('noleak') ? `<span class="level-medal" title="Flawless: won without a single leak"> ${icon('medal')}</span>` : '') +
         (medals.includes('veteran') ? `<span class="level-medal" title="Conquered on Veteran"> ${icon('medal', 'vet')}</span>` : '') +
         (trialsWon(save.trials, lvl.id).length ? `<span class="level-medal" title="Trials won"> ${icon('flag')}${trialsWon(save.trials, lvl.id).length}</span>` : '') +
@@ -547,7 +555,7 @@ export class Screens {
     const save = this.save()
     const wrap = el('div', 'screen levels-screen frontier-screen', this.root)
     const head = el('div', 'levels-head', wrap)
-    const back = el('button', 'btn ghost small', head, '← Back') as HTMLButtonElement
+    const back = el('button', 'btn ghost small', head, `${icon('arrowLeft')} Back`) as HTMLButtonElement
     back.onclick = () => this.show('menu')
     this.renderLevelTabs(head, 'frontier')
     const intro = el('div', 'campaign-heading', wrap)
@@ -578,9 +586,8 @@ export class Screens {
     const medals = save.medals[lvl.id] ?? []
     const card = el('button', `level-card frontier-card tier-${tier}`, grid) as HTMLButtonElement
     card.setAttribute('aria-label', `${lvl.name}, ${TIER_NAMES[tier]}${sandbox ? ', open sandbox' : `, ${stars} of 3 stars`}`)
-    const art = el('div', `level-art${PAINTED_MAPS.has(lvl.id) ? '' : ' theme-art'}`, card)
+    const art = el('div', 'level-art', card)
     art.style.background = mapArt(lvl)
-    if (!PAINTED_MAPS.has(lvl.id)) el('span', 'theme-emblem', art, icon(THEME_ICONS[lvl.theme]))
     el('span', `level-chapter frontier-tier tier-${tier}`, art, TIER_NAMES[tier].toUpperCase())
     el('span', `level-status${stars > 0 ? '' : ' available'}`, art, stars > 0 ? `${icon('check')} Conquered` : sandbox ? 'Free build' : 'Open')
     const body = el('div', 'level-card-body', card)
@@ -590,7 +597,7 @@ export class Screens {
     const held = Math.max(...(['casual', 'normal', 'veteran'] as const).map(d => save.bestFreeplay?.[`${lvl.id}:${d}`] ?? 0))
     const best = save.bestEndless[lvl.id] ?? 0
     if (!sandbox) {
-      el('div', 'level-stars', body, '★'.repeat(stars) + '<span class="dim">' + '★'.repeat(3 - stars) + '</span>' +
+      el('div', 'level-stars', body, starRow(stars) +
         (medals.includes('noleak') ? `<span class="level-medal" title="Flawless: won without a single leak"> ${icon('medal')}</span>` : '') +
         (medals.includes('veteran') ? `<span class="level-medal" title="Conquered on Veteran"> ${icon('medal', 'vet')}</span>` : '') +
         (best > 0 ? `<span class="level-endless"> ${icon('moon')}${best}</span>` : '') +
@@ -803,7 +810,7 @@ export class Screens {
     el('div', 'eyebrow', title, sandbox ? 'Sandbox setup' : 'Prepare your defense')
     el('h2', '', title, levelName)
     el('p', '', title, sandbox ? 'All towers and heroes · No account rewards' : `${level.frontier ? `${TIER_NAMES[level.frontier.tier]} · ` : ''}${level.waves.length} waves · ${level.lanes.length === 1 ? 'Single road' : `${level.lanes.length} roads`} · ${level.subtitle}`)
-    const close = el('button', 'tp-close', heading, '×')
+    const close = el('button', 'tp-close', heading, icon('close'))
     close.setAttribute('aria-label', 'Close battle setup')
     close.onclick = () => overlay.remove()
 
@@ -831,13 +838,13 @@ export class Screens {
       // is chosen, so the pursuit is visible every time the player comes back.
       const won = trialsWon(save.trials, levelId)
       const trials = el('details', 'setup-trials', card)
-      el('summary', '', trials, `Bonus trials · ${won.length}/2 ★`)
+      el('summary', '', trials, `Bonus trials · ${won.length}/2 <span class="pstar"></span>`)
       const trialRow = el('div', 'trial-row', trials)
       for (const kind of TRIAL_KINDS) {
         const def = trialFor(levelById(levelId), kind)
         const done = won.includes(kind)
         const btn = el('button', `trial-option${done ? ' won' : ''}`, trialRow) as HTMLButtonElement
-        btn.innerHTML = `<span class="trial-name">${icon(TRIAL_ICONS[kind])} Start ${def.name}${done ? ' <span class="trial-star">★</span>' : ''}</span>` +
+        btn.innerHTML = `<span class="trial-name">${icon(TRIAL_ICONS[kind])} Start ${def.name}${done ? ' <span class="trial-star pstar"></span>' : ''}</span>` +
           `<span class="trial-blurb">${def.blurb}</span>` +
           `<span class="trial-stats">${icon('coin')} ${def.startGold} · ${icon('heart')} 1 · ${icon('gem')} ${def.shards} · tier ${def.maxTier} cap · no Armory</span>`
         btn.onclick = () => this.onPlayTrial(levelId, kind)
@@ -860,17 +867,17 @@ export class Screens {
       const locked = !sandbox && !isUnlocked(save, 'hero', def.id)
       const btn = el('button', `hero-option${locked ? ' locked' : ''}`, heroRow) as HTMLButtonElement
       if (locked) {
-        btn.innerHTML = `<img class="hero-portrait" src="art/hero-${def.id}.webp" alt="">` +
+        btn.innerHTML = `<img class="hero-portrait" src="art/heroes/${def.id}.webp" alt="">` +
           `<span class="hero-name">${def.name}</span><span class="hero-title">${def.title}</span>` +
           `<span class="hero-lock">${icon('lock')} Unlocks at level ${unlockLevel('hero', def.id)}</span>`
         btn.disabled = true
         continue
       }
-      btn.innerHTML = `<img class="hero-portrait" src="art/hero-${def.id}.webp" alt="">` +
+      btn.innerHTML = `<img class="hero-portrait" src="art/heroes/${def.id}.webp" alt="">` +
         `<span class="hero-name">${def.name}</span><span class="hero-title">${def.title}</span>` +
         `<span class="hero-blurb">${def.blurb}</span>` +
-        `<span class="hero-stats">${icon('heart')} ${def.hp} · ${icon('sword')} ${def.damage[0]}–${def.damage[1]}${def.attackRange ? ` · ${icon('range')} ${def.attackRange}` : ' · melee'}</span>` +
-        `<span class="hero-ability">✦ ${heroPath(def.id, save.heroPaths?.[def.id])?.abilityName ?? def.ability.name}: ${heroPath(def.id, save.heroPaths?.[def.id])?.blurb ?? def.ability.blurb}</span>`
+        `<span class="hero-stats"><span>${icon('heart')}${def.hp}</span><span>${icon('sword')}${def.damage[0]}–${def.damage[1]}</span><span>${def.attackRange ? `${icon('range')}${def.attackRange}` : 'melee'}</span></span>` +
+        `<span class="hero-ability">${icon('sparkle')} ${heroPath(def.id, save.heroPaths?.[def.id])?.abilityName ?? def.ability.name}: ${heroPath(def.id, save.heroPaths?.[def.id])?.blurb ?? def.ability.blurb}</span>`
       btn.onclick = () => {
         hero = def.id
         heroBtns.forEach((b, id) => { b.classList.toggle('picked', id === hero); b.setAttribute('aria-pressed', String(id === hero)) })
@@ -948,7 +955,7 @@ export class Screens {
     if (trial && stats) {
       // a trial is one star, once; the card says whether this was the once
       el('div', 'end-sub', card, won
-        ? (trial.newStar ? `A star for the Armory ${icon('medal')} — ${starsAvailable(this.save())}★ to spend` : 'Already won, and held again.')
+        ? (trial.newStar ? `A star for the Armory ${icon('medal')} — ${starsAvailable(this.save())}<span class="pstar"></span> to spend` : 'Already won, and held again.')
         : stats.lastLeak ? `A ${stats.lastLeak.name} broke through. One life was the whole point.` : 'The trial is lost. Try it again with what you learned.')
     } else if (freeplay && stats) {
       // how far past the map's end the line held, which is the whole score
@@ -964,9 +971,12 @@ export class Screens {
         `, and fell on wave <b>${stats.wavesReached}</b>` +
         (stats.newWaveRecord ? ` — a new record! ${icon('medal')}` : ` · your best is ${stats.bestEndless}`))
     } else if (won) {
-      const starRow = el('div', 'end-stars', card)
+      const starsEl = el('div', 'end-stars', card)
+      starsEl.setAttribute('role', 'img')
+      starsEl.setAttribute('aria-label', `${stars} of 3 stars`)
       for (let i = 0; i < 3; i++) {
-        const s = el('span', `end-star${i < stars ? ' earned' : ''}`, starRow, '★')
+        const s = el('span', `end-star${i < stars ? ' earned' : ''}`, starsEl)
+        s.setAttribute('aria-hidden', 'true')
         s.style.animationDelay = `${0.3 + i * 0.35}s`
       }
       // "flawless" is only ever said when it is true
@@ -992,9 +1002,17 @@ export class Screens {
         (stats.newBestScore
           ? `<span class="score-best">NEW BEST${stats.prevBestScore > 0 ? ` +${delta.toLocaleString()}` : ''}</span>`
           : `<span class="score-short">${Math.abs(delta).toLocaleString()} short of your best</span>`))
-      el('div', 'end-stats', card,
-        `${icon('swords')} ${stats.kills} slain · ${icon('shield')} ${stats.perfectWaves} waves held${stats.bestStreak >= 2 ? ` (${icon('flame')}×${stats.bestStreak})` : ''} · ` +
-        `${icon('coin')} ${stats.gold} · ${icon('gem')} ${stats.shards} · ${icon('helmPlume')} lvl ${stats.heroLevel}${stats.heroKills > 0 ? ` ${icon('skull')}${stats.heroKills}` : ''} · ${icon('hourglass')} ${fmtTime(stats.timeSec)}`)
+      // the run in numbers, one tile each, so the eye can find the one it wants
+      const tiles: [string, string, string][] = [
+        ['swords', stats.kills.toLocaleString(), 'Slain'],
+        ['shield', `${stats.perfectWaves}${stats.bestStreak >= 2 ? `<small> ×${stats.bestStreak}</small>` : ''}`, 'Clean waves'],
+        ['coin', stats.gold.toLocaleString(), 'Gold'],
+        ['gem', `${stats.shards}`, 'Shards'],
+        ['helmPlume', `${stats.heroLevel}${stats.heroKills > 0 ? `<small> · ${stats.heroKills}</small>` : ''}`, 'Hero level'],
+        ['hourglass', fmtTime(stats.timeSec), 'Time'],
+      ]
+      const grid = el('div', 'end-stats', card)
+      for (const [ico, value, label] of tiles) el('div', 'end-stat', grid, `${icon(ico)}<b>${value}</b><small>${label}</small>`)
       if (stats.newCards?.length) {
         el('div', 'end-cards', card, `${icon('crown')} Card${stats.newCards.length === 1 ? '' : 's'} stamped: <b>${stats.newCards.join('</b>, <b>')}</b>`)
       }
@@ -1041,6 +1059,12 @@ export class Screens {
     }
     const menu = el('button', 'btn ghost', row, 'Level select') as HTMLButtonElement
     menu.onclick = () => { this.onMenu(); this.show(shelf === FRONTIER_BOARDS ? 'frontier' : 'levels') }
+    // every result ends in exactly one obvious next step
+    if (!row.querySelector('.btn.primary')) {
+      const lead = objective?.action === 'replay' || objective?.action === 'retry' ? retry : row.querySelector<HTMLButtonElement>('.btn:not(.ghost)')
+      lead?.classList.add('primary')
+      if (lead) row.prepend(lead)
+    }
 
     // Every finished run is worth handing on, not only the Daily's. The Long
     // Night record in particular is the number players most want to argue
@@ -1048,7 +1072,7 @@ export class Screens {
     // a trial's challenge link would open the campaign board, not the trial
     if (stats && this.runSeedForShare && !trial) {
       const shareLabel = `${icon('share')} ${endless ? 'Share your depth' : 'Share this hold'}`
-      const share = el('button', 'btn ghost', row, shareLabel) as HTMLButtonElement
+      const share = el('button', 'btn ghost small', row, shareLabel) as HTMLButtonElement
       share.title = 'Copy a result and a link that drops a friend onto this exact board'
       share.onclick = () => {
         const url = runChallengeUrl(this.runSeedForShare, levelId, endless)
@@ -1068,7 +1092,7 @@ export class Screens {
 
     // a result card is a claim; a clip is evidence
     if (this.canRecordTape()) {
-      const tape = el('button', 'btn ghost', row, `${icon('share')} Siege Tape`) as HTMLButtonElement
+      const tape = el('button', 'btn ghost small', row, `${icon('share')} Siege Tape`) as HTMLButtonElement
       tape.title = 'Record your defense assembling itself, as a video you can share'
       tape.onclick = async () => {
         tape.disabled = true
@@ -1093,6 +1117,9 @@ export class Screens {
   }
 
   onRestore: (save: SaveData) => void = () => {}
+  /** the menu banner was laid out or changed size */
+  onMenuLayout: () => void = () => {}
+  private menuObserver: ResizeObserver | null = null
 
   /** how many watches are still to come; 0 outside the mode */
   watchesRemaining = 0
@@ -1114,8 +1141,8 @@ export class Screens {
     const rerender = () => {
       const crowns = crownStars(save)
       const trialN = trialStars(save)
-      starsLine.innerHTML = `<b>${starsAvailable(save)}★</b> to spend · ${starsEarned(save)} / ${ARMORY_TOTAL_COST} earned` +
-        `<small>Includes ${crowns}★ from Veteran clears and ${trialN}★ from bonus trials.</small>`
+      starsLine.innerHTML = `<b>${starsAvailable(save)}</b><span class="pstar"></span> to spend · ${starsEarned(save)} / ${ARMORY_TOTAL_COST} earned` +
+        `<small>Includes ${crowns} from Veteran clears and ${trialN} from bonus trials.</small>`
       grid.innerHTML = ''
       for (const track of visibleTracks(save)) {
         const tier = armoryTier(save, track.id)  // clamped to the track's real tier count
@@ -1124,9 +1151,9 @@ export class Screens {
         const item = el('div', 'armory-item', grid)
         el('div', 'ai-icon', item, icon(track.icon))
         const body = el('div', 'ai-body', item)
-        el('div', 'ai-name', body, `${track.name} <span class="ai-pips">${'●'.repeat(tier)}${'○'.repeat(track.tierCosts.length - tier)}</span>`)
+        el('div', 'ai-name', body, `${track.name} <span class="ai-pips">${'<i class="on"></i>'.repeat(tier)}${'<i></i>'.repeat(track.tierCosts.length - tier)}</span>`)
         el('div', 'ai-desc', body, track.desc)
-        const buy = el('button', 'btn small', item, maxed ? 'Maxed' : `Forge ${nextCost}★`) as HTMLButtonElement
+        const buy = el('button', 'btn small', item, maxed ? 'Maxed' : `Forge ${nextCost} <span class="pstar"></span>`) as HTMLButtonElement
         buy.disabled = maxed || starsAvailable(save) < nextCost
         buy.onclick = () => {
           if (buyTier(save, track.id)) { writeSave(save); rerender() }

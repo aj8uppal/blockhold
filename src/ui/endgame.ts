@@ -8,12 +8,12 @@ import { HUNTS, huntAccess, heroHunts, masteryReady, type HuntId } from '../game
 import { isUnlocked, levelForXp } from '../game/progress.ts'
 import { HERO_DEFS } from '../game/hero.ts'
 import { HERO_PATHS, heroPath } from '../game/heroPaths.ts'
-import { icon } from './icons.ts'
+import { icon, checkMark } from './icons.ts'
 
 export function renderEndgame(root: HTMLElement, save: SaveData,
   play: (id: HuntId, difficulty: Difficulty, hero: HeroId) => void, back: () => void): void {
   const wrap = document.createElement('div'); wrap.className = 'screen endgame-screen'; root.append(wrap)
-  wrap.innerHTML = `<div class="endgame-top"><button class="btn ghost small endgame-back">← Main menu</button><span>Endgame challenges</span></div>
+  wrap.innerHTML = `<div class="endgame-top"><button class="btn ghost small endgame-back">${icon('arrowLeft')} Main menu</button><span>Endgame challenges</span></div>
     <header class="endgame-heading"><h1>Boss hunts</h1><p>Hold ten waves, defeat a boss, and earn new abilities for your champion.</p></header>
     <div class="endgame-next" role="status"></div>
     <div class="endgame-loadout"><label>Champion <select class="endgame-hero" aria-label="Champion"></select></label><label>Difficulty <select class="endgame-difficulty" aria-label="Hunt difficulty"><option value="casual">Casual · learn the encounter</option><option value="normal">Normal · earn mastery</option><option value="veteran">Veteran · harder challenge</option></select></label></div>
@@ -49,7 +49,7 @@ export function renderEndgame(root: HTMLElement, save: SaveData,
       const completed = save.honors?.includes(`hunt:${hunt.id}:${difficulty}`)
       const newHeroWin = !save.honors?.includes(`hero:${hero}:${hunt.id}`)
       const card = document.createElement('section'); card.className = `endgame-card hunt-card${canHunt && count < 2 && hunt.id === recommended.id ? ' recommended' : ''}`
-      card.innerHTML = `<div class="endgame-kicker">${hunt.id === 'ossuary' ? 'Ground assault · rising escorts' : 'Air & ground · two boss phases'}${completed ? ' · Cleared ✓' : ''}</div>
+      card.innerHTML = `<div class="endgame-kicker">${hunt.id === 'ossuary' ? 'Ground assault · rising escorts' : 'Air & ground · two boss phases'}${completed ? ` · Cleared ${icon('check')}` : ''}</div>
         <h2>${hunt.name}</h2><p>${hunt.id === 'ossuary' ? 'Break the bone colossus. Enemies killed near it rise once more.' : 'Break the Empress’s wings, then stop her armored ground form.'}</p>
         <div class="hunt-reward">${newHeroWin ? `${champion.name} victory → ${count === 0 ? HERO_PATHS[hero][0].name : HERO_PATHS[hero][1].name} path` : 'Replay for XP and a different defense.'}</div>`
       const start = document.createElement('button'); start.className = `btn hunt-start${hunt.id === recommended.id ? ' primary' : ''}`
@@ -87,7 +87,7 @@ export function renderEndgame(root: HTMLElement, save: SaveData,
   mastery.innerHTML = '<p>Earn a permanent tier-six upgrade for a tower family. These are goals after your first hunt wins.</p><ol><li>Reach account level 30.</li><li>Win <b>The Bone Procession</b> and <b>The Fallen Crown</b>, each on either Normal or Veteran (one difficulty per hunt is enough). These are separate ten-wave Boss Hunts, not campaign maps. In each win, finish with one tier-five tower of that family still standing and at least 4,000 damage dealt by that tower (or supported damage for a Beacon).</li><li>The unlock is permanent for both branches. Buy a Mythic upgrade from tier five with battle gold in later battles, including Hold the Line. Build as many as you can afford, including in co-op.</li></ol>'
   for (const family of Object.keys(towerTrees) as TowerKind[]) {
     const item = document.createElement('div'); item.className = 'endgame-card'
-    const progress = HUNTS.map(h => `${save.honors?.includes(`mastery:${family}:${h.id}`) ? '✓' : '○'} ${h.name}`).join('<br>')
+    const progress = HUNTS.map(h => `${checkMark(!!save.honors?.includes(`mastery:${family}:${h.id}`))} ${h.name}`).join('<br>')
     const branches = [mythicFor(family, 0)!, mythicFor(family, 1)!]
     item.innerHTML = `<h3>${family[0].toUpperCase() + family.slice(1)}</h3><b>${masteryReady(save, family) ? 'Unlocked · available at tier five' : `Level ${Math.min(30, levelForXp(save.xp))}/30`}</b><p>${progress}</p><details class="tp-details"><summary>View upgrades</summary>${branches.map(def => `<p><b>${def.name} · ${def.cost.toLocaleString()} gold</b><br>${def.description}</p>`).join('')}</details>`
     mastery.append(item)

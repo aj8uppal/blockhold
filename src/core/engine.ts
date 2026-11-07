@@ -82,6 +82,7 @@ export class Engine {
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
+    this.loadSkyPainter()
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -183,6 +184,7 @@ export class Engine {
     this.baseTheme = t
     this.sun.color.set(t.sunColor)
     this.sun.intensity = this.sunLevel = t.sunIntensity
+    this.sun.position.set(...(t.sunPos ?? [-9, 16, 7]))
     this.hemi.color.set(t.hemiSky)
     this.hemi.groundColor.set(t.hemiGround)
     this.ambient.intensity = t.ambient
@@ -245,6 +247,19 @@ export class Engine {
     }
   }
 
+  /**
+   * The painted dome (cloud seas, stars, embers) lives in its own module so
+   * the first paint never waits for it. It is fetched at start-up and the
+   * current sky is repainted the moment it arrives.
+   */
+  private loadSkyPainter(): void {
+    if (skyRegistry.paint) return
+    void import('./sky.ts').then(({ skyMaterial }) => {
+      skyRegistry.paint ??= skyMaterial
+      if (this.baseTheme?.sky) { this.buildSky(this.baseTheme); this.applyAmbientBlend() }
+    }, () => { /* offline: the plain gradient stands in */ })
+  }
+
   private buildSky(t: ThemeColors): void {
     if (this.sky) {
       this.scene.remove(this.sky)
@@ -254,6 +269,7 @@ export class Engine {
     this.skyMat = t.sky && skyRegistry.paint ? skyRegistry.paint(t.skyTop, t.skyBottom, t.sky) : plainSky(t.skyTop, t.skyBottom)
     this.lightningIn = t.sky?.lightning ? 3 + Math.random() * 4 : Infinity
     this.flash = 0
+    ;(this.skyMat.uniforms.uSunDir?.value as THREE.Vector3 | undefined)?.copy(this.sun.position).normalize()
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(100, 24, 16), this.skyMat)
     this.scene.add(this.sky)
   }

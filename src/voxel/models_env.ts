@@ -301,13 +301,23 @@ export function exitCastle(theme: string): VoxModel {
   return { parts: { base, flag }, pivots: { flag: [0, 14.9, 0] } }
 }
 
+/**
+ * A cumulus built the way the island is: a flat underside, then tiers of
+ * blocks stepping up and in, so it has a lit crown and a shaded belly
+ * instead of reading as a sheet of paper.
+ */
 export function cloud(rng: () => number): VoxModel {
   const c = 0xffffff
-  const base: VoxBox[] = [box(0, 0, 0, 6 + rng() * 6, 1.6, 3.5 + rng() * 3, c)]
-  const n = 2 + Math.floor(rng() * 3)
-  for (let i = 0; i < n; i++) {
-    base.push(box((rng() - 0.5) * 7, 0.9 + rng() * 0.8, (rng() - 0.5) * 3, 2.5 + rng() * 3, 1.4, 2 + rng() * 2, c))
+  const w = 9 + rng() * 6, d = 5 + rng() * 3
+  const base: VoxBox[] = [box(0, 0, 0, w, 1.8, d, c)]
+  const mids = 2 + Math.floor(rng() * 2)
+  for (let i = 0; i < mids; i++) {
+    const x = (i / Math.max(1, mids - 1) - 0.5) * w * 0.55 + (rng() - 0.5) * 1.2
+    const mw = 3.6 + rng() * 2.4
+    base.push(box(x, 1.7, (rng() - 0.5) * 1.4, mw, 2.2, Math.min(d - 0.8, mw * 0.9), c))
   }
+  const crown = (rng() - 0.5) * w * 0.3
+  base.push(box(crown, 3.3, (rng() - 0.5) * 0.8, 3 + rng() * 1.4, 1.8, 2.6 + rng(), c))
   return { parts: { base } }
 }
 

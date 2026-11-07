@@ -154,7 +154,7 @@ export class Trap {
       }
     }
     if (this.kind === 'blast') {
-      world.particles.explosion(pos.x, 0.15, pos.z, 1.1)
+      world.particles.explosion(pos.x, pos.y + 0.15, pos.z, 1.1, { ground: pos.y, scorch: true })
       world.sfx('explosion', 0.9)
       world.shake(0.12)
     } else {

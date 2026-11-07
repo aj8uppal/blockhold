@@ -19,6 +19,8 @@ export default tseslint.config(
   {
     ignores: [
       'dist/**',
+      // the iOS shell: Xcode project plus a copy of dist
+      'ios/**',
       'node_modules/**',
       'public/sw.js',
       'tests/smoke/output/**',
