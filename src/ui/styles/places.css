@@ -1,7 +1,7 @@
 /*
- * The other rooms: boss hunts, the co-op gathering and the Hold editor.
- * Same slabs, same blocks; the Hold and the gathering keep the live 3D
- * courtyard visible and float their controls over it.
+ * The other rooms: boss hunts and the co-op gathering.
+ * Same slabs, same blocks; the gathering keeps the castle visible
+ * and floats its controls beside it.
  */
 
 /* ---------- boss hunts ---------- */
@@ -81,108 +81,7 @@
 .gathering-settings > summary { font-size: 13px; }
 .gathering-settings label.diff-sub { display: grid; gap: 6px; margin: 0; font-family: var(--font-ui); font-weight: 750; font-size: 12px; letter-spacing: 0; color: var(--ink-600); }
 
-/* ---------- the Hold ---------- */
-#screens > .hold-screen { pointer-events: none; }
-.hold-screen { position: absolute; inset: 0; font-size: 14px; background: linear-gradient(180deg, rgba(15,12,9,.22), transparent 22%, transparent 78%, rgba(15,12,9,.18)); }
-.hold-screen [hidden] { display: none !important; }
-.hold-header, .hold-toolbar, .hold-camera, .hold-panel, .hold-sheet, .hold-status { pointer-events: auto; }
-.hold-header {
-  position: absolute; top: calc(var(--safe-t) + 16px); left: calc(var(--safe-l) + 18px); right: calc(var(--safe-r) + 18px);
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
-}
-.hold-heading {
-  display: grid; justify-items: center; gap: 2px;
-  min-width: 0; padding: 8px 18px 10px;
-  background: var(--bone-100); box-shadow: inset 0 -4px 0 var(--bone-400), var(--hi);
-  clip-path: var(--notch-m);
-}
-.hold-heading .eyebrow { color: var(--gold-700); }
-.hold-heading h1 { font-family: var(--font-display); font-weight: 400; font-size: 22px; line-height: 1.1; overflow-wrap: anywhere; text-align: center; }
-.hold-toolbar {
-  position: absolute; left: calc(var(--safe-l) + 18px); bottom: calc(var(--safe-b) + 18px);
-  display: flex; gap: 6px; flex-wrap: wrap;
-}
-.hold-camera { position: absolute; left: calc(var(--safe-l) + 18px); top: calc(var(--safe-t) + 84px); display: flex; gap: 4px; }
-.hold-camera .btn { min-width: 42px; padding: 6px 10px; font-family: var(--font-display); font-weight: 400; }
-.hold-panel {
-  position: absolute; right: calc(var(--safe-r) + 18px); top: calc(var(--safe-t) + 84px);
-  width: 330px; max-height: calc(100% - 120px - var(--safe-t) - var(--safe-b));
-  overflow: auto; overscroll-behavior: contain;
-  padding: 20px;
-  background: var(--bone-100);
-  box-shadow: inset 0 -6px 0 var(--bone-400), var(--hi);
-  clip-path: var(--notch-l);
-}
-.hold-screen h2 { font-family: var(--font-display); font-weight: 400; font-size: 21px; line-height: 1.1; margin: 6px 0 10px; }
-.hold-screen h3 { font-weight: 850; font-size: 15px; margin: 8px 0 4px; }
-.hold-screen p { font-size: 13px; line-height: 1.55; color: var(--ink-600); margin: 6px 0 12px; }
-.hold-panel > .btn { width: 100%; }
-.hold-panel .eyebrow { color: var(--gold-700); }
-.hold-panel .eyebrow:not(:first-child) { display: block; margin-top: 18px; }
-.hold-count { padding: 12px 0; border-top: 2px dashed var(--bone-300); font-weight: 750; font-size: 13px; color: var(--ink-700); }
-.hold-hint { display: block; margin: 6px 0; font-size: 11.5px; line-height: 1.45; color: var(--ink-500); }
-.hold-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
-.hold-actions .btn { flex: 1; }
-.hold-edit-actions { padding-top: 12px; border-top: 2px dashed var(--bone-300); }
-.hold-label { display: grid; gap: 6px; margin: 12px 0; font-weight: 750; font-size: 12px; color: var(--ink-600); }
-.hold-input { width: 100%; }
-.hold-options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
-.hold-options .btn { margin-bottom: var(--lip); }
-.hold-screen .btn[aria-pressed="true"] { --face: var(--gold-200); --lipc: var(--gold-600); }
-.hold-status {
-  position: absolute; left: calc(var(--safe-l) + 18px); bottom: calc(var(--safe-b) + 84px);
-  max-width: min(480px, 60vw);
-  padding: 9px 13px;
-  font-weight: 700; font-size: 12.5px; line-height: 1.45; color: var(--bone-50); background: var(--ink-800);
-  clip-path: var(--notch-s);
-}
-.hold-status:empty { display: none; }
-.hold-overlay { position: fixed; inset: 0; z-index: 3; display: grid; place-items: center; padding: 20px; background: rgba(15,12,9,.62); pointer-events: auto; }
-.hold-sheet {
-  width: min(880px, 100%); max-height: calc(100dvh - 60px); overflow: auto;
-  padding: 22px;
-  background: var(--bone-100); box-shadow: inset 0 -6px 0 var(--bone-400), var(--hi);
-  clip-path: var(--notch-l);
-  animation: sheet-in .2s var(--ease-out);
-}
-.hold-sheet:not(:has(.hold-collection)) { width: min(460px, 100%); }
-.hold-sheet > .btn { display: flex; width: 100%; margin-top: 6px; }
-.hold-sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.hold-sheet-head .btn { min-width: 40px; padding: 4px 10px; font-size: 18px; }
-.hold-filters { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 16px; }
-.hold-filters .btn { min-height: 36px; padding: 6px 12px; font-size: 12.5px; }
-.hold-collection { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.hold-reward { display: flex; flex-direction: column; gap: 4px; padding: 14px; background: var(--bone-50); box-shadow: var(--edge); clip-path: var(--notch-m); }
-.hold-reward-icon { color: var(--gold-600); padding: 6px 0; }
-.hold-reward-icon .ico { width: 30px; height: 30px; }
-.hold-reward small { font-size: 11.5px; font-weight: 650; color: var(--ink-500); }
-.hold-reward p { margin: 6px 0 8px; font-size: 12.5px; }
-.hold-reward > .btn { margin-top: auto; }
-.hold-new { padding: 2px 6px; font-family: var(--font-display); font-size: 10px; color: #fff; background: var(--ember-500); clip-path: var(--notch-s); }
-
-@media (max-width: 700px) and (orientation: portrait) {
-  .hold-header { left: 12px; right: 12px; gap: 8px; }
-  .hold-header .btn { padding: 8px 12px; font-size: 12.5px; }
-  .hold-heading .eyebrow { display: none; }
-  .hold-heading h1 { font-size: 17px; }
-  .hold-camera { left: 12px; top: calc(var(--safe-t) + 74px); }
-  .hold-panel { left: 12px; right: 12px; width: auto; top: auto; bottom: calc(var(--safe-b) + 80px); max-height: 32dvh; padding: 16px; }
-  .hold-toolbar { left: 12px; right: 12px; bottom: calc(var(--safe-b) + 12px); justify-content: center; }
-  .hold-status { left: 12px; right: 12px; max-width: none; bottom: calc(34dvh + 92px); }
-  .hold-collection { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .placing .hold-panel { max-height: 20dvh; }
-}
 @media (max-height: 580px) and (orientation: landscape) {
-  .hold-header { top: calc(var(--safe-t) + 10px); left: calc(var(--safe-l) + 12px); right: calc(var(--safe-r) + 12px); }
-  .hold-heading { padding: 6px 14px 8px; }
-  .hold-heading .eyebrow { display: none; }
-  .hold-heading h1 { font-size: 17px; }
-  .hold-panel { top: calc(var(--safe-t) + 66px); bottom: calc(var(--safe-b) + 12px); right: calc(var(--safe-r) + 12px); width: 260px; max-height: none; padding: 14px; }
-  .hold-camera { top: calc(var(--safe-t) + 66px); left: calc(var(--safe-l) + 12px); }
-  .hold-toolbar { left: calc(var(--safe-l) + 12px); bottom: calc(var(--safe-b) + 10px); }
-  .hold-toolbar .btn { min-height: 38px; padding: 6px 12px; }
-  .hold-status { left: calc(var(--safe-l) + 12px); bottom: calc(var(--safe-b) + 66px); max-width: calc(100% - 320px); }
-  .hold-sheet { max-height: calc(100dvh - 20px); padding: 16px; }
   .coop-card { top: calc(var(--safe-t) + 10px); left: calc(var(--safe-l) + 12px); max-height: calc(100% - 20px - var(--safe-t) - var(--safe-b)); padding: 16px; gap: 9px; }
   .coop-title { font-size: 21px; }
   .coop-code { font-size: 26px; padding: 10px; }

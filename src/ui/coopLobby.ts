@@ -1,5 +1,3 @@
-import { holdSnapshot } from '../hold/catalog.ts'
-import type { HoldSnapshot } from '../core/holdData.ts'
 import { readSession } from '../game/session.ts'
 import { HUNTS, huntAccess } from '../game/hunts.ts'
 import type { SaveData } from '../core/save.ts'
@@ -20,7 +18,6 @@ import type { ScreenName } from './screens.ts'
  * the first visit never pays for it.
  */
 export interface LobbyApi {
-  preview: (snapshot: HoldSnapshot) => Promise<() => void>
   root: HTMLElement
   save: () => SaveData
   show: (name: ScreenName) => void
@@ -58,18 +55,12 @@ export function leaveCoopLobby(): void {
 export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
   const save = api.save()
   let onlineCleanup = () => {}
-  let disposed = false, sceneCleanup: (() => void) | null = null, sceneVersion = 0
-  const preview = (snapshot: HoldSnapshot) => {
-    const version = ++sceneVersion
-    sceneCleanup?.(); sceneCleanup = null
-    void api.preview(snapshot).then(cleanup => { if (disposed || version !== sceneVersion) cleanup(); else sceneCleanup = cleanup })
-  }
-  const cleanup = () => { disposed = true; sceneVersion++; sceneCleanup?.(); onlineCleanup() }
+  let disposed = false
+  const cleanup = () => { disposed = true; onlineCleanup() }
   const wrap = el('div', 'screen menu-screen gathering-screen', api.root)
   const card = el('div', 'menu-hero coop-card', wrap)
   el('h2', 'coop-title', card, `${icon('users')} Co-op`)
   const session = coopSession
-  preview(session?.setup?.hold ?? holdSnapshot(save))
 
   if (!session) {
     el('div', 'coop-sub', card, 'Gather at your Hold, choose a battlefield, and defend together. Up to four wardens share gold and lives.')
@@ -223,7 +214,6 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
   const start = session.isHost ? el('button', 'btn primary big', card, 'Start the battle') : null
   if (start) start.onclick = () => { void send('start') }
   const help = el('p', 'coop-sub dim', card)
-  let lastHold = JSON.stringify(session.setup?.hold)
   function paint(event?: CoopEvent): void {
     if (!session) return
     if (event?.type === 'connection') streamOnline = event.connected
@@ -235,9 +225,7 @@ export function renderCoopLobby(api: LobbyApi, prefill?: string): () => void {
     ready.setAttribute('aria-pressed', String(session.readySeats.includes(session.seat)))
     if (start) start.disabled = pending || !connected || !session.setup || !session.members.every(id => session.readySeats.includes(id) && session.connected.includes(id))
     card.querySelectorAll('select').forEach(select => { select.disabled = pending || !connected })
-    help.textContent = !connected ? 'Reconnecting to the room…' : session.setup?.gathering ? 'Everyone readies up. The host starts when the party is ready. Tap a trophy to inspect it.' : 'This room uses an older lobby. The host can start when everyone is ready.'
-    const current = JSON.stringify(session.setup?.hold)
-    if (current !== lastHold && session.setup?.hold) { lastHold = current; preview(session.setup.hold) }
+    help.textContent = !connected ? 'Reconnecting to the room…' : session.setup?.gathering ? 'Everyone readies up. The host starts when the party is ready.' : 'This room uses an older lobby. The host can start when everyone is ready.'
   }
   coopPaint = paint
   const networkChanged = () => paint()
@@ -267,7 +255,7 @@ let coopPaint: (event?: CoopEvent) => void = () => {}
 function defaultCoopSetup(save: SaveData): CoopSetup {
   const last = levels[Math.max(0, Math.min(save.unlocked, levels.length) - 1)]
   const hero = (Object.hasOwn(HERO_DEFS, save.lastHero) && isUnlocked(save, 'hero', save.lastHero as HeroId) ? save.lastHero : 'aldric') as HeroId
-  return { levelId: last.id, difficulty: 'normal', hero, seed: newRunSeed(), gathering: true, hold: holdSnapshot(save), loadout: { armory: { ...save.armory }, xp: save.xp, stars: { ...save.stars }, honors: [...(save.honors ?? [])], heroPaths: { ...save.heroPaths } } }
+  return { levelId: last.id, difficulty: 'normal', hero, seed: newRunSeed(), gathering: true, loadout: { armory: { ...save.armory }, xp: save.xp, stars: { ...save.stars }, honors: [...(save.honors ?? [])], heroPaths: { ...save.heroPaths } } }
 }
 
 function attachCoop(api: LobbyApi): void {

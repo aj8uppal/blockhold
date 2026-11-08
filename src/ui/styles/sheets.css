@@ -160,6 +160,58 @@ textarea.account-input { min-height: 80px; resize: vertical; }
 .fusion-confirm { --face: var(--ember-500) !important; --lipc: var(--ember-600) !important; --txt: #fff !important; }
 .fusion-confirm:disabled { --face: var(--bone-200) !important; --lipc: var(--bone-300) !important; --txt: var(--ink-400) !important; }
 
+/* ---------- trophies ---------- */
+/* each set is one row of marks: lit is earned, hollow is not */
+.trophies-card { width: min(640px, 100%); }
+.trophy-fresh { color: var(--ember-600); }
+.trophy-next { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; row-gap: 3px; align-items: center; padding: 14px 16px 15px; color: var(--bone-50); background: var(--ink-800); clip-path: var(--notch-m); }
+.trophy-next > * { grid-column: 1; }
+.trophy-next .eyebrow { color: var(--gold-300); }
+.trophy-next > b { font-family: var(--font-display); font-weight: 400; font-size: 20px; line-height: 1.15; }
+.trophy-next p { font-size: 13px; line-height: 1.45; color: rgba(247, 240, 226, .78); }
+.trophy-next small { margin-left: 4px; font-weight: 750; color: var(--gold-300); white-space: nowrap; }
+.trophy-next .btn { grid-column: 2; grid-row: 1 / span 3; }
+.trophy-group { display: grid; gap: 6px; }
+.trophy-group h3 { display: flex; align-items: baseline; justify-content: space-between; font-family: var(--font-display); font-weight: 400; font-size: 15px; letter-spacing: .02em; }
+.trophy-group h3 span { font-family: var(--font-ui); font-weight: 750; font-size: 12px; color: var(--ink-500); }
+.trophy-legend { margin-top: -2px; font-size: 12px; line-height: 1.5; color: var(--ink-500); }
+.trophy-legend .ico { color: var(--gold-600); vertical-align: -2px; }
+.trophy-rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row dense; gap: 4px 8px; }
+.trophy-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 5px 6px 5px 10px; background: var(--bone-50); box-shadow: var(--edge); clip-path: var(--notch-s); }
+.tr-name { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; font-weight: 750; font-size: 13.5px; white-space: nowrap; text-overflow: ellipsis; }
+.tr-name .ico { flex: none; font-size: 15px; color: var(--ink-500); }
+.trophy-row.locked .tr-name { color: var(--ink-400); }
+.tr-chips { display: flex; flex: none; gap: 4px; }
+.trophy-chip {
+  position: relative; display: grid; place-items: center; min-width: 32px; height: 32px; padding: 0 7px;
+  font-weight: 800; font-size: 11.5px; color: var(--ink-400); cursor: pointer;
+  background: transparent; box-shadow: inset 0 0 0 2px var(--bone-300); clip-path: var(--notch-s);
+}
+.trophy-chip .ico { font-size: 16px; filter: grayscale(1); opacity: .45; }
+.trophy-chip.on .ico { filter: none; opacity: 1; }
+.trophy-chip.on { color: var(--ink-900); background: var(--gold-300); box-shadow: inset 0 -3px 0 var(--gold-600); }
+.trophy-chip.new::after { content: ''; position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; background: var(--ember-500); }
+.trophy-chip[aria-expanded="true"] { box-shadow: inset 0 0 0 2px var(--ink-800); }
+.trophy-chip.on[aria-expanded="true"] { box-shadow: inset 0 0 0 2px var(--ink-800), inset 0 -4px 0 var(--gold-600); }
+.trophy-detail { grid-column: 1 / -1; display: grid; gap: 4px; padding: 10px 12px 12px; background: var(--bone-200); clip-path: var(--notch-s); }
+.trophy-detail[hidden] { display: none; }
+.trophy-detail > b { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 850; font-size: 14px; }
+.trophy-earned { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--moss-600); }
+.trophy-detail p { font-size: 13px; line-height: 1.45; color: var(--ink-700); }
+.trophy-detail small { margin-left: 4px; font-weight: 750; color: var(--ink-500); white-space: nowrap; }
+.trophy-detail .btn { justify-self: start; margin-top: 4px; }
+.trophies-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+@media (max-height: 560px) {
+  .trophy-next { padding: 10px 14px 11px; }
+  .trophy-next > b { font-size: 17px; }
+}
+@media (max-width: 560px) {
+  .trophy-next { grid-template-columns: minmax(0, 1fr); }
+  .trophy-next .btn { grid-column: 1; grid-row: auto; justify-self: start; margin-top: 8px; }
+  .trophy-rows { grid-template-columns: minmax(0, 1fr); }
+  .trophies-foot .btn { flex: 1; }
+}
+
 @media (max-width: 700px), (max-height: 560px) {
   .help-card, .fusion-card { padding: 16px 16px 18px; gap: 10px; }
   .help-card > h2, .help-card header h2, .fusion-card h2 { font-size: 20px; }

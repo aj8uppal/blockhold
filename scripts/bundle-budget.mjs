@@ -74,6 +74,8 @@ const assets = join(root, 'dist', 'assets')
 // banner add ~1.3 KiB to the app chunk. The floating island and the rebuilt
 // keep load in their own ~3.7 KiB of lazy chunks, and the lit cumulus cloud
 // sea grows the lazy sky chunk. Measured 200.5 / 376.2 KiB.
+// The Your Hold courtyard, editor and visit links gave way to a trophy sheet
+// beside the menu castle: -8.6 KiB total. Measured 200.1 / 367.6 KiB.
 const APP_CHUNK_LIMIT = 202 * 1024
 // Event Horizon's dedicated voxel model and levitation add ~0.7 KiB gzip.
 // Authored moorings, traveling pulses and shared dialog/input behavior add ~1.7 KiB.

@@ -68,7 +68,7 @@
 /* demoted to second place by a battle in progress */
 .menu-primary-actions .btn.ghost.big { min-height: 40px; padding: 8px 14px; font-family: var(--font-ui); font-weight: 750; font-size: 13.5px; justify-content: center; clip-path: var(--notch-s); --lip: 0px; }
 .menu-primary-actions .btn.ghost.big > .ico:first-child { font-size: 15px; }
-.hold-inline, .account-inline { display: none !important; }
+.trophies-inline, .account-inline { display: none !important; }
 .menu-resume > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .menu-resume small { font-family: var(--font-ui); font-size: 13px; font-weight: 600; letter-spacing: 0; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .menu-resume > span[aria-hidden] { font-family: var(--font-display); font-size: 18px; flex: none; }
@@ -129,14 +129,14 @@ button.level-next { padding: 6px 0; text-align: left; }
 .home-signoff { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 650; color: var(--ink-400); }
 .home-signoff .ico { color: var(--moss-600); }
 
-/* ---------- corner: your hold & account ---------- */
+/* ---------- corner: trophies & account ---------- */
 .home-corner {
   position: absolute; top: calc(var(--safe-t) + 16px); right: calc(var(--safe-r) + 18px);
   display: flex; gap: 8px; align-items: flex-start;
 }
 .home-corner .btn { min-height: 44px; }
-.home-corner .hold-view .ico { color: var(--gold-600); font-size: 20px; }
-.home-corner .hold-view .new-count { padding: 2px 6px; font-family: var(--font-display); font-size: 10px; color: #fff; background: var(--ember-500); clip-path: var(--notch-s); }
+.home-corner .trophies-view .ico { color: var(--gold-600); font-size: 20px; }
+.home-corner .trophies-view .new-count, .trophies-inline .new-count { padding: 2px 6px; font-family: var(--font-display); font-size: 10px; color: #fff; background: var(--ember-500); clip-path: var(--notch-s); }
 
 /* ---------- a placard under the keep ---------- */
 .home-plaque {
@@ -178,7 +178,7 @@ button.level-next { padding: 6px 0; text-align: left; }
 @media (max-width: 700px) {
   .home-banner { left: 50%; transform: translateX(-50%); width: min(404px, calc(100vw - 24px)); animation: none; }
   .home-corner, .home-plaque { display: none; }
-  .hold-inline, .account-inline { display: inline-flex !important; }
+  .trophies-inline, .account-inline { display: inline-flex !important; }
   .menu-navigation { grid-template-columns: 1fr 1fr; }
 }
 @media (max-height: 560px) and (max-width: 700px) {

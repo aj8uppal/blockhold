@@ -980,19 +980,10 @@ export class Game implements World {
     if (!this.holdGroup) return null
     const wasChrome = this.hud.chromeVisible
     this.hud.setChrome(false)
-    const startYaw = this.engine.yaw
-    const startTarget = this.engine.camTarget.clone()
-    const startDist = this.engine.dist
     try {
       // centre the keep for its portrait; the menu framing deliberately pushes
       // it off to one side so the card can sit over the empty half
-      this.engine.camera.clearViewOffset()
-      this.engine.camera.zoom = 1
-      this.engine.camera.updateProjectionMatrix()
-      this.engine.camTarget.set(0, 0.6, 0)
-      this.engine.camTargetGoal.copy(this.engine.camTarget)
-      this.engine.yaw = this.engine.yawGoal = startYaw + 0.25
-      this.engine.dist = this.engine.distGoal = 12.5
+      this.frameMenuBackdrop(true)
       const { capturePostcard } = await import('../core/capture.ts')
       return await capturePostcard(this.engine.canvas, {
         summary: holdSummary(holdPieces(this.save)),
@@ -1000,10 +991,6 @@ export class Game implements World {
         onFrame: () => this.engine.render(),
       })
     } finally {
-      this.engine.camTarget.copy(startTarget)
-      this.engine.camTargetGoal.copy(startTarget)
-      this.engine.yaw = this.engine.yawGoal = startYaw
-      this.engine.dist = this.engine.distGoal = startDist
       this.frameMenuBackdrop()
       this.hud.setChrome(wasChrome)
     }
@@ -1614,9 +1601,13 @@ export class Game implements World {
    * most of it on a phone held upright - so the island is fitted into the
    * largest clear area beside or below it, at a low angle that shows the
    * horizon above and the island's underside below. With nowhere clear
-   * enough, it sits centred behind the banner as scenery.
+   * enough, it sits centred behind the banner as scenery. The co-op lobby's
+   * card is treated the same way.
+   *
+   * `postcard` frames it instead for the shared picture: centred in the part
+   * of the canvas the card keeps (1.6:1, cover-fit) and clear of its caption.
    */
-  frameMenuBackdrop(): void {
+  frameMenuBackdrop(postcard = false): void {
     const e = this.engine, w = window.innerWidth, h = window.innerHeight
     const group = this.holdGroup
     if (!group) return
@@ -1627,9 +1618,13 @@ export class Game implements World {
     e.camTargetGoal.copy(center)
     e.camTarget.copy(center)
 
-    const banner = document.querySelector('.home-banner')?.getBoundingClientRect()
+    const banner = postcard ? undefined : document.querySelector('.home-banner, .coop-card')?.getBoundingClientRect()
     let area = { x: 0, y: 0, w, h }
-    if (banner && banner.width > 0) {
+    if (postcard) {
+      const cw = Math.min(w, h * 1.6), ch = cw / 1.6
+      // the card fades its bottom fifth into the caption
+      area = { x: (w - cw) / 2, y: (h - ch) / 2, w: cw, h: ch * 0.8 }
+    } else if (banner && banner.width > 0) {
       const right = { x: banner.right, y: 0, w: w - banner.right, h }
       const below = { x: 0, y: banner.bottom, w, h: h - banner.bottom }
       const best = right.w * right.h >= below.w * below.h ? right : below
@@ -1642,7 +1637,20 @@ export class Game implements World {
     const b = new THREE.Box3().setFromObject(group)
     if (b.isEmpty()) return
     const corners: THREE.Vector3[] = []
-    for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) corners.push(new THREE.Vector3(x, y, z))
+    if (postcard) {
+      // the picture is fitted to the island itself: its box is mostly empty
+      // air around the tapering underside, which would leave it small and high
+      const meshes: THREE.Mesh[] = []
+      group.traverse(o => { if (o instanceof THREE.Mesh) meshes.push(o) })
+      const total = meshes.reduce((n, m) => n + m.geometry.attributes.position.count, 0)
+      const stride = Math.max(1, Math.ceil(total / 6000))
+      for (const m of meshes) {
+        const pos = m.geometry.attributes.position
+        for (let i = 0; i < pos.count; i += stride) corners.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld))
+      }
+    } else {
+      for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) corners.push(new THREE.Vector3(x, y, z))
+    }
     // back the camera off until the island fits; on a screen too small for
     // that within the sky, the lens widens instead
     const measure = () => {
@@ -1657,7 +1665,8 @@ export class Game implements World {
     }
     e.camera.zoom = 1
     let bounds = measure()
-    for (let dist = 14; dist <= 56; dist *= 1.04) {
+    // the picture has the whole frame to itself, so it may come in closer
+    for (let dist = postcard ? 6 : 14; dist <= 56; dist *= 1.04) {
       e.distGoal = e.dist = dist
       bounds = measure()
       if (bounds.right - bounds.left < area.w && bounds.bottom - bounds.top < area.h) break
@@ -1667,19 +1676,6 @@ export class Game implements World {
     e.camera.setViewOffset(w, h,
       (bounds.left + bounds.right) / 2 - (area.x + area.w / 2),
       (bounds.top + bounds.bottom) / 2 - (area.y + area.h / 2), w, h)
-  }
-
-  /** Hide the menu diorama while a disposable cosmetic preview owns the camera. */
-  hideMenuBackdrop(): () => void {
-    const group = this.holdGroup
-    if (group) group.visible = false
-    return () => {
-      if (!group?.parent) return
-      group.visible = true
-      this.engine.applyTheme(MENU_THEME, 16, 12)
-      this.engine.scene.fog = new THREE.Fog(MENU_THEME.fog, 60, 160)
-      this.frameMenuBackdrop()
-    }
   }
 
   private holdGroup: THREE.Group | null = null

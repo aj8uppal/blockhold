@@ -26,7 +26,7 @@ import { isUnlocked, levelProgress, nextUnlock, unlockLevel, xpForLevel, MAX_LEV
 import { cloud } from '../core/cloud.ts'
 import { dailyShareText, challengeUrl, runChallengeUrl, runShareText, type DailyResult } from '../game/share.ts'
 
-export type ScreenName = 'menu' | 'hold' | 'sandbox' | 'levels' | 'frontier' | 'victory' | 'defeat' | 'coop' | 'hunts' | 'none'
+export type ScreenName = 'menu' | 'sandbox' | 'levels' | 'frontier' | 'victory' | 'defeat' | 'coop' | 'hunts' | 'none'
 
 const THEME_ART: Record<string, string> = {
   forest: 'linear-gradient(160deg, #79c057 0%, #4e9a3d 55%, #2e7a52 100%)',
@@ -222,20 +222,18 @@ export class Screens {
 
   private current: ScreenName = 'none'
   private cleanup: (() => void) | null = null
-  onOpenHold: (code?: string) => void = () => {}
-  onCoopBackdrop: (snapshot: import('../core/holdData.ts').HoldSnapshot) => Promise<() => void> = async () => () => {}
   isCurrent(name: ScreenName): boolean { return this.current === name }
   setCleanup(cleanup: () => void): void { this.cleanup = cleanup }
 
-  show(name: ScreenName, opts: { stars?: number, levelId?: string, stats?: BattleStats, coopCode?: string, visit?: string } = {}): void {
+  show(name: ScreenName, opts: { stars?: number, levelId?: string, stats?: BattleStats, coopCode?: string } = {}): void {
     this.cleanup?.(); this.cleanup = null
+    this.frameObserver?.disconnect(); this.frameObserver = null
     this.root.innerHTML = ''
     this.current = name
     this.root.classList.toggle('hidden', name === 'none')
     this.root.classList.toggle('transparent-bg', name === 'victory' || name === 'defeat')
     switch (name) {
       case 'menu': this.renderMenu(); break
-      case 'hold': this.onOpenHold(opts.visit); break
       case 'levels': this.renderLevels(); break
       case 'frontier': this.renderFrontier(); break
       case 'sandbox': this.renderLevels(true); break
@@ -255,9 +253,7 @@ export class Screens {
     const banner = el('div', 'home-banner', wrap)
     // the Hold is framed in whatever the banner leaves clear, so it is
     // reframed whenever the banner settles: after fonts load, on rotation
-    this.menuObserver?.disconnect()
-    this.menuObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this.onMenuLayout())
-    this.menuObserver?.observe(banner)
+    this.observeFrame(banner)
     const card = el('div', 'home-cloth menu-hero main-menu', banner)
     const crest = el('div', 'home-crest', card)
     el('h1', 'game-title', crest, `<span class="sr-only">Blockhold</span>${wordmark('', 'ink')}`)
@@ -318,9 +314,9 @@ export class Screens {
       const coop = el('button', 'btn', navigation, `${icon('users')} Co-op`) as HTMLButtonElement
       coop.onclick = () => this.show('coop')
     }
-    // on a portrait phone the banner fills the screen, so the Hold is reached from inside it
-    const holdInline = el('button', 'btn hold-inline', navigation, `${icon('castle')} Your Hold`)
-    holdInline.onclick = () => this.show('hold')
+    // on a portrait phone the banner fills the screen, so the trophies are reached from inside it
+    const trophiesInline = el('button', 'btn trophies-inline', navigation, `${icon('trophy')} Trophies`)
+    trophiesInline.onclick = () => this.renderTrophies()
     const explore = el('button', 'menu-explore', card,
       `${icon('sparkle')}<span>Explore modes<small>Sandbox, boss hunts, the Daily Hold</small></span>${icon('arrowRight')}`)
     explore.setAttribute('aria-label', 'Explore modes')
@@ -361,19 +357,24 @@ export class Screens {
     // something standing, so a bare Hold never invites a picture of nothing.
     if (pieces.towers > 0) {
       const shot = el('button', 'hold-share', footer, `${icon('share')} Share my Hold`) as HTMLButtonElement
-      shot.onclick = () => this.show('hold')
+      shot.onclick = async () => {
+        shot.disabled = true
+        const ok = await this.onSharePostcard().catch(() => false)
+        shot.disabled = false
+        if (!ok) shot.textContent = 'Could not make the picture'
+      }
     }
     this.renderPrivacyRow(settings)
     el('div', 'home-signoff', card, `${icon('shield')} ${cloud.signedIn ? 'Account connected · progress synced' : 'Progress saved on this device'}`)
 
     // the keep itself, and who it belongs to
     const corner = el('div', 'home-corner', wrap)
-    const hold = el('button', 'btn hold-view', corner, `${icon('castle')} Your Hold`)
-    hold.onclick = () => this.show('hold')
-    void import('../hold/catalog.ts').then(({ newHoldRewards }) => {
-      if (!hold.isConnected) return
-      const n = newHoldRewards(this.save()).length
-      if (n) hold.insertAdjacentHTML('beforeend', `<span class="new-count">${n} new</span>`)
+    const trophies = el('button', 'btn trophies-view', corner, `${icon('trophy')} Trophies`)
+    trophies.onclick = () => this.renderTrophies()
+    void import('../game/trophies.ts').then(({ newTrophies }) => {
+      if (!trophies.isConnected) return
+      const n = newTrophies(this.save()).length
+      if (n) for (const b of [trophies, trophiesInline]) b.insertAdjacentHTML('beforeend', `<span class="new-count">${n} new</span>`)
     })
     if (cloud.enabled) {
       const st = cloud.status()
@@ -457,12 +458,14 @@ export class Screens {
       this.root.innerHTML = ''
       this.cleanup = renderCoopLobby({
         root: this.root,
-        preview: snapshot => this.onCoopBackdrop(snapshot),
         save: this.save,
         show: (name) => this.show(name),
         isCurrent: () => this.current === 'coop',
         onCoopStart: (session, setup) => this.onCoopStart(session, setup),
       }, prefill)
+      // the lobby stands beside the castle, as the menu does
+      const lobby = this.root.querySelector<HTMLElement>('.coop-card')
+      if (lobby) this.observeFrame(lobby)
     })
   }
 
@@ -787,7 +790,7 @@ export class Screens {
     setTimeout(() => { btn.innerHTML = label }, 2500)
   }
 
-  showHoldObjective(levelId: string): void {
+  showLevelObjective(levelId: string): void {
     this.show('levels')
     const index = levels.findIndex(l => l.id === levelId)
     if (index >= 0 && index < this.save().unlocked) this.showDifficultyPicker(levelId, levels[index].name)
@@ -1119,7 +1122,33 @@ export class Screens {
   onRestore: (save: SaveData) => void = () => {}
   /** the menu banner was laid out or changed size */
   onMenuLayout: () => void = () => {}
-  private menuObserver: ResizeObserver | null = null
+  private frameObserver: ResizeObserver | null = null
+  /** reframe the castle whenever the panel beside it changes size */
+  private observeFrame(panel: HTMLElement): void {
+    this.frameObserver?.disconnect()
+    this.frameObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this.onMenuLayout())
+    this.frameObserver?.observe(panel)
+  }
+
+  /** what has been earned, set by set, and the battle that earns the rest */
+  private async renderTrophies(): Promise<void> {
+    const current = this.current
+    const { renderTrophies } = await import('./trophies.ts')
+    if (this.current !== current) return
+    renderTrophies(this.root, {
+      save: this.save,
+      persist: () => { writeSave(this.save()); this.onSaveChanged() },
+      go: t => {
+        if (t.action === 'daily') this.onPlayDaily()
+        else if (t.action === 'hunts') this.show('hunts')
+        else if (t.source) this.showLevelObjective(t.source)
+        else this.show('levels')
+      },
+      share: () => this.onSharePostcard(),
+    }, () => this.root.querySelectorAll('.trophies-view .new-count, .trophies-inline .new-count').forEach(b => b.remove()))
+  }
+  /** a save changed outside a battle; the host syncs it */
+  onSaveChanged: () => void = () => {}
 
   /** how many watches are still to come; 0 outside the mode */
   watchesRemaining = 0
