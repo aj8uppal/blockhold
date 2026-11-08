@@ -1,5 +1,6 @@
 import { seraphAwakening } from './effects/seraphAwakening.ts'
 import { canFuseSeraphs } from './seraphFusion.ts'
+import { steadyFrameTime } from '../core/frameClock.ts'
 import { gameSpeed, nextGameSpeed, type GameSpeed } from '../core/gameSpeed.ts'
 import { availableExpansionPlots, placeExpansionPlot, EXPANSION_EVERY } from './expansion.ts'
 import { huntById, huntLevel, huntClearGold, awardHunt, heroHunts, masteryReady, masteryHint, type HuntDef, type HuntId } from './hunts.ts'
@@ -956,7 +957,7 @@ export class Game implements World {
         seconds: 15,
         title: this.level.name,
         headline,
-        footer: 'aj8uppal.github.io/blockhold',
+        footer: 'blockhold.app',
         onFrame,
       })
     } finally {
@@ -987,7 +988,7 @@ export class Game implements World {
       const { capturePostcard } = await import('../core/capture.ts')
       return await capturePostcard(this.engine.canvas, {
         summary: holdSummary(holdPieces(this.save)),
-        footer: 'aj8uppal.github.io/blockhold',
+        footer: 'blockhold.app',
         onFrame: () => this.engine.render(),
       })
     } finally {
@@ -3825,13 +3826,16 @@ export class Game implements World {
       if (this.coop) {
         this.coopAdvance(dtRaw, H)
       } else {
-        let dtSim = dtRaw
+        // whole-millisecond frame times would otherwise alternate 0, 1 and 2
+        // steps a frame on iOS; see frameClock.ts
+        let dtSim = steadyFrameTime(dtRaw, H)
         if (this.hitstopT > 0) {
           this.hitstopT = Math.max(0, this.hitstopT - dtRaw)
           dtSim *= this.hitstopScale
         }
         this.simAccumulator = Math.min(this.simAccumulator + dtSim * this.speed, H * 26)
-        while (this.simAccumulator >= H && this.phase === 'playing') {
+        // the epsilon keeps float rounding from turning one step into none
+        while (this.simAccumulator >= H - 1e-9 && this.phase === 'playing') {
           this.simAccumulator -= H
           this.simStep(H)
         }

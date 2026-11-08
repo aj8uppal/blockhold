@@ -1696,10 +1696,17 @@ export class HUD {
     el('div', 'dossier-eyebrow', card, def.boss ? 'A boss walks the road' : 'Something new is coming')
 
     const head = el('div', 'dossier-head', card)
-    if (BOSS_ART.has(def.id)) {
-      const art = el('div', 'dossier-art', head)
-      art.style.backgroundImage = `url(art/bosses/${def.id}.webp)`
-    }
+    // the newcomer itself, turning on a plinth; a boss shows its portrait
+    // until the model is ready, and keeps it if WebGL will not start
+    const art = el('div', 'dossier-art', head)
+    if (BOSS_ART.has(def.id)) art.style.backgroundImage = `url(art/bosses/${def.id}.webp)`
+    let closed = false
+    let unmount: (() => void) | null = null
+    void import('./pedestal.ts').then(({ mountPedestal }) => {
+      if (closed || !art.isConnected) return
+      unmount = mountPedestal(art, def)
+      if (!art.classList.contains('has-pedestal') && !BOSS_ART.has(def.id)) art.remove()
+    }).catch(() => { if (!BOSS_ART.has(def.id)) art.remove() })
     const title = el('div', 'dossier-title', head)
     el('h2', '', title, def.name)
     el('div', 'dossier-blurb', title, def.description)
@@ -1719,8 +1726,9 @@ export class HUD {
     el('span', 'dc-text', counter, counterFor(def))
 
     const go = el('button', 'btn primary', card, 'Understood') as HTMLButtonElement
-    go.onclick = () => { overlay.remove(); onClose() }
-    bindDialog(overlay, card, () => { overlay.remove(); onClose() })
+    const finish = () => { closed = true; unmount?.(); overlay.remove(); onClose() }
+    go.onclick = finish
+    bindDialog(overlay, card, finish)
     setTimeout(() => go.focus?.(), 40)
   }
 

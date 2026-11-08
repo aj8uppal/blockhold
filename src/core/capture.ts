@@ -118,7 +118,7 @@ export async function shareTape(blob: Blob, filename: string): Promise<boolean> 
   try {
     const file = new File([blob], filename, { type: blob.type })
     if (!nav.canShare({ files: [file] })) return false
-    await nav.share({ files: [file], title: 'Blockhold', text: 'My hold. Beat it: aj8uppal.github.io/blockhold' })
+    await nav.share({ files: [file], title: 'Blockhold', text: 'My hold. Beat it: https://blockhold.app' })
     return true
   } catch {
     // a cancelled sheet and an unsupported one look the same here, and the
@@ -344,7 +344,7 @@ export async function sharePostcard(blob: Blob, filename: string): Promise<boole
   try {
     const file = new File([blob], filename, { type: 'image/png' })
     if (!nav.canShare({ files: [file] })) return false
-    await nav.share({ files: [file], title: 'My Blockhold', text: 'aj8uppal.github.io/blockhold' })
+    await nav.share({ files: [file], title: 'My Blockhold', text: 'https://blockhold.app' })
     return true
   } catch {
     return false

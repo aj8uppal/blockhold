@@ -16,6 +16,7 @@
     "bundle:budget": "node scripts/bundle-budget.mjs"
   },
   "dependencies": {
+    "@capacitor/app": "8.1.2",
     "three": "^0.169.0"
   },
   "devDependencies": {

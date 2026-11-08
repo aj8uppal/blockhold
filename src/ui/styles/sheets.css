@@ -93,6 +93,8 @@
 .dossier-eyebrow { font-family: var(--font-display); font-size: 12px; letter-spacing: .05em; color: var(--ember-600); }
 .dossier-head { display: flex; align-items: center; gap: 16px; }
 .dossier-art { flex: none; width: 110px; height: 110px; background: var(--ink-800) center / contain no-repeat; clip-path: var(--notch-m); }
+.dossier-art.has-pedestal { width: 150px; height: 150px; background: radial-gradient(circle at 50% 38%, #3a3127, var(--ink-900) 72%); }
+.pedestal-canvas { display: block; width: 100%; height: 100%; }
 .dossier-title h2 { font-family: var(--font-display); font-weight: 400; font-size: 26px; line-height: 1.05; }
 .dossier-blurb { margin-top: 6px; color: var(--ink-600); }
 .dossier-traits { display: grid; gap: 4px; }
@@ -217,6 +219,7 @@ textarea.account-input { min-height: 80px; resize: vertical; }
   .help-card > h2, .help-card header h2, .fusion-card h2 { font-size: 20px; }
   .help-grid, .armory-grid, .guide-list, .cards-grid { grid-template-columns: 1fr; }
   .dossier-art { width: 80px; height: 80px; }
+  .dossier-art.has-pedestal { width: 112px; height: 112px; }
   .dossier-title h2 { font-size: 21px; }
   .dossier-trait { grid-template-columns: 1fr; gap: 2px; }
 }

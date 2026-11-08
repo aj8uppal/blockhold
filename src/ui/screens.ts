@@ -774,10 +774,15 @@ export class Screens {
    * silently failing would look exactly like a broken button.
    */
   private async shareText(text: string, btn: HTMLButtonElement, card: HTMLElement, kind: string, label: string): Promise<void> {
-    const nav = navigator as Navigator & { share?: (d: { text: string }) => Promise<void> }
+    const nav = navigator as Navigator & { share?: (d: { text: string, url?: string }) => Promise<void> }
     if (nav.share && window.matchMedia('(pointer: coarse)').matches) {
       try {
-        await nav.share({ text })
+        // The link travels as its own field. Buried at the end of the text,
+        // Messages showed it as a bare blue address; handed over separately it
+        // becomes a preview card with the game's picture and title.
+        const lines = text.split('\n'), last = lines[lines.length - 1]
+        const url = /^https?:\/\/\S+$/.test(last) ? last : undefined
+        await nav.share(url ? { text: lines.slice(0, -1).join('\n'), url } : { text })
         this.onShared(kind)
         btn.textContent = 'Shared'
         setTimeout(() => { btn.innerHTML = label }, 2500)

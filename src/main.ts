@@ -110,7 +110,9 @@ function enterBattle(): void {
   // still inside the user's tap gesture: phones go fullscreen as battle starts.
   // iPadOS is skipped on purpose — its Safari fullscreen bans keyboard focus
   // ("typing isn't allowed") and exits on a swipe; the installed app doesn't.
-  if (isTouchDevice()) {
+  // The iOS app is already fullscreen: asking again only made WebKit lay its
+  // own "swipe down to exit" pill over the top of the battle.
+  if (isTouchDevice() && !isNativeApp()) {
     if (fullscreenSupported() && !isIPadOS()) {
       enterFullscreen()
     } else if (needsInstallGuide() && !safeLocal.get('blockhold.a2hs-hint')) {
@@ -223,6 +225,33 @@ screens.onPlayLevel = (id, difficulty, hero, mode) => {
 }
 // a challenge link drops the visitor straight onto the sender's exact board
 const challenge = readChallenge()
+
+/**
+ * A blockhold.app link tapped on an iPhone with the app installed opens the
+ * app instead of Safari (the site's apple-app-site-association names it).
+ * Everything a link carries - a challenge board, today's Daily - is read from
+ * the page's own address at boot, so the faithful way to honour one is to load
+ * that address here: the board opens exactly as it would in a browser. A
+ * battle in progress is saved first, as leaving any other way would.
+ */
+if (isNativeApp()) {
+  void import('@capacitor/app').then(({ App }) => {
+    const follow = (url: string): void => {
+      let search: string
+      try { search = new URL(url).search } catch { return }
+      if (!search || search === location.search) return
+      // the launch link is reported again after the reload; act on it once
+      try {
+        if (sessionStorage.getItem('blockhold.link') === url) return
+        sessionStorage.setItem('blockhold.link', url)
+      } catch { /* storage blocked: the search check above still stops a loop */ }
+      if (game.phase === 'playing' && game.canSaveSession) game.saveSession()
+      location.replace(location.pathname + search)
+    }
+    void App.addListener('appUrlOpen', e => follow(e.url))
+    void App.getLaunchUrl().then(r => { if (r?.url) follow(r.url) }).catch(() => { /* no launch link */ })
+  }).catch(() => { /* plugin missing from an older shell: links just open the app */ })
+}
 const challengeSeed = challenge?.levelId ? null : (challenge?.seed ?? null)
 
 screens.onPlayDaily = () => {

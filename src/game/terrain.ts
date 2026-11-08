@@ -222,6 +222,11 @@ export class Terrain {
   /**
    * Make the buildable pads obvious. A newcomer has no reason to know a grey
    * square is a foundation, so the guided first battle lights them.
+   *
+   * A warm tint alone was not enough: a lit pad came out the same tan as the
+   * sand tiles around it, so "tap a glowing pad" pointed at nothing anyone
+   * could see. Each free pad also gets a gold frame that breathes, drawn
+   * unlit so it reads the same on every map and in every light.
    */
   pulsePlots(on: boolean): void {
     if (on === this.plotsPulsing) return
@@ -231,13 +236,41 @@ export class Terrain {
         if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
           if (o.material.userData.shared) return
           o.material.emissive.setHex(on ? 0xffd24a : 0x000000)
-          o.material.emissiveIntensity = on ? 0.5 : 0
+          o.material.emissiveIntensity = on ? 0.35 : 0
         }
       })
     }
+    if (this.plotGlow) {
+      this.group.remove(this.plotGlow)
+      this.plotGlow.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose() })
+      this.plotGlow = null
+      this.plotGlowFrames = []
+    }
+    if (!on) return
+    const glow = new THREE.Group()
+    const bounds = new THREE.Box3(), size = new THREE.Vector3()
+    for (const p of this.plots) {
+      if (p.occupied) continue
+      bounds.setFromObject(p.mesh).getSize(size)
+      // a square frame is a four-segment ring turned to sit edge-on
+      const half = Math.max(size.x, size.z) / 2 + 0.04, width = 0.09
+      const frame = new THREE.Mesh(new THREE.RingGeometry((half - width) * Math.SQRT2, half * Math.SQRT2, 4, 1), this.plotGlowMat)
+      frame.rotation.set(-Math.PI / 2, 0, Math.PI / 4)
+      frame.position.set(p.pos.x, bounds.max.y + 0.03, p.pos.z)
+      frame.renderOrder = 2
+      glow.add(frame)
+      this.plotGlowFrames.push([frame, p])
+    }
+    this.plotGlow = glow
+    this.group.add(glow)
   }
 
   private plotsPulsing = false
+  private plotGlow: THREE.Group | null = null
+  private plotGlowFrames: [THREE.Mesh, PlotInfo][] = []
+  private readonly plotGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xffd24a, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
+  })
 
   /** is this cell part of the map's own raised ground? */
   isOnHill(c: number, r: number): boolean {
@@ -1042,11 +1075,22 @@ export class Terrain {
   dispose(): void {
     for (const r of this.owned) r.dispose()
     this.owned = []
+    this.pulsePlots(false)
+    this.plotGlowMat.dispose()
   }
 
   update(dt: number): void {
     this.time += dt
     if (this.waterMat) this.waterMat.uniforms.uTime.value = this.time
+    if (this.plotGlow) {
+      const beat = 0.5 + 0.5 * Math.sin(this.time * 4.2)
+      this.plotGlowMat.opacity = 0.35 + 0.6 * beat
+      for (const [frame, plot] of this.plotGlowFrames) {
+        // a pad built on stops beckoning at once, before the step itself ends
+        frame.visible = !plot.occupied
+        frame.scale.setScalar(1 + 0.05 * beat)
+      }
+    }
     for (const c of this.clouds) {
       c.mesh.position.x += c.speed * dt
       if (c.spin) { c.mesh.rotation.x += c.spin * dt; c.mesh.rotation.y += c.spin * 0.6 * dt }

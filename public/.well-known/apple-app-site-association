@@ -1,0 +1,13 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["24DUS42N74.com.aj8uppal.blockhold"],
+        "components": [
+          { "/": "/", "comment": "the game, and every challenge and Daily link into it" },
+          { "/": "/index.html" }
+        ]
+      }
+    ]
+  }
+}
