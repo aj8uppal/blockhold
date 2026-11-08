@@ -57,3 +57,22 @@ export function isNativeApp(): boolean {
   const cap = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor
   return location.protocol === 'capacitor:' || !!cap?.isNativePlatform?.()
 }
+
+/** where the game lives on the web; links that leave the app point here */
+export const SITE_URL = 'https://blockhold.app/'
+
+/**
+ * The address to build a shareable link from.
+ *
+ * In a browser that is the page itself, so a link made on a local preview
+ * stays local. Inside the iOS app the page is capacitor://localhost, which
+ * nobody it is sent to can open, so the public site stands in.
+ */
+export function shareBase(): string {
+  return /^https?:$/.test(location.protocol) ? location.href.split('#')[0].split('?')[0] : SITE_URL
+}
+
+/** a page of the public site (privacy, support), as a link that works from the app too */
+export function sitePage(page: string): string {
+  return new URL(page, isNativeApp() ? SITE_URL : location.href).href
+}

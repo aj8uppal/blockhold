@@ -38,6 +38,11 @@ const CONSENT_KEY = 'blockhold.telemetry'
  */
 const sessionId = Math.random().toString(36).slice(2, 12)
 
+/** whether this build has anywhere to send play data at all; the app build does not */
+export function telemetryAvailable(): boolean {
+  return API.length > 0
+}
+
 /** the player's choice; default off, because the honest default is off */
 export function telemetryAllowed(): boolean {
   return safeLocal.get(CONSENT_KEY) === 'on'

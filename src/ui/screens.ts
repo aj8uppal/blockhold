@@ -1,5 +1,5 @@
 import { bindDialog } from './dialog.ts'
-import { isNativeApp } from '../core/platform.ts'
+import { isNativeApp, sitePage } from '../core/platform.ts'
 import { downloadBattleBackup } from '../game/battleBackup.ts'
 import { readSession, readSessionIssue } from '../game/session.ts'
 import { huntById, type HuntId } from '../game/hunts.ts'
@@ -19,7 +19,7 @@ import type { SaveData } from '../core/save.ts'
 import { icon } from './icons.ts'
 import { wordmark } from './wordmark.ts'
 import { readCheckpoint } from '../game/checkpoint.ts'
-import { setTelemetryAllowed, telemetryAllowed } from '../core/sink.ts'
+import { setTelemetryAllowed, telemetryAllowed, telemetryAvailable } from '../core/sink.ts'
 import { fetchDaily, leaderboardEnabled, nickname, setNickname } from '../core/leaderboard.ts'
 import { holdPieces, holdSummary } from '../game/hold.ts'
 import { isUnlocked, levelProgress, nextUnlock, unlockLevel, xpForLevel, MAX_LEVEL, type UnlockDef } from '../game/progress.ts'
@@ -425,16 +425,26 @@ export class Screens {
    */
   private renderPrivacyRow(wrap: HTMLElement): void {
     const row = el('div', 'menu-privacy', wrap)
-    const btn = el('button', 'privacy-toggle', row) as HTMLButtonElement
-    const paint = () => {
-      const isOn = telemetryAllowed()
-      btn.textContent = isOn ? 'Anonymous play data: on' : 'Anonymous play data: off'
-      btn.classList.toggle('on', isOn)
-      btn.setAttribute('aria-pressed', String(isOn))
+    // a build with nowhere to send play data offers no switch that does nothing
+    if (telemetryAvailable()) {
+      const btn = el('button', 'privacy-toggle', row) as HTMLButtonElement
+      const paint = () => {
+        const isOn = telemetryAllowed()
+        btn.textContent = isOn ? 'Anonymous play data: on' : 'Anonymous play data: off'
+        btn.classList.toggle('on', isOn)
+        btn.setAttribute('aria-pressed', String(isOn))
+      }
+      btn.title = 'Sends which wave you reached and which towers you built. No account, no cookies, no advertising, and never anything that identifies you.'
+      btn.onclick = () => { setTelemetryAllowed(!telemetryAllowed()); paint() }
+      paint()
     }
-    btn.title = 'Sends which wave you reached and which towers you built. No account, no cookies, no advertising, and never anything that identifies you.'
-    btn.onclick = () => { setTelemetryAllowed(!telemetryAllowed()); paint() }
-    paint()
+    const links = el('span', 'menu-links', row)
+    for (const [label, page] of [['Privacy', 'privacy.html'], ['Support', 'support.html']]) {
+      const a = el('a', '', links, label) as HTMLAnchorElement
+      a.href = sitePage(page)
+      a.target = '_blank'
+      a.rel = 'noopener'
+    }
   }
 
   /** iOS has no fullscreen API — walk the player through installing instead */

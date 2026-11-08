@@ -1,4 +1,5 @@
 import { RULESET_VERSION, dailyNumber } from './ruleset.ts'
+import { shareBase } from '../core/platform.ts'
 
 /**
  * The shareable object.
@@ -55,7 +56,7 @@ export function dailyShareText(r: DailyResult, url: string): string {
  * meaning what its sender meant - and the "same board" promise the link makes
  * would be false with nothing to detect it.
  */
-export function challengeUrl(seed: number, base = location.href.split('#')[0].split('?')[0]): string {
+export function challengeUrl(seed: number, base = shareBase()): string {
   return `${base}?hold=${seed.toString(36)}&r=${RULESET_VERSION}`
 }
 
@@ -116,7 +117,7 @@ export function readChallenge(search = location.search): Challenge | null {
 /** a link onto a specific map, in a specific mode, from a specific seed */
 export function runChallengeUrl(
   seed: number, levelId: string, endless: boolean,
-  base = location.href.split('#')[0].split('?')[0],
+  base = shareBase(),
 ): string {
   return `${challengeUrl(seed, base)}&m=${encodeURIComponent(levelId)}${endless ? '&e=1' : ''}`
 }

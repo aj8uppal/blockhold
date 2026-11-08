@@ -4,13 +4,13 @@ The primary account screen uses **Sign in with Google**. Existing local progress
 
 ## Production setup
 
-1. In [Google Cloud Console](https://console.cloud.google.com/auth/clients), create an OAuth 2.0 **Web application** client. Configure the consent screen for Blockhold with its homepage `https://aj8uppal.github.io/blockhold/`. The only requested scope is `openid`; no email/profile scope or Google API access is needed.
-2. Add this exact **authorized redirect URI**: `https://blockhold-sync.fly.dev/v1/auth/google/callback`. If the Console requests an authorized JavaScript origin, use `https://aj8uppal.github.io`. The actual OAuth exchange runs on the server.
+1. In [Google Cloud Console](https://console.cloud.google.com/auth/clients), create an OAuth 2.0 **Web application** client. Configure the consent screen for Blockhold with its homepage `https://blockhold.app/`. The only requested scope is `openid`; no email/profile scope or Google API access is needed.
+2. Add this exact **authorized redirect URI**: `https://blockhold-sync.fly.dev/v1/auth/google/callback`. If the Console requests an authorized JavaScript origin, use `https://blockhold.app`. The actual OAuth exchange runs on the server.
 3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` as Fly secrets on `blockhold-sync`, using the values issued for this client. Keep them out of commits, browser bundles, shell history, screenshots and logs. Fly's dashboard secrets UI or `fly secrets import -a blockhold-sync` with securely supplied stdin can set them.
 4. These optional backend environment variables have production defaults:
    - `GOOGLE_CALLBACK_URL=https://blockhold-sync.fly.dev/v1/auth/google/callback`
-   - `AUTH_RETURN_URLS=https://aj8uppal.github.io/blockhold/` (comma-separated **exact full page URLs**, no query or fragment)
-   - `ALLOWED_ORIGINS` must include `https://aj8uppal.github.io` (already in `fly.toml`).
+   - `AUTH_RETURN_URLS=https://blockhold.app/` (comma-separated **exact full page URLs**, no query or fragment)
+   - `ALLOWED_ORIGINS` must include `https://blockhold.app` (already in `fly.toml`; the old `https://aj8uppal.github.io` stays listed because GitHub redirects that address to the domain).
 5. If Google consent is in Testing mode, explicitly add test users. Publish the OAuth app for other players when the Google project is ready.
 6. Verify `GET https://blockhold-sync.fly.dev/v1/auth/providers` returns `{"google":true}`. In a real browser, sign in, complete a level, then use a second browser/device and the same Google account. Confirm the union of progress. Sign out and back in, and check an existing legacy save links without changing its stars or XP.
 

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f3ecdd" />
+  <title>Privacy · Blockhold</title>
+  <meta name="description" content="What Blockhold stores, where, and for how long. The iPhone and iPad app collects nothing." />
+  <link rel="icon" type="image/png" href="./favicon-64.png" />
+  <link rel="canonical" href="https://blockhold.app/privacy.html" />
+  <style>
+    :root { --bone: #f3ecdd; --card: #fbf8f1; --line: #dccfb4; --ink: #17130f; --ink-2: #463d32; --ink-3: #6b5f4f; --gold: #c9850f; --moss: #3d7f2e; }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body { margin: 0; background: var(--bone); color: var(--ink); font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 28px 16px 64px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 28px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font: 900 20px/1 'Arial Black', Impact, sans-serif; letter-spacing: .01em; }
+    .brand img { width: 40px; height: 40px; image-rendering: pixelated; }
+    .play { padding: 8px 14px; font-weight: 750; font-size: 14px; color: var(--ink); text-decoration: none; background: #f2b134; box-shadow: inset 0 -3px 0 var(--gold); }
+    h1 { margin: 0 0 6px; font: 900 clamp(28px, 6vw, 38px)/1.1 'Arial Black', Impact, sans-serif; }
+    h2 { margin: 36px 0 8px; font-size: 20px; line-height: 1.25; }
+    h3 { margin: 22px 0 4px; font-size: 16px; }
+    p, li { color: var(--ink-2); }
+    ul { padding-left: 22px; }
+    li + li { margin-top: 6px; }
+    a { color: var(--ink); text-underline-offset: 3px; }
+    .updated { margin: 0; font-size: 14px; color: var(--ink-3); }
+    .summary { margin-top: 24px; padding: 18px 20px; background: var(--card); box-shadow: inset 4px 0 0 var(--moss), 0 0 0 1px var(--line); }
+    .summary p { margin: 0; color: var(--ink); }
+    .summary p + p { margin-top: 10px; }
+    footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 14px; color: var(--ink-3); }
+    footer a { color: var(--ink-3); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="./"><img src="./icon-192.png" alt="" width="40" height="40" />Blockhold</a>
+      <a class="play" href="./">Play</a>
+    </header>
+
+    <h1>Privacy</h1>
+    <p class="updated">Last updated 8 November 2026</p>
+
+    <div class="summary">
+      <p><b>The Blockhold app for iPhone and iPad collects no data.</b> Your progress stays on your device, and the app does not send anything to us or to anyone else.</p>
+      <p>There are no ads, no trackers, no accounts and no in-app purchases. The browser version at blockhold.app works the same way, unless you switch on one of its optional online features described below.</p>
+    </div>
+
+    <h2>The iPhone and iPad app</h2>
+    <ul>
+      <li>Your progress, settings and trophies are stored only on your device, inside the app's own storage. Deleting the app deletes them.</li>
+      <li>The app does not connect to any server of ours. It contains no analytics, advertising, crash-reporting or other third-party code.</li>
+      <li>When you share a result or a picture, the iOS share sheet sends only what you chose, to whoever you chose. We never see it.</li>
+      <li>If you have chosen to share analytics with app developers in your device settings, Apple may give us anonymous, aggregated statistics such as install counts and crash reports. Nothing in them identifies you.</li>
+    </ul>
+
+    <h2>The browser version (blockhold.app)</h2>
+    <p>Progress is saved in your browser's local storage on your device. Blockhold sets no advertising or tracking cookies. The features below are optional, and each one is off until you use it.</p>
+
+    <h3>Anonymous play data</h3>
+    <p>This is off by default. If you switch it on under Help &amp; settings, the game sends events such as which wave you reached and which towers you built, tagged with a random ID that lasts for one visit. Our server stores a salted hash of your IP address, used to limit abuse and count distinct visits, and never the address itself. These events are deleted after 90 days. You can switch it off at any time.</p>
+
+    <h3>Cloud saves</h3>
+    <p>If you sign in with Google, Google tells us only a unique account identifier. We do not receive your name, email address or photo. We store your save file with that identifier, so you can carry on from another device. Older cloud saves use an anonymous account instead of Google. Those are deleted after 180 days without any save activity.</p>
+
+    <h3>The Daily leaderboard</h3>
+    <p>If you are signed in and submit a Daily result, we store the nickname you chose, your result and a replay of the run, together with your account. Other players can see the nickname and the result on the board. Leaderboard entries are deleted along with their account.</p>
+
+    <h3>Co-op</h3>
+    <p>When you host or join a co-op room, your moves are relayed through our server to the other players in that room. Rooms exist only while they are in use and are not stored.</p>
+
+    <h3>Hosting</h3>
+    <p>The website is served by GitHub Pages and the game server runs on Fly.io. Like any web host, they may keep standard request logs, including IP addresses, for security and operations, under their own privacy policies.</p>
+
+    <h2>What we never do</h2>
+    <ul>
+      <li>Sell or share your data.</li>
+      <li>Show ads, or use advertising identifiers.</li>
+      <li>Track you across other apps or websites.</li>
+    </ul>
+
+    <h2>Children</h2>
+    <p>Blockhold is suitable for all ages. The app collects nothing from anyone. The browser version's optional features do not ask for names, email addresses or other contact details.</p>
+
+    <h2>Your choices</h2>
+    <ul>
+      <li>To remove everything Blockhold keeps on your device, delete the app, or clear the site data for blockhold.app in your browser.</li>
+      <li>To delete a cloud save or a leaderboard entry, <a href="./support.html">contact us</a> and we will remove it.</li>
+    </ul>
+
+    <h2>Changes</h2>
+    <p>If this policy changes, this page will be updated along with the date at the top. If a future version of the app adds an online feature, the policy will describe it before that version is released.</p>
+
+    <h2>Contact</h2>
+    <p>For questions about privacy, see the <a href="./support.html">support page</a>.</p>
+
+    <footer><a href="./">Blockhold</a> · <a href="./support.html">Support</a></footer>
+  </div>
+</body>
+</html>

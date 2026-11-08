@@ -8,6 +8,8 @@ It starts from the classic tower-defense grammar and grows its own mechanics: ro
 
 ## Play
 
+Play it at **[blockhold.app](https://blockhold.app/)**. To run it locally:
+
 ```bash
 npm install
 npm run dev      # then open http://localhost:5173
