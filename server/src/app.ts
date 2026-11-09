@@ -73,7 +73,7 @@ export interface AppConfig {
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     allowedOrigins: (env.ALLOWED_ORIGINS
-      ?? 'https://blockhold.app,https://aj8uppal.github.io,http://localhost:5173,http://localhost:4173,http://localhost:4174,http://localhost:4180')
+      ?? 'https://blockhold.app,http://localhost:5173,http://localhost:4173,http://localhost:4174,http://localhost:4180')
       .split(',').map(s => s.trim()).filter(Boolean),
     google: googleFromEnv(env),
     statsToken: env.STATS_TOKEN && env.STATS_TOKEN.length >= 16 ? env.STATS_TOKEN : null,

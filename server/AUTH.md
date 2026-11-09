@@ -10,7 +10,7 @@ The primary account screen uses **Sign in with Google**. Existing local progress
 4. These optional backend environment variables have production defaults:
    - `GOOGLE_CALLBACK_URL=https://blockhold-sync.fly.dev/v1/auth/google/callback`
    - `AUTH_RETURN_URLS=https://blockhold.app/` (comma-separated **exact full page URLs**, no query or fragment)
-   - `ALLOWED_ORIGINS` must include `https://blockhold.app` (already in `fly.toml`; the old `https://aj8uppal.github.io` stays listed because GitHub redirects that address to the domain).
+   - `ALLOWED_ORIGINS` must include `https://blockhold.app` (already in `fly.toml`). The old `https://aj8uppal.github.io` address only forwards players to blockhold.app now, so it is no longer listed.
 5. If Google consent is in Testing mode, explicitly add test users. Publish the OAuth app for other players when the Google project is ready.
 6. Verify `GET https://blockhold-sync.fly.dev/v1/auth/providers` returns `{"google":true}`. In a real browser, sign in, complete a level, then use a second browser/device and the same Google account. Confirm the union of progress. Sign out and back in, and check an existing legacy save links without changing its stars or XP.
 

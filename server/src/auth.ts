@@ -17,7 +17,7 @@ export function googleFromEnv(env: NodeJS.ProcessEnv): GoogleConfig | undefined 
     clientId: env.GOOGLE_CLIENT_ID,
     clientSecret: env.GOOGLE_CLIENT_SECRET,
     callbackUrl: env.GOOGLE_CALLBACK_URL ?? 'https://blockhold-sync.fly.dev/v1/auth/google/callback',
-    returnUrls: (env.AUTH_RETURN_URLS ?? 'https://blockhold.app/,https://aj8uppal.github.io/blockhold/').split(',').map(s => s.trim()).filter(Boolean),
+    returnUrls: (env.AUTH_RETURN_URLS ?? 'https://blockhold.app/').split(',').map(s => s.trim()).filter(Boolean),
   }
 }
 
