@@ -148,6 +148,11 @@ export function parseSave(d: unknown): SaveData | null {
   return null
 }
 
+/** whether this browser has ever stored progress at this address */
+export function hasSave(): boolean {
+  try { return localStorage.getItem(KEY) !== null } catch { return false }
+}
+
 export function loadSave(): SaveData {
   try {
     const raw = localStorage.getItem(KEY)
@@ -168,11 +173,13 @@ function migrate(save: SaveData): SaveData {
  * browser lost a player's whole campaign without ever saying so. It reports
  * now, and the HUD surfaces the first failure.
  */
-export function writeSave(data: SaveData): boolean {
+export function writeSave(data: SaveData, stamp = true): boolean {
   // stamped here, on the live object, so the cloud layer reads the moment the
-  // player's progress actually changed rather than the moment it was uploaded
+  // player's progress actually changed rather than the moment it was uploaded.
+  // A save merged from copies made earlier keeps the newest of their stamps
+  // (stamp = false): merging changes no choice, so it must not look like one.
   rememberHoldDaily(data)
-  data.changedAt = Date.now()
+  if (stamp) data.changedAt = Date.now()
   try {
     localStorage.setItem(KEY, JSON.stringify(data))
     return true

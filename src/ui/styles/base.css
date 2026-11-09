@@ -51,13 +51,14 @@ summary::-webkit-details-marker { display: none; }
 #hud .topbar .sandbox-tools,
 #hud .abilities .ability { pointer-events: auto; }
 
-/* Chrome-hidden clears the frame completely: a diorama and a Siege Tape
-   render behind it, and a stray coach mark or banner would land in the shot. */
+/* Chrome-hidden clears the battle interface away for the menu, a diorama and
+   a Siege Tape. Toasts stay: they are how the menu speaks (signing in, a
+   carried-over save, a storage warning), and captures record the canvas
+   alone, so a toast can never land in a shot. */
 #hud.chrome-hidden .topbar,
 #hud.chrome-hidden .abilities,
 #hud.chrome-hidden .coach-mark,
 #hud.chrome-hidden .banner,
-#hud.chrome-hidden .toast,
 #hud.chrome-hidden .enemy-tip,
 #hud.chrome-hidden .hunt-status,
 #hud.chrome-hidden .beat-meter,

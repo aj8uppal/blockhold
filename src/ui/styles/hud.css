@@ -768,6 +768,12 @@
   /* with the inspector docked right, a line of guidance rides above the ability
      keys instead of being squeezed into the gap between them and the panel */
   #hud:has(.tower-panel:not(.hidden)) .toast, #hud:has(.tower-panel:not(.hidden)) .coach-mark { right: auto; left: calc(var(--safe-l) + 12px); bottom: calc(var(--safe-b) + 92px); max-width: calc(100vw - min(288px, 42vw) - 40px - var(--safe-l) - var(--safe-r)); }
+  /* On the menu of a short landscape screen the home banner (320px, 16px in)
+     runs the full height of the left side on a higher layer, so a toast keeps
+     to the open sky on its right instead of sliding under it. */
+  @media (max-height: 560px) and (min-width: 701px) {
+    #hud.chrome-hidden .toast { max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 360px); }
+  }
   .hunt-status { top: calc(var(--hud-top-bottom, 56px) + 52px); font-size: 11.5px; }
   .ability-tip { bottom: calc(var(--safe-b) + 92px); }
   .enemy-tip { width: 220px; font-size: 11.5px; }

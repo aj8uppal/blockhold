@@ -517,6 +517,12 @@ export class HUD {
     const now = performance.now()
     const dt = Math.min(0.1, (now - this.lastRefreshAt) / 1000)
     this.lastRefreshAt = now
+    // toasts are also spoken on the menu (signing in, a carried-over save, a
+    // storage warning), so their clock runs before the battle-only early out
+    if (this.toastTimer > 0) {
+      this.toastTimer -= dt
+      if (this.toastTimer <= 0) this.toastEl.classList.add('hidden')
+    }
     if (game.phase === 'idle') return
     if (game.gold !== this.lastGold) {
       this.lastGold = game.gold
@@ -786,10 +792,6 @@ export class HUD {
     if (this.bannerTimer > 0) {
       this.bannerTimer -= dt
       if (this.bannerTimer <= 0) this.bannerEl.classList.add('hidden')
-    }
-    if (this.toastTimer > 0) {
-      this.toastTimer -= dt
-      if (this.toastTimer <= 0) this.toastEl.classList.add('hidden')
     }
   }
 

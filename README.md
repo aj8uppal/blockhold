@@ -41,6 +41,8 @@ blockhold.app runs on Fly as two apps. `web/` is the site: its image builds the 
 fly deploy --config web/fly.toml
 ```
 
+The game's first address, aj8uppal.github.io/blockhold, now serves only `web/legacy/`: one page that forwards old links to the same place on blockhold.app and carries the player's saved progress along, since a browser keeps storage per address (`src/core/carry.ts` merges it in on arrival). It is published to GitHub Pages by hand with the **Old address** workflow, and only needs publishing again if that page changes.
+
 ## The campaign
 
 Ten maps, each with its own theme, roster, and shape of pressure:

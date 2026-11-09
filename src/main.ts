@@ -4,6 +4,7 @@ import { isPortalMode, isNativeApp } from './core/platform.ts'
 import { readSession } from './game/session.ts'
 import { huntLevel, huntAccess, huntById } from './game/hunts.ts'
 import { requestDurableStorage, writeSave } from './core/save.ts'
+import { takeCarry } from './core/carry.ts'
 import { hasWebGL, safeLocal, showFatal } from './core/boot.ts'
 import { cloud } from './core/cloud.ts'
 import { clearCheckpoint, readCheckpoint } from './game/checkpoint.ts'
@@ -54,8 +55,14 @@ function createGame(): Game {
   }
 }
 
+// Progress forwarded from the game's old address has to be on disk before
+// the game reads its save (see core/carry.ts). The app has its own storage
+// and is never sent here from the old address.
+const carriedOver = !isNativeApp() && takeCarry()
+
 const game = createGame()
 const hud = new HUD(game)
+if (carriedOver) setTimeout(() => hud.showToast('Blockhold has moved to blockhold.app, and your progress came with it.', 7), 1200)
 const screens = new Screens(() => game.save)
 screens.onSaveChanged = () => syncNow()
 // storage that throws is a browser setting, not a bug; the game still plays,

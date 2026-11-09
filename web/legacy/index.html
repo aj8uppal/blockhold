@@ -1,0 +1,94 @@
+<!doctype html>
+<!--
+  aj8uppal.github.io/blockhold, the game's first home. GitHub Pages serves only
+  this page there now, as index.html and as 404.html, so every old link lands
+  here. It forwards the visitor to the same place on blockhold.app, and takes
+  their saved progress along: a browser keeps storage per address, so only a
+  page on this address can read the campaign they played here. The save rides
+  in the URL fragment, which never reaches any server; src/core/carry.ts on the
+  other side merges it in.
+
+  Published by .github/workflows/legacy-pages.yml.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- blockhold.app accepts a carried save only from a visit that came from here -->
+  <meta name="referrer" content="origin" />
+  <meta name="robots" content="noindex" />
+  <title>Blockhold has moved to blockhold.app</title>
+  <link rel="canonical" href="https://blockhold.app/" />
+  <noscript><meta http-equiv="refresh" content="0; url=https://blockhold.app/" /></noscript>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f3ecdd; color: #17130f; font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+    main { max-width: 420px; padding: 32px 16px; text-align: center; }
+    h1 { margin: 0 0 8px; font: 900 30px/1.1 'Arial Black', Impact, sans-serif; }
+    p { margin: 0; color: #463d32; }
+    a { color: #17130f; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Blockhold has moved</h1>
+    <p>It lives at <a id="go" href="https://blockhold.app/">blockhold.app</a> now. Taking you there…</p>
+  </main>
+  <script>
+    (function () {
+      // Forward only from the old address itself. Served for blockhold.app by
+      // a DNS answer that is still stale, this would forward to itself forever.
+      if (location.hostname !== 'aj8uppal.github.io') return
+
+      // /blockhold/?hold=x on this host is /?hold=x on the new one
+      var path = location.pathname.replace(/^\/blockhold(?=\/|$)/, '') || '/'
+      var dest = 'https://blockhold.app' + path + location.search
+      document.getElementById('go').href = dest
+
+      // the same code the game's own "copy save" makes, so the other side
+      // reads it through the same validation as a pasted save
+      // (only into the game itself; the privacy page has no use for a save)
+      var hash = location.hash
+      try {
+        var raw = localStorage.getItem('blockhold.save.v1')
+        if (raw && (path === '/' || path === '/index.html')) {
+          var code = btoa(unescape(encodeURIComponent(JSON.stringify({ v: 1, d: JSON.parse(raw) }))))
+          hash = '#carry=' + encodeURIComponent(code)
+          var nick = localStorage.getItem('blockhold.nickname')
+          if (nick) hash += '&nick=' + encodeURIComponent(nick)
+        }
+      } catch (e) { /* storage blocked, or a save that is not JSON: go without it */ }
+
+      var gone = false
+      function go() {
+        if (gone) return
+        gone = true
+        location.replace(dest + hash)
+      }
+
+      // The old service worker would go on serving the old game from its
+      // cache, so it is retired on the way out. This address is shared with
+      // other projects on aj8uppal.github.io: only Blockhold's worker and
+      // Blockhold's caches are touched. The save itself stays here as a backup.
+      var jobs = []
+      try {
+        if (navigator.serviceWorker) {
+          jobs.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+            return Promise.all(regs.filter(function (r) {
+              return r.scope.indexOf(location.origin + '/blockhold/') === 0
+            }).map(function (r) { return r.unregister() }))
+          }))
+        }
+        if (window.caches) {
+          jobs.push(caches.keys().then(function (keys) {
+            return Promise.all(keys.filter(function (k) { return /^blockhold-/.test(k) })
+              .map(function (k) { return caches.delete(k) }))
+          }))
+        }
+      } catch (e) { /* nothing to retire */ }
+      Promise.all(jobs).then(go, go)
+      // never hold a visitor here for longer than a moment
+      setTimeout(go, 1500)
+    })()
+  </script>
+</body>
+</html>
