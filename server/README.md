@@ -183,7 +183,7 @@ fly volumes create blockhold_data --region iad --size 1 --app blockhold-sync
 fly deploy --config server/fly.toml --dockerfile server/Dockerfile
 ```
 
-Then point the deployed game at it by setting `VITE_SYNC_URL` in the Pages build,
+Then point the deployed game at it with the `VITE_SYNC_URL` build argument in `web/fly.toml`,
 and add the game's origin to `ALLOWED_ORIGINS` in `fly.toml` if it is served from anywhere else.
 
 The stats token is a credential, so it goes in secrets rather than in `fly.toml`:

@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  // relative base: the same build works at aj8uppal.github.io/blockhold, at
-  // the domain root, and in local preview
+  // relative base: the same build works at the domain root, inside the iOS
+  // app's capacitor://localhost, and in local preview
   base: './',
   build: {
     rollupOptions: {

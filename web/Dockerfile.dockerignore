@@ -1,0 +1,22 @@
+# The site image builds from source, so it needs the game and nothing else.
+# Everything else in the repository - node_modules, the iOS project, the sync
+# service, tests and review captures - would be uploaded to the builder on
+# every deploy and never used.
+#
+# This file sits beside web/Dockerfile under BuildKit's per-Dockerfile name,
+# so it takes the place of the repository's root .dockerignore (which is the
+# sync service's) for this image only. web/fly.toml points flyctl at it too.
+*
+!package.json
+!package-lock.json
+!index.html
+!vite.config.ts
+!tsconfig.json
+!src/
+!src/**
+!public/
+!public/**
+!web/Dockerfile
+!web/Caddyfile
+!web/404.html
+!web/precompress.mjs

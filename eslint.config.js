@@ -58,8 +58,9 @@ export default tseslint.config(
     },
   },
   {
-    // the sync service and the build/CI scripts run on Node, not in a browser
-    files: ['server/**/*.ts', 'scripts/**/*.mjs', '*.config.ts', 'eslint.config.js'],
+    // the sync service, the site image's build step and the build/CI scripts
+    // run on Node, not in a browser
+    files: ['server/**/*.ts', 'scripts/**/*.mjs', 'web/**/*.mjs', '*.config.ts', 'eslint.config.js'],
     languageOptions: { globals: globals.node },
     rules: { 'no-console': 'off' },
   },

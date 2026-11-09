@@ -1,0 +1,73 @@
+# blockhold.app, behind Fly's proxy. Fly holds the certificates, ends TLS and
+# turns http into https before a request arrives, so Caddy only ever sees
+# plain HTTP on 8080 and never tries to fetch a certificate of its own.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:8080 {
+	# Fly's health check, answered whatever Host header it arrives with
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# one address for the game: www, and the fly.dev name Fly gives the app,
+	# hand over to blockhold.app with the path and query intact
+	@elsewhere host www.blockhold.app blockhold-web.fly.dev
+	handle @elsewhere {
+		redir https://blockhold.app{uri} permanent
+	}
+
+	handle {
+		root * /srv
+
+		header {
+			X-Content-Type-Options "nosniff"
+			Referrer-Policy "strict-origin-when-cross-origin"
+			Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		}
+
+		# Vite fingerprints everything under /assets/: a URL there never
+		# changes its bytes, so it keeps for a year. The art in public/ is not
+		# fingerprinted, so it keeps for an hour and then refreshes in the
+		# background. Pages, the service worker, the manifest and the app-link
+		# file are checked every time, so a deploy reaches everyone on their
+		# next visit.
+		@immutable path /assets/*
+		@media {
+			path *.webp *.png *.jpg *.woff2 *.ico
+			not path /assets/*
+		}
+		@document {
+			not path /assets/* *.webp *.png *.jpg *.woff2 *.ico
+		}
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		header @media Cache-Control "public, max-age=3600, stale-while-revalidate=86400"
+		header @document Cache-Control "no-cache"
+
+		# Apple reads this to send blockhold.app links to the app. It has no
+		# extension, so its type is stated rather than guessed. The manifest's
+		# extension is missing from some MIME tables, so it is stated too.
+		header /.well-known/apple-app-site-association Content-Type "application/json"
+		header /manifest.webmanifest Content-Type "application/manifest+json"
+
+		# /privacy finds privacy.html, as it did on GitHub Pages
+		try_files {path} {path}.html
+
+		# the image ships .br and .gz copies of every text file; anything
+		# small enough to have been skipped is compressed as it goes out
+		encode zstd gzip
+		file_server {
+			precompressed br gzip
+		}
+	}
+
+	handle_errors 404 {
+		root * /srv
+		header Cache-Control "no-cache"
+		rewrite * /404.html
+		file_server
+	}
+}

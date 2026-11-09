@@ -33,6 +33,14 @@ npm run ios:sync   # typecheck, build, copy dist/ into the Xcode project
 npm run ios:open   # open it in Xcode: Product → Archive → Distribute → TestFlight
 ```
 
+### Hosting
+
+blockhold.app runs on Fly as two apps. `web/` is the site: its image builds the game from source and Caddy serves it, with `www` redirecting to the bare domain. `server/` is the sync service, deployed separately so a site deploy never restarts it. A push to `main` deploys the site once CI passes on that commit (`.github/workflows/deploy.yml`). To deploy it by hand, from the repo root:
+
+```bash
+fly deploy --config web/fly.toml
+```
+
 ## The campaign
 
 Ten maps, each with its own theme, roster, and shape of pressure:

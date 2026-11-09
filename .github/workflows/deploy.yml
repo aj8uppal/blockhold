@@ -1,41 +1,56 @@
-name: Deploy to GitHub Pages
+name: Deploy
 
+# blockhold.app is the Fly app in web/fly.toml. A push to main deploys only
+# once CI has passed on that exact commit, so a build that fails its tests or
+# its smoke run in a real browser never reaches players.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
+# one deploy at a time; a newer one waits rather than cutting the last off
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: deploy-web
+  cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run build
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      # CI runs for two quick pushes can finish out of order. Deploying the
+      # older one second would quietly roll the site back, so a commit that
+      # is no longer the tip of main leaves the deploy to the newer one.
+      - name: Still the newest commit on main?
+        id: tip
+        run: |
+          git fetch --quiet origin main
+          if [ "$(git rev-parse origin/main)" = "$(git rev-parse HEAD)" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "main has moved past $(git rev-parse --short HEAD); its own run deploys it"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
+        if: steps.tip.outputs.deploy == 'true'
+
+      # FLY_API_TOKEN is a deploy token scoped to blockhold-web alone:
+      #   fly tokens create deploy -a blockhold-web | gh secret set FLY_API_TOKEN
+      - name: Deploy blockhold-web
+        if: steps.tip.outputs.deploy == 'true'
+        run: flyctl deploy --config web/fly.toml --remote-only
         env:
-          # cloud saves are disabled unless this is set, so the deployed game
-          # is the only build that talks to the sync service
-          VITE_SYNC_URL: https://blockhold-sync.fly.dev
-      - run: npm test
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

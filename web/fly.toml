@@ -1,0 +1,46 @@
+# blockhold.app and www.blockhold.app: the game itself, as static files.
+#
+# Saves, accounts, the leaderboard and co-op live in a separate app,
+# blockhold-sync (server/fly.toml). Keeping them apart means a site deploy,
+# which happens on every push, never restarts the server or drops a co-op
+# room, and the server can grow a database without touching this.
+#
+# Deploy from the repository root:  fly deploy --config web/fly.toml
+app = "blockhold-web"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+  ignorefile = "Dockerfile.dockerignore"
+
+  [build.args]
+    VITE_SYNC_URL = "https://blockhold-sync.fly.dev"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # One machine always answers, so nobody waits for a cold start. Fly runs a
+  # second on other hardware that wakes if the first is lost or busy, and a
+  # rolling deploy replaces one at a time, so the site never goes dark.
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 500
+    hard_limit = 1000
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "5s"
+  method = "GET"
+  path = "/healthz"
+
+[deploy]
+  strategy = "rolling"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
