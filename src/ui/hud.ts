@@ -152,6 +152,13 @@ export class HUD {
     this.toastEl.setAttribute('aria-live', 'polite')
     this.modeHint = el('div', 'mode-hint hidden', this.root)
     this.coachMark = el('div', 'coach-mark hidden', this.root)
+    // A coaching hint and a toast share the bottom slot in every layout, and a
+    // toast used to land squarely on top of the hint - on a first battle, the
+    // map's opening line hid "tap a glowing pad" for its first five seconds.
+    // The stylesheet lifts a toast clear of a standing hint by this height.
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => this.root.style.setProperty('--coach-h', `${this.coachMark.offsetHeight}px`)).observe(this.coachMark)
+    }
     this.abilityTip = el('div', 'ability-tip hidden', this.root)
     this.beatEl = el('div', 'beat-meter hidden', this.root)
     this.beatEl.innerHTML = Array.from({ length: BEATS_PER_BAR }, () => '<i></i>').join('')

@@ -569,6 +569,10 @@
   clip-path: var(--notch-m);
 }
 .toast { z-index: 6; color: var(--ink-900); background: var(--bone-50); box-shadow: inset 0 -4px 0 var(--bone-400), var(--edge); animation: pop-up .2s var(--ease-out); pointer-events: none; }
+/* A toast never covers a coaching hint: wherever the layout puts the two (they
+   always share a slot), the toast rises above the hint by the hint's height.
+   `translate` composes with the centring transform instead of replacing it. */
+#hud:not(.chrome-hidden):has(.coach-mark:not(.hidden)) .toast { translate: 0 calc(-1 * (var(--coach-h, 52px) + 8px)); }
 .coach-mark { color: var(--ink-900); background: var(--bone-50); box-shadow: inset 0 -4px 0 var(--gold-500), var(--edge); animation: pop-up .25s var(--ease-out); padding-right: 8px; }
 .coach-mark .coach-text::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 9px; background: var(--gold-500); vertical-align: 1px; }
 .coach-skip { padding: 6px 10px; font-family: var(--font-display); font-size: 11px; letter-spacing: .04em; color: var(--ink-500); clip-path: var(--notch-s); }
